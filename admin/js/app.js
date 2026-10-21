@@ -184,6 +184,8 @@
   /* ---------- the season's schedule ---------- */
   // The frequency, start time and zone belong to the season. They are set once, either when the
   // season is created or the first time rounds are added, and later rounds reuse them.
+  var FREQ_OPTS = { weekly: { l: "Weekly", pattern: "weekly", n: 1 }, fortnightly: { l: "Fortnightly", pattern: "fortnightly", n: 2 }, w3: { l: "Every 3 weeks", pattern: "custom", n: 3 }, w4: { l: "Every 4 weeks", pattern: "custom", n: 4 } };
+  function leagueZone() { return state.sel && state.sel.champ.intended_timezone || null; }
   var FREQ = { weekly: "Weekly", fortnightly: "Fortnightly", monthly: "Monthly", custom: "Custom" };
   function seriesFor(sid) { return (state.sel.series || []).filter(function (x) { return x.season_id === sid; })[0] || null; }
   function scheduleText(r) {
@@ -200,30 +202,30 @@
       h += '<p class="muted" style="margin:0 0 8px">Schedule for this season: ' + esc(scheduleText(ser)) + ". New rounds follow it.</p>" +
         '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds to add</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div></div>';
     } else {
+      var lz = leagueZone();
       h += '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
-        '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts([["weekly", "Weekly"], ["fortnightly", "Fortnightly"], ["monthly", "Monthly"], ["custom", "Custom"]], "", "Not set") + "</select></div>" +
-        '<div class="field" id="gmw-' + k + '" hidden><label for="gm-' + k + '">Monthly on</label><select id="gm-' + k + '">' + opts([["day_of_month", "Same day of the month"], ["nth_weekday", "Same weekday (e.g. 2nd Tuesday)"]], "", "Not set") + "</select></div>" +
-        '<div class="field" id="gcw-' + k + '" hidden><label for="gi-' + k + '">Every</label><div class="row" style="gap:6px"><input id="gi-' + k + '" type="number" min="1" style="width:80px"><select id="gu-' + k + '" data-gf="' + k + '">' + opts([["day", "days"], ["week", "weeks"], ["month", "months"]], "", "Not set") + "</select></div></div></div>" +
-        '<div class="row" style="margin-top:8px"><div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
-        '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div>' +
-        '<div class="field grow"><label for="gz-' + k + '">Time zone the time is in</label><select id="gz-' + k + '">' + zoneOpts("", "Not set") + "</select></div></div>";
+        '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts(Object.keys(FREQ_OPTS).map(function (x) { return [x, FREQ_OPTS[x].l]; }), "", "Not set") + "</select></div>" +
+        '<div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
+        '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div></div>' +
+        (lz ? '<p class="muted" style="margin:8px 0 0">Times are in the league time zone: ' + esc(lz) + ".</p>" : '<p class="err" style="margin:8px 0 0">Set the league time zone at the top of this page and save before adding rounds.</p>');
     }
     return h + '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
   }
-  function toggleGen(k) {
-    var f = $("#gf-" + k).value;
-    $("#gmw-" + k).hidden = !(f === "monthly" || (f === "custom" && $("#gu-" + k).value === "month")); $("#gcw-" + k).hidden = f !== "custom";
-  }
+  function toggleGen() { /* the frequency has no dependent fields any more */ }
   function previewRounds(k) {
     var box = $("#gv-" + k), sid = k === "new" ? null : k; delete plans[k];
     var ser = sid ? seriesFor(sid) : null, done = ser ? ser.occurrence_count : 0, extra = numOrNull($("#gn-" + k).value), cfgv;
     if (ser) cfgv = { pattern: ser.pattern, mode: ser.monthly_mode || "", ic: ser.interval_count, iu: ser.interval_unit, start: ser.first_local_date, t: String(ser.local_time).slice(0, 5), z: ser.timezone };
-    else cfgv = { pattern: $("#gf-" + k).value, mode: $("#gm-" + k).value, ic: numOrNull($("#gi-" + k).value), iu: $("#gu-" + k).value, start: $("#gd-" + k).value, t: $("#gt-" + k).value, z: $("#gz-" + k).value };
+    else {
+      var fo = FREQ_OPTS[$("#gf-" + k).value];
+      cfgv = { pattern: fo ? fo.pattern : "", mode: "", ic: fo ? fo.n : null, iu: "week", start: $("#gd-" + k).value, t: $("#gt-" + k).value, z: leagueZone() };
+      if (!cfgv.z) { box.innerHTML = '<p class="err">Set the league time zone at the top of this page and save first.</p>'; return; }
+    }
     if (k === "new" && !$("#sn").value.trim()) { box.innerHTML = '<p class="err">Type the season name first.</p>'; return; }
     if (!(extra >= 1)) { box.innerHTML = '<p class="err">Enter the number of rounds.</p>'; return; }
     var g = SCH.generate({ start: cfgv.start, count: done + extra, pattern: cfgv.pattern, monthlyMode: cfgv.mode, intervalCount: cfgv.ic, intervalUnit: cfgv.iu });
     if (g.error) { box.innerHTML = '<p class="err">' + esc(g.error) + "</p>"; return; }
-    if (!cfgv.t || !cfgv.z) { box.innerHTML = '<p class="err">Choose the start time and the time zone.</p>'; return; }
+    if (!cfgv.t) { box.innerHTML = '<p class="err">Choose the start time.</p>'; return; }
     var dates = g.dates.slice(done);
     var evs = sid ? state.sel.events.filter(function (e) { return e.season_id === sid; }) : [];
     var first = evs.reduce(function (m, e) { return Math.max(m, e.round_number || 0); }, 0) + 1;
@@ -264,9 +266,7 @@
       if (pl.ser) ruleP = sb.from("event_series").update({ occurrence_count: pl.done + pl.rows.length }).eq("id", pl.ser.id).select("id").single();
       else {
         var series = { season_id: sid, pattern: cf.pattern, first_local_date: cf.start, local_time: cf.t, timezone: cf.z, end_type: "after_count", occurrence_count: pl.rows.length };
-        if (cf.pattern === "monthly") { series.interval_count = 1; series.interval_unit = "month"; series.monthly_mode = cf.mode; }
-        else if (cf.pattern === "custom") { series.interval_count = cf.ic; series.interval_unit = cf.iu; if (cf.iu === "month") series.monthly_mode = cf.mode || null; }
-        else { series.interval_count = cf.pattern === "weekly" ? 1 : 2; series.interval_unit = "week"; }
+        series.interval_count = cf.ic; series.interval_unit = "week";
         ruleP = sb.from("event_series").insert(series).select("id").single();
       }
       ruleP.then(function (rr) {
@@ -314,7 +314,7 @@
       '<div class="field"><label for="er-' + k + '">Round</label><input id="er-' + k + '" type="number" min="1" style="width:80px" value="' + esc(e.round_number == null ? "" : e.round_number) + '"></div></div>' +
       '<div class="row" style="margin-top:8px"><div class="field"><label for="ed-' + k + '">Date</label><input id="ed-' + k + '" type="date" value="' + esc(loc.date) + '"></div>' +
       '<div class="field"><label for="et-' + k + '">Start time</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
-      '<div class="field grow"><label for="ez-' + k + '">Time zone the time is in</label><select id="ez-' + k + '">' + zoneOpts(e.timezone, "Not set") + "</select></div></div>" +
+      '<div class="field grow"><span class="lbl">Time zone</span><div id="ez-' + k + '" style="padding:7px 0">' + esc(e.timezone || leagueZone() || "Set the league time zone first") + (e.timezone && leagueZone() && e.timezone !== leagueZone() ? ' <span class="muted">(differs from the league zone)</span>' : "") + "</div></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
   }
@@ -329,11 +329,13 @@
       '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save event</button><button class="danger" data-ed="' + e.id + '" type="button">Delete event</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
   }
   function readEvent(k, m) {
-    var d = $("#ed-" + k).value, t = $("#et-" + k).value, z = $("#ez-" + k).value;
+    var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
+    var z = (ev && ev.timezone) || leagueZone() || "";
     var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value) };
-    var any = d || t || z;
+    var any = d || t;
     if (any) {
-      if (!d || !t || !z) { msg(m, "Set the date, the start time and the time zone together, or leave all three blank.", "err"); return null; }
+      if (!z) { msg(m, "Set the league time zone at the top of this page and save first.", "err"); return null; }
+      if (!d || !t) { msg(m, "Set the date and the start time together, or leave both blank.", "err"); return null; }
       var r = TZ.zonedToInstant(d, t, z);
       if (r.error === "nonexistent") { msg(m, "That time does not exist in " + z + " on that date, because the clocks skip forward. Pick another time.", "err"); return null; }
       if (r.error === "ambiguous") { msg(m, "That time happens twice in " + z + " on that date, because the clocks go back. Pick a time outside that hour.", "err"); return null; }
