@@ -141,7 +141,6 @@
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
     S.seasons.forEach(function (s) { h += seasonHtml(s); });
     h += '<div class="card"><h3 style="margin-top:0">Add a season</h3><div class="row"><div class="field grow"><label for="sn">Name</label><input id="sn"></div>' +
-      '<div class="field"><label for="ss">Starts</label><input id="ss" type="date"></div><div class="field"><label for="se">Ends</label><input id="se" type="date"></div>' +
       '<button id="sadd" type="button">Add season without rounds</button></div><div class="msg" id="sm"></div>' + genHtml("new") + "</div>";
     app.innerHTML = h;
     $("#back").addEventListener("click", loadChamps);
@@ -294,7 +293,7 @@
   function addSeason() {
     var m = $("#sm"), name = $("#sn").value.trim();
     if (!name) { msg(m, "Type a season name first.", "err"); return; }
-    sb.from("seasons").insert({ championship_id: state.sel.champ.id, name: name, starts_on: nul($("#ss").value), ends_on: nul($("#se").value) }).then(function (r) {
+    sb.from("seasons").insert({ championship_id: state.sel.champ.id, name: name, starts_on: null, ends_on: null }).then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
       openChamp(state.sel.champ.id);
     });
