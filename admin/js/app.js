@@ -110,8 +110,9 @@
       if (rs[0].error) { app.innerHTML = '<div class="card err">' + esc(dbError(rs[0].error)) + "</div>"; return; }
       var seasons = rs[1].data || [], ids = seasons.map(function (s) { return s.id; });
       var evP = ids.length ? sb.from("events").select("*").in("season_id", ids).order("starts_at", { ascending: true, nullsFirst: false }) : Promise.resolve({ data: [] });
-      evP.then(function (er) {
-        state.sel = { champ: rs[0].data, seasons: seasons, events: er.data || [] };
+      var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
+      Promise.all([evP, srP]).then(function (xs) {
+        state.sel = { champ: rs[0].data, seasons: seasons, events: xs[0].data || [], series: xs[1].data || [] };
         renderChamp();
         refreshMissing();
       });
@@ -141,7 +142,7 @@
     S.seasons.forEach(function (s) { h += seasonHtml(s); });
     h += '<div class="card"><h3 style="margin-top:0">Add a season</h3><div class="row"><div class="field grow"><label for="sn">Name</label><input id="sn"></div>' +
       '<div class="field"><label for="ss">Starts</label><input id="ss" type="date"></div><div class="field"><label for="se">Ends</label><input id="se" type="date"></div>' +
-      '<button class="primary" id="sadd" type="button">Add season</button></div><div class="msg" id="sm"></div></div>';
+      '<button id="sadd" type="button">Add season without rounds</button></div><div class="msg" id="sm"></div>' + genHtml("new") + "</div>";
     app.innerHTML = h;
     $("#back").addEventListener("click", loadChamps);
     $("#csave").addEventListener("click", saveChamp);
@@ -181,66 +182,110 @@
       '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add event</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></div>';
     return h;
   }
-  /* ---------- rounds from a schedule ---------- */
-  function genHtml(sid) {
-    var k = sid;
-    return '<div class="card" style="margin:12px 0 0"><div class="lbl" style="margin-bottom:6px">Add rounds from a schedule</div>' +
-      '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
-      '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts([["weekly", "Weekly"], ["fortnightly", "Fortnightly"], ["monthly", "Monthly"], ["custom", "Custom"]], "", "Not set") + "</select></div>" +
-      '<div class="field" id="gmw-' + k + '" hidden><label for="gm-' + k + '">Monthly on</label><select id="gm-' + k + '">' + opts([["day_of_month", "Same day of the month"], ["nth_weekday", "Same weekday (e.g. 2nd Tuesday)"]], "", "Not set") + "</select></div>" +
-      '<div class="field" id="gcw-' + k + '" hidden><label for="gi-' + k + '">Every</label><div class="row" style="gap:6px"><input id="gi-' + k + '" type="number" min="1" style="width:80px"><select id="gu-' + k + '" data-gf="' + k + '">' + opts([["day", "days"], ["week", "weeks"], ["month", "months"]], "", "Not set") + "</select></div></div></div>" +
-      '<div class="row" style="margin-top:8px"><div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
-      '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div>' +
-      '<div class="field grow"><label for="gz-' + k + '">Time zone the time is in</label><select id="gz-' + k + '">' + zoneOpts("", "Not set") + "</select></div></div>" +
-      '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
+  /* ---------- the season's schedule ---------- */
+  // The frequency, start time and zone belong to the season. They are set once, either when the
+  // season is created or the first time rounds are added, and later rounds reuse them.
+  var FREQ = { weekly: "Weekly", fortnightly: "Fortnightly", monthly: "Monthly", custom: "Custom" };
+  function seriesFor(sid) { return (state.sel.series || []).filter(function (x) { return x.season_id === sid; })[0] || null; }
+  function scheduleText(r) {
+    var f = FREQ[r.pattern] || r.pattern;
+    if (r.pattern === "custom") f = "Every " + r.interval_count + " " + r.interval_unit + (r.interval_count > 1 ? "s" : "");
+    if (r.monthly_mode) f += r.monthly_mode === "nth_weekday" ? ", same weekday" : ", same day of the month";
+    return f + " · " + String(r.local_time).slice(0, 5) + " " + r.timezone + " · first round " + r.first_local_date + " · " + r.occurrence_count + " round" + (r.occurrence_count === 1 ? "" : "s") + " so far";
+  }
+  function genHtml(k) {
+    var ser = k === "new" ? null : seriesFor(k);
+    var title = k === "new" ? "Schedule (optional): create the season with its rounds" : ser ? "Add more rounds" : "Set the season's schedule and add rounds";
+    var h = '<div class="card" style="margin:12px 0 0"><div class="lbl" style="margin-bottom:6px">' + title + "</div>";
+    if (ser) {
+      h += '<p class="muted" style="margin:0 0 8px">Schedule for this season: ' + esc(scheduleText(ser)) + ". New rounds follow it.</p>" +
+        '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds to add</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div></div>';
+    } else {
+      h += '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
+        '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts([["weekly", "Weekly"], ["fortnightly", "Fortnightly"], ["monthly", "Monthly"], ["custom", "Custom"]], "", "Not set") + "</select></div>" +
+        '<div class="field" id="gmw-' + k + '" hidden><label for="gm-' + k + '">Monthly on</label><select id="gm-' + k + '">' + opts([["day_of_month", "Same day of the month"], ["nth_weekday", "Same weekday (e.g. 2nd Tuesday)"]], "", "Not set") + "</select></div>" +
+        '<div class="field" id="gcw-' + k + '" hidden><label for="gi-' + k + '">Every</label><div class="row" style="gap:6px"><input id="gi-' + k + '" type="number" min="1" style="width:80px"><select id="gu-' + k + '" data-gf="' + k + '">' + opts([["day", "days"], ["week", "weeks"], ["month", "months"]], "", "Not set") + "</select></div></div></div>" +
+        '<div class="row" style="margin-top:8px"><div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
+        '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div>' +
+        '<div class="field grow"><label for="gz-' + k + '">Time zone the time is in</label><select id="gz-' + k + '">' + zoneOpts("", "Not set") + "</select></div></div>";
+    }
+    return h + '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
   }
   function toggleGen(k) {
     var f = $("#gf-" + k).value;
     $("#gmw-" + k).hidden = !(f === "monthly" || (f === "custom" && $("#gu-" + k).value === "month")); $("#gcw-" + k).hidden = f !== "custom";
   }
-  function previewRounds(sid) {
-    var k = sid, box = $("#gv-" + k); delete plans[sid];
-    var z = $("#gz-" + k).value, t = $("#gt-" + k).value;
-    var g = SCH.generate({ start: $("#gd-" + k).value, count: numOrNull($("#gn-" + k).value), pattern: $("#gf-" + k).value, monthlyMode: $("#gm-" + k).value, intervalCount: numOrNull($("#gi-" + k).value), intervalUnit: $("#gu-" + k).value });
+  function previewRounds(k) {
+    var box = $("#gv-" + k), sid = k === "new" ? null : k; delete plans[k];
+    var ser = sid ? seriesFor(sid) : null, done = ser ? ser.occurrence_count : 0, extra = numOrNull($("#gn-" + k).value), cfgv;
+    if (ser) cfgv = { pattern: ser.pattern, mode: ser.monthly_mode || "", ic: ser.interval_count, iu: ser.interval_unit, start: ser.first_local_date, t: String(ser.local_time).slice(0, 5), z: ser.timezone };
+    else cfgv = { pattern: $("#gf-" + k).value, mode: $("#gm-" + k).value, ic: numOrNull($("#gi-" + k).value), iu: $("#gu-" + k).value, start: $("#gd-" + k).value, t: $("#gt-" + k).value, z: $("#gz-" + k).value };
+    if (k === "new" && !$("#sn").value.trim()) { box.innerHTML = '<p class="err">Type the season name first.</p>'; return; }
+    if (!(extra >= 1)) { box.innerHTML = '<p class="err">Enter the number of rounds.</p>'; return; }
+    var g = SCH.generate({ start: cfgv.start, count: done + extra, pattern: cfgv.pattern, monthlyMode: cfgv.mode, intervalCount: cfgv.ic, intervalUnit: cfgv.iu });
     if (g.error) { box.innerHTML = '<p class="err">' + esc(g.error) + "</p>"; return; }
-    if (!t || !z) { box.innerHTML = '<p class="err">Choose the start time and the time zone.</p>'; return; }
-    var evs = state.sel.events.filter(function (e) { return e.season_id === sid; });
+    if (!cfgv.t || !cfgv.z) { box.innerHTML = '<p class="err">Choose the start time and the time zone.</p>'; return; }
+    var dates = g.dates.slice(done);
+    var evs = sid ? state.sel.events.filter(function (e) { return e.season_id === sid; }) : [];
     var first = evs.reduce(function (m, e) { return Math.max(m, e.round_number || 0); }, 0) + 1;
-    var bad = 0, rows = g.dates.map(function (d, i) {
-      var r = TZ.zonedToInstant(d, t, z), n = first + i, line;
-      if (r.error) { bad++; line = '<span class="err">' + esc(d) + " " + esc(t) + ": " + (r.error === "nonexistent" ? "this time does not exist in " + esc(z) + " that day, because the clocks skip forward" : r.error === "ambiguous" ? "this time happens twice in " + esc(z) + " that day, because the clocks go back" : "not valid") + "</span>"; }
-      else { var mine = TZ.localText(Date.parse(r.instant), viewerTz); line = esc(d + " " + t) + (viewerTz !== z ? ' <span class="muted">(your time: ' + esc(mine.date + " " + mine.time) + ")</span>" : ""); }
+    var bad = 0, rows = dates.map(function (d, i) {
+      var r = TZ.zonedToInstant(d, cfgv.t, cfgv.z), n = first + i, line;
+      if (r.error) { bad++; line = '<span class="err">' + esc(d) + " " + esc(cfgv.t) + ": " + (r.error === "nonexistent" ? "this time does not exist in " + esc(cfgv.z) + " that day, because the clocks skip forward" : r.error === "ambiguous" ? "this time happens twice in " + esc(cfgv.z) + " that day, because the clocks go back" : "not valid") + "</span>"; }
+      else { var mine = TZ.localText(Date.parse(r.instant), viewerTz); line = esc(d + " " + cfgv.t) + (viewerTz !== cfgv.z ? ' <span class="muted">(your time: ' + esc(mine.date + " " + mine.time) + ")</span>" : ""); }
       return { d: d, n: n, inst: r.instant, line: "<li>Round " + n + " · " + line + "</li>" };
     });
-    var last = g.dates[g.dates.length - 1], season = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
+    var last = g.dates[g.dates.length - 1], season = sid ? state.sel.seasons.filter(function (x) { return x.id === sid; })[0] : null;
     var h = '<ul class="missing" style="margin-top:8px">' + rows.map(function (r) { return r.line; }).join("") + "</ul>";
-    if (bad) { h += '<p class="err">Change the start time, the date or the zone so every round is valid, then preview again.</p>'; }
+    if (bad) h += '<p class="err">Change the start time, the date or the zone so every round is valid, then preview again.</p>';
     else {
-      h += '<p>The season end date will be set to <b>' + esc(last) + "</b>" + (season && season.ends_on && season.ends_on !== last ? ' <span class="muted">(it is currently ' + esc(season.ends_on) + ")</span>" : "") + ".</p>" +
+      h += "<p>" + (k === "new" ? "The season will start on <b>" + esc(g.dates[0]) + "</b> and end on <b>" + esc(last) + "</b>." : "The season end date will be set to <b>" + esc(last) + "</b>" + (season && season.ends_on && season.ends_on !== last ? ' <span class="muted">(it is currently ' + esc(season.ends_on) + ")</span>" : "") + ".") + "</p>" +
         (evs.length ? '<p class="muted">This season already has ' + evs.length + " event" + (evs.length === 1 ? "" : "s") + ", so numbering continues from round " + first + ".</p>" : "") +
-        '<button class="primary" data-gc="' + sid + '" type="button">Create ' + rows.length + " round" + (rows.length === 1 ? "" : "s") + '</button><div class="msg" id="gm2-' + sid + '"></div>';
-      plans[sid] = { rows: rows, last: last, z: z, t: t, pattern: $("#gf-" + k).value, mode: $("#gm-" + k).value, ic: numOrNull($("#gi-" + k).value), iu: $("#gu-" + k).value, start: $("#gd-" + k).value };
+        '<button class="primary" data-gc="' + k + '" type="button">' + (k === "new" ? "Create season with " : "Create ") + rows.length + " round" + (rows.length === 1 ? "" : "s") + '</button><div class="msg" id="gm2-' + k + '"></div>';
+      plans[k] = { rows: rows, first: g.dates[0], last: last, cfg: cfgv, done: done, ser: ser };
     }
     box.innerHTML = h;
-    var cb = box.querySelector("[data-gc]"); if (cb) cb.addEventListener("click", function () { createRounds(sid); });
+    var cb = box.querySelector("[data-gc]"); if (cb) cb.addEventListener("click", function () { createRounds(k); });
   }
-  function createRounds(sid) {
-    var pl = plans[sid], m = $("#gm2-" + sid); if (!pl) return;
-    var btn = $("#gv-" + sid + " [data-gc]"); if (btn) btn.disabled = true;
+  function createRounds(k) {
+    var pl = plans[k], m = $("#gm2-" + k); if (!pl) return;
+    var btn = $("#gv-" + k + " [data-gc]"); if (btn) btn.disabled = true;
     msg(m, "Creating…");
-    var series = { season_id: sid, pattern: pl.pattern, first_local_date: pl.start, local_time: pl.t, timezone: pl.z, end_type: "after_count", occurrence_count: pl.rows.length };
-    if (pl.pattern === "monthly") { series.interval_count = 1; series.interval_unit = "month"; series.monthly_mode = pl.mode; }
-    else if (pl.pattern === "custom") { series.interval_count = pl.ic; series.interval_unit = pl.iu; if (pl.iu === "month") series.monthly_mode = pl.mode || null; }
-    else { series.interval_count = pl.pattern === "weekly" ? 1 : 2; series.interval_unit = "week"; }
-    sb.from("event_series").insert(series).select("id").single().then(function (sr) {
-      if (sr.error) { msg(m, dbError(sr.error), "err"); if (btn) btn.disabled = false; return; }
-      var evs = pl.rows.map(function (r) { return { season_id: sid, series_id: sr.data.id, occurrence_date: r.d, round_number: r.n, starts_at: r.inst, original_starts_at: r.inst, timezone: pl.z }; });
-      sb.from("events").insert(evs).then(function (er) {
-        if (er.error) { sb.from("event_series").delete().eq("id", sr.data.id).then(function () { msg(m, "No rounds were created: " + dbError(er.error), "err"); if (btn) btn.disabled = false; }); return; }
-        sb.from("seasons").update({ ends_on: pl.last }).eq("id", sid).then(function (ur) {
-          delete plans[sid];
-          openChamp(state.sel.champ.id);
-          if (ur.error) setTimeout(function () { var el = $("#sm-" + sid); msg(el, "Rounds were created, but the season end date could not be set: " + dbError(ur.error), "err"); }, 600);
+    var fail = function (text, undo) { (undo ? undo() : Promise.resolve()).then(function () { msg(m, text, "err"); if (btn) btn.disabled = false; }); };
+    var cf = pl.cfg;
+    // 1. the season (new seasons only)
+    var seasonP = k === "new"
+      ? sb.from("seasons").insert({ championship_id: state.sel.champ.id, name: $("#sn").value.trim(), starts_on: pl.first, ends_on: pl.last }).select("id").single()
+      : Promise.resolve({ data: { id: k }, error: null });
+    seasonP.then(function (sr) {
+      if (sr.error) { fail(dbError(sr.error)); return; }
+      var sid = sr.data.id;
+      var undoSeason = function () { return k === "new" ? sb.from("seasons").delete().eq("id", sid) : Promise.resolve(); };
+      // 2. the schedule rule
+      var ruleP;
+      if (pl.ser) ruleP = sb.from("event_series").update({ occurrence_count: pl.done + pl.rows.length }).eq("id", pl.ser.id).select("id").single();
+      else {
+        var series = { season_id: sid, pattern: cf.pattern, first_local_date: cf.start, local_time: cf.t, timezone: cf.z, end_type: "after_count", occurrence_count: pl.rows.length };
+        if (cf.pattern === "monthly") { series.interval_count = 1; series.interval_unit = "month"; series.monthly_mode = cf.mode; }
+        else if (cf.pattern === "custom") { series.interval_count = cf.ic; series.interval_unit = cf.iu; if (cf.iu === "month") series.monthly_mode = cf.mode || null; }
+        else { series.interval_count = cf.pattern === "weekly" ? 1 : 2; series.interval_unit = "week"; }
+        ruleP = sb.from("event_series").insert(series).select("id").single();
+      }
+      ruleP.then(function (rr) {
+        if (rr.error) { fail(dbError(rr.error), undoSeason); return; }
+        var undoRule = function () {
+          var u = pl.ser ? sb.from("event_series").update({ occurrence_count: pl.done }).eq("id", pl.ser.id) : sb.from("event_series").delete().eq("id", rr.data.id);
+          return u.then(undoSeason);
+        };
+        // 3. the events
+        var evs = pl.rows.map(function (r) { return { season_id: sid, series_id: rr.data.id, occurrence_date: r.d, round_number: r.n, starts_at: r.inst, original_starts_at: r.inst, timezone: cf.z }; });
+        sb.from("events").insert(evs).then(function (er) {
+          if (er.error) { fail("No rounds were created: " + dbError(er.error), undoRule); return; }
+          // 4. the season end date
+          sb.from("seasons").update({ ends_on: pl.last }).eq("id", sid).then(function (ur) {
+            delete plans[k];
+            openChamp(state.sel.champ.id);
+            if (ur.error) setTimeout(function () { msg($("#sm-" + sid), "Rounds were created, but the season end date could not be set: " + dbError(ur.error), "err"); }, 600);
+          });
         });
       });
     });
