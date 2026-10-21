@@ -1,0 +1,1577 @@
+<title>Car Catalogue Check</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working surface with two tabs. Catalogue = filter bar over a sortable data table with a detail drawer. Import = paste/upload, check report, approve. */
+:root {
+  --bg: #f1f4f5;
+  --surface: #ffffff;
+  --ink: #14232a;
+  --muted: #566870;
+  --line: #d3dcdf;
+  --hover: #e8eff0;
+  --accent: #0b6e6e;
+  --accent-ink: #ffffff;
+  --warn: #8a4f00;
+  --warn-bg: #fcefd6;
+  --err: #a8231b;
+  --err-bg: #fae3e0;
+  --ok: #1b6a38;
+  --ok-bg: #dff1e5;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1a1e; --surface: #15242a; --ink: #e5eef0; --muted: #94a7ae; --line: #2a3b41; --hover: #1c3037;
+    --accent: #52c4c4; --accent-ink: #052226;
+    --warn: #f0b862; --warn-bg: #33270f; --err: #ff948b; --err-bg: #3b1b19; --ok: #86d6a0; --ok-bg: #12301e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1a1e; --surface: #15242a; --ink: #e5eef0; --muted: #94a7ae; --line: #2a3b41; --hover: #1c3037;
+  --accent: #52c4c4; --accent-ink: #052226;
+  --warn: #f0b862; --warn-bg: #33270f; --err: #ff948b; --err-bg: #3b1b19; --ok: #86d6a0; --ok-bg: #12301e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: 0.01em; }
+h1 { font-size: 30px; line-height: 1.1; font-weight: 700; }
+h2 { font-size: 20px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 70ch; }
+.eyebrow { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, th button:focus-visible, tr[tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { background: none; border: 0; padding: 10px 14px; cursor: pointer; font-weight: 500; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.strip { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--font-data); font-size: 12.5px; color: var(--muted); }
+.strip b { color: var(--ink); font-weight: 500; }
+.note { padding: 10px 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; }
+.note.warn { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+.note.err { background: var(--err-bg); border-color: transparent; color: var(--err); }
+.note.ok { background: var(--ok-bg); border-color: transparent; color: var(--ok); }
+.filters { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.field label, .field .lbl { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.field input, .field select, textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px; min-width: 0;
+}
+.field input[type="number"] { width: 84px; font-family: var(--font-data); }
+.field.grow { flex: 1 1 220px; }
+.field.grow input { width: 100%; }
+.field select { max-width: 100%; }
+.range { display: flex; gap: 6px; align-items: center; }
+.range span { color: var(--muted); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-family: var(--font-data); font-size: 12.5px; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 500; }
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--bg); padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+details.adv > summary { cursor: pointer; font-weight: 500; color: var(--muted); }
+details.adv[open] > summary { margin-bottom: 10px; }
+.tablebar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.count { font-family: var(--font-data); font-size: 12.5px; color: var(--muted); }
+.tablewrap { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: auto; max-width: 100%; max-height: 72vh; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+thead th { position: sticky; top: 0; background: var(--surface); z-index: 2; font-size: 12px; font-weight: 600; color: var(--muted); box-shadow: inset 0 -1px 0 var(--line); padding: 0; }
+thead th button { all: unset; box-sizing: border-box; display: flex; width: 100%; padding: 9px 10px; cursor: pointer; gap: 4px; align-items: center; }
+thead th button:hover { color: var(--ink); background: var(--hover); }
+th.num, td.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+th.num button { justify-content: flex-end; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--hover); }
+td.pi { font-weight: 500; }
+td.muted, .muted { color: var(--muted); }
+.arrow { font-size: 10px; }
+.more { display: flex; justify-content: center; padding: 6px; }
+.empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+/* import */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+textarea { width: 100%; min-height: 150px; font-family: var(--font-data); font-size: 12px; resize: vertical; white-space: pre; overflow: auto; }
+.drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--accent); background: var(--hover); }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
+.kv div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dotted var(--line); padding: 3px 0; min-width: 0; }
+.kv span:last-child { font-family: var(--font-data); font-size: 12px; text-align: right; overflow-wrap: anywhere; }
+.pill { display: inline-block; font-family: var(--font-data); font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+.pill.err { background: var(--err-bg); color: var(--err); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.info { background: var(--hover); color: var(--muted); }
+.issue { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.issue summary { cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.issue ul { margin: 8px 0 0; padding-left: 18px; font-family: var(--font-data); font-size: 12px; color: var(--muted); }
+.stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.wheelbox { margin-bottom: 12px; }
+.wheelbox .lbl { display: block; font-size: 13px; margin-bottom: 4px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.field.grow select { width: 100%; }
+#cLaps, #cTarget { width: 130px; }
+.calc { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.calc > div { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; background: var(--bg); }
+.result { font-family: var(--font-data); font-size: 13px; display: flex; flex-direction: column; gap: 4px; min-height: 3em; }
+.result .big { font-family: var(--font-display); font-size: 24px; font-weight: 600; line-height: 1.15; }
+.explain { color: var(--muted); font-size: 12.5px; margin: 0; }
+.blist { display: flex; flex-direction: column; gap: 6px; }
+.bitem { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 8px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.bitem[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.bgroup { gap: 4px; }
+.brow { display: grid; grid-template-columns: minmax(150px, 1.3fr) 130px 120px minmax(160px, 2fr); gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dotted var(--line); }
+.brow .bname { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.brow.unset .bname { color: var(--muted); }
+.brow select, .brow input { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; min-width: 0; width: 100%; }
+.brow.needrule select[data-p="rule"] { outline: 2px solid var(--err); }
+.addfield { align-items: flex-end; padding-top: 8px; }
+textarea.short { min-height: 70px; font-family: var(--font-body); font-size: 13.5px; white-space: pre-wrap; }
+.specgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; margin: 0; }
+.specgrid div { display: flex; flex-direction: column; }
+.specgrid dt { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.specgrid dd { margin: 0; overflow-wrap: anywhere; }
+.specitems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.specitems li { display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px dotted var(--line); padding: 4px 0; }
+.specitems li b { min-width: 190px; font-weight: 500; }
+@media (max-width: 760px) {
+  .brow { grid-template-columns: 1fr 1fr; }
+  .brow .bname { grid-column: 1 / -1; font-weight: 500; }
+  .brow input { grid-column: 1 / -1; }
+}
+/* drawer */
+.scrim { position: fixed; inset: 0; background: rgba(5, 15, 18, 0.5); z-index: 30; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); z-index: 31; background: var(--surface);
+  border-left: 1px solid var(--line); overflow: auto;
+  padding-block: calc(16px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: 18px; padding-right: max(18px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 14px;
+}
+.drawer header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.drawer .group { display: flex; flex-direction: column; gap: 4px; }
+.drawer .group h3 { font-size: 12px; font-family: var(--font-data); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 6px; z-index: 40; max-width: calc(100% - 32px); }
+@media (max-width: 560px) {
+  h1 { font-size: 26px; }
+  .field input[type="number"] { width: 72px; }
+  .drawer { border-left: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .chip, .tab { transition: background-color 0.12s, color 0.12s; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Forza Championship Manager · Stage 1 data check</div>
+    <h1>Car Catalogue Check</h1>
+    <p class="sub">Load the Forza Motorsport car CSV, review what was detected and what looks wrong, approve it, then search, filter and sort the cars to confirm the data behaves.</p>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" id="tab-cat" aria-selected="true" aria-controls="panel-cat">Catalogue</button>
+    <button class="tab" role="tab" id="tab-imp" aria-selected="false" aria-controls="panel-imp">Car import</button>
+    <button class="tab" role="tab" id="tab-trk" aria-selected="false" aria-controls="panel-trk">Tracks</button>
+    <button class="tab" role="tab" id="tab-bld" aria-selected="false" aria-controls="panel-bld">Build specs</button>
+  </div>
+
+  <section class="panel" id="panel-cat" role="tabpanel" aria-labelledby="tab-cat">
+    <div class="strip" id="strip"></div>
+    <div id="banner"></div>
+
+    <div class="filters">
+      <div class="row">
+        <div class="field grow"><label for="q">Search make, model, nickname or division</label><input id="q" type="search" autocomplete="off"></div>
+        <div class="field"><label for="fMake">Manufacturer</label><select id="fMake"></select></div>
+        <div class="field"><label for="fDiv">Forza division</label><select id="fDiv"></select></div>
+        <div class="field"><label for="fClass">Class (from PI)</label><select id="fClass"></select></div>
+        <div class="field"><span class="lbl">Drivetrain</span>
+          <div class="chips" id="fDrive">
+            <button class="chip" type="button" aria-pressed="false" data-v="RWD">RWD</button>
+            <button class="chip" type="button" aria-pressed="false" data-v="AWD">AWD</button>
+            <button class="chip" type="button" aria-pressed="false" data-v="FWD">FWD</button>
+          </div>
+        </div>
+      </div>
+      <details class="adv" id="adv">
+        <summary>More filters</summary>
+        <div class="row">
+          <div class="field"><label for="fType">Model type</label><select id="fType"></select></div>
+          <div class="field"><span class="lbl">Model year</span><div class="range"><input id="yMin" type="number" inputmode="numeric" placeholder="from" aria-label="Year from"><span>–</span><input id="yMax" type="number" inputmode="numeric" placeholder="to" aria-label="Year to"></div></div>
+          <div class="field"><span class="lbl">PI</span><div class="range"><input id="piMin" type="number" inputmode="numeric" placeholder="from" aria-label="PI from"><span>–</span><input id="piMax" type="number" inputmode="numeric" placeholder="to" aria-label="PI to"></div></div>
+          <div class="field"><span class="lbl" id="pwrLbl">Power</span><div class="range"><input id="pwMin" type="number" inputmode="numeric" placeholder="from" aria-label="Power from"><span>–</span><input id="pwMax" type="number" inputmode="numeric" placeholder="to" aria-label="Power to"></div></div>
+          <div class="field"><span class="lbl" id="massLbl">Weight</span><div class="range"><input id="msMin" type="number" inputmode="numeric" placeholder="from" aria-label="Weight from"><span>–</span><input id="msMax" type="number" inputmode="numeric" placeholder="to" aria-label="Weight to"></div></div>
+        </div>
+      </details>
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <div class="field"><span class="lbl">Units</span>
+          <div class="seg" id="units">
+            <button type="button" data-u="metric" aria-pressed="true">Metric (kW, kg)</button>
+            <button type="button" data-u="imperial" aria-pressed="false">Imperial (hp, lb)</button>
+          </div>
+        </div>
+        <button class="btn" type="button" id="reset">Clear filters</button>
+      </div>
+    </div>
+
+    <div class="tablebar"><div class="count" id="count" aria-live="polite"></div></div>
+    <div class="tablewrap"><table id="tbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="more" id="more" hidden><button class="btn" type="button" id="moreBtn">Show more</button></div>
+  </section>
+
+  <section class="panel" id="panel-imp" role="tabpanel" aria-labelledby="tab-imp" hidden>
+    <div class="card">
+      <h2>1. Load a CSV</h2>
+      <p class="sub">Use the FM23Data <code>modelexport.csv</code> format. Pick the file, drop it here, or paste its text. Nothing leaves your browser, and nothing changes in the catalogue until you approve it.</p>
+      <div class="drop" id="drop">
+        <input id="file" type="file" accept=".csv,.txt,text/csv,text/plain" aria-label="Choose CSV file">
+        <div style="margin-top:6px">or drop a file onto this box</div>
+      </div>
+      <div class="field"><label for="paste">CSV text</label><textarea id="paste" spellcheck="false" placeholder="Ordinal,Make,Model,Year,..."></textarea></div>
+      <div class="actions"><button class="btn primary" type="button" id="check" disabled>Check data</button><button class="btn" type="button" id="clearPaste">Clear</button></div>
+    </div>
+    <div id="report"></div>
+  </section>
+
+  <section class="panel" id="panel-trk" role="tabpanel" aria-labelledby="tab-trk" hidden>
+    <div class="strip" id="tStrip"></div>
+    <div id="tBanner"></div>
+
+    <div class="card">
+      <h2>Race distance calculator</h2>
+      <p class="sub">Choose a layout, then work out the total distance from a lap count, or the lap count for a target distance. Nothing is pre-filled.</p>
+      <div class="field grow"><label for="cLayout">Track layout</label><select id="cLayout"><option value="">Choose a layout</option></select></div>
+      <div class="calc">
+        <div>
+          <h3>Laps to distance</h3>
+          <div class="field"><label for="cLaps">Number of laps</label><input id="cLaps" type="number" inputmode="numeric" min="1" step="1"></div>
+          <div class="result" id="calcA" aria-live="polite"></div>
+        </div>
+        <div>
+          <h3>Target distance to laps</h3>
+          <div class="row">
+            <div class="field"><label for="cTarget">Target distance</label><input id="cTarget" type="number" inputmode="decimal" min="0" step="any"></div>
+            <div class="field"><label for="cUnit">Unit</label><select id="cUnit"><option value="">Choose</option><option value="km">km</option><option value="mi">miles</option></select></div>
+          </div>
+          <div class="result" id="calcB" aria-live="polite"></div>
+        </div>
+      </div>
+      <p class="explain">Lap lengths come from the imported file, to 0.01 km. Miles are worked out from km (1 mi = 1.609344 km) and shown to 2 decimals. Totals use the stored lap length, so they carry that rounding.</p>
+    </div>
+
+    <div class="filters">
+      <div class="row">
+        <div class="field grow"><label for="tq">Search venue, layout, location or country</label><input id="tq" type="search" autocomplete="off"></div>
+        <div class="field"><label for="tVenue">Venue</label><select id="tVenue"></select></div>
+        <div class="field"><label for="tCountry">Country</label><select id="tCountry"></select></div>
+        <div class="field"><label for="tRev">Direction</label><select id="tRev"><option value="">All layouts</option><option value="only">Reverse only</option><option value="none">Forward only</option></select></div>
+        <button class="btn" type="button" id="tReset">Clear filters</button>
+      </div>
+    </div>
+    <div class="tablebar"><div class="count" id="tCount" aria-live="polite"></div></div>
+    <div class="tablewrap"><table><thead id="tHead"></thead><tbody id="tBody"></tbody></table></div>
+
+    <div class="card">
+      <h2>Import tracks</h2>
+      <p class="sub">Use the FM23Data track CSV. It can have a header row or none. Nothing changes in the track list until you approve it, and nothing leaves your browser.</p>
+      <div class="field"><label for="tFile">CSV file</label><input id="tFile" type="file" accept=".csv,.txt,text/csv,text/plain"></div>
+      <div class="field"><label for="tPaste">or paste CSV text</label><textarea id="tPaste" spellcheck="false" placeholder="860,Brands Hatch,Brands Hatch,gbr,Grand Prix Circuit,3.92,..."></textarea></div>
+      <div class="actions"><button class="btn primary" type="button" id="tCheck" disabled>Check data</button><button class="btn" type="button" id="tClearPaste">Clear</button></div>
+    </div>
+    <div id="tReport"></div>
+  </section>
+
+  <section class="panel" id="panel-bld" role="tabpanel" aria-labelledby="tab-bld" hidden>
+    <div class="note">Every part starts as Required, Stock tier, like a stock car in the game's shop. Change the parts you want to allow upgrades on. A part set back to "Not set" is left out of what racers see. The tabs and parts come from your screenshots of the in-game Upgrade Shop. Not every car has every part or tier, and this page cannot check that for you.</div>
+    <div class="card">
+      <h2>Create a build spec</h2>
+      <div class="row">
+        <div class="field grow"><label for="bCarQ">Find a car</label><input id="bCarQ" type="search" autocomplete="off" placeholder="make, model or year"></div>
+        <div class="field grow"><label for="bCar">Car</label><select id="bCar"></select></div>
+        <button class="btn primary" type="button" id="bAdd">Create build spec</button>
+      </div>
+      <p class="explain" id="bCarHint"></p>
+    </div>
+    <div class="card"><h2>Build specs</h2><div id="bList"></div></div>
+    <div id="bEditorWrap" class="panel" hidden>
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <div class="seg" id="bMode">
+          <button type="button" data-m="edit" aria-pressed="true">Edit</button>
+          <button type="button" data-m="view" aria-pressed="false">What racers see</button>
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" id="bStockAll">Set unset parts to Stock</button>
+          <button class="btn" type="button" id="bDelete">Delete this build spec</button>
+        </div>
+      </div>
+      <div id="bEditor" class="panel"></div>
+    </div>
+  </section>
+</div>
+
+<div id="drawerHost"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORE_KEY = "fcm.catalogue.v1";
+
+  /* Field definitions. Aliases are matched after lowercasing and removing every non-alphanumeric character. */
+  var FIELDS = [
+    { key: "ordinal", label: "Ordinal", aliases: ["ordinal", "carordinal"], type: "int", required: true },
+    { key: "make", label: "Make", aliases: ["make"], type: "str", required: true },
+    { key: "model", label: "Model", aliases: ["model", "name"], type: "str", required: true },
+    { key: "year", label: "Year", aliases: ["year"], type: "int", required: true },
+    { key: "nickname", label: "Nickname", aliases: ["nickname"], type: "str" },
+    { key: "division", label: "Division", aliases: ["division"], type: "str", required: true },
+    { key: "country", label: "Country", aliases: ["country", "countrycode"], type: "str" },
+    { key: "pi", label: "PI", aliases: ["pi"], type: "int", required: true },
+    { key: "speed", label: "Speed rating", aliases: ["s", "speed"], type: "num" },
+    { key: "braking", label: "Braking rating", aliases: ["b", "braking"], type: "num" },
+    { key: "handling", label: "Handling rating", aliases: ["h", "handling"], type: "num" },
+    { key: "accel", label: "Acceleration rating", aliases: ["a", "acceleration"], type: "num" },
+    { key: "kw", label: "Power kW", aliases: ["pwrkw", "powerkw"], type: "num" },
+    { key: "ps", label: "Power PS", aliases: ["pwrps", "powerps"], type: "num" },
+    { key: "hp", label: "Power hp", aliases: ["pwrhp", "powerhp"], type: "num" },
+    { key: "kg", label: "Mass kg", aliases: ["masskg"], type: "num" },
+    { key: "lb", label: "Mass lb", aliases: ["masslb"], type: "num" },
+    { key: "nm", label: "Torque N·m", aliases: ["trqnm", "torquenm"], type: "num" },
+    { key: "ftlb", label: "Torque ft·lb", aliases: ["trqftlb", "torqueftlb"], type: "num" },
+    { key: "drivetrain", label: "Drivetrain", aliases: ["drvtr", "drivetrain"], type: "str" },
+    { key: "enginePos", label: "Engine position", aliases: ["engpos", "engineposition"], type: "str" },
+    { key: "disp", label: "Displacement L", aliases: ["dsp", "displacementl", "displacement"], type: "num" },
+    { key: "cfg", label: "Engine layout", aliases: ["cfg", "engineconfiguration"], type: "str" },
+    { key: "cyl", label: "Cylinders", aliases: ["cyl", "cylinders"], type: "int" },
+    { key: "ind", label: "Induction", aliases: ["ind", "induction"], type: "str" },
+    { key: "type", label: "Model type", aliases: ["type", "modeltype"], type: "str" },
+    { key: "doors", label: "Body / doors", aliases: ["doors", "cockpit"], type: "str" },
+    { key: "topless", label: "Topless", aliases: ["topless", "istopless"], type: "bool" },
+    { key: "steer", label: "Steering position", aliases: ["steerpos", "driverposition"], type: "str" }
+  ];
+  var FIELD_BY_KEY = {};
+  FIELDS.forEach(function (f) { FIELD_BY_KEY[f.key] = f; });
+
+  var SAMPLE_CSV = [
+    "Ordinal,Make,Model,Year,Nickname,Division,Country,PI,S,B,H,A,Pwr kW, Pwr PS,Pwr hp,Mass kg,Mass lb,Trq N.m,Trq ft-lb,Drvtr.,Eng.pos.,Dsp.,Cfg.,Cyl.,Ind.,Type,Doors,Topless,Steer.pos.",
+    "2740,Abarth,124 Spider,2017,Abarth 124 '17,Modern Sport Compact,ITA,360,2.1,2.3,2.4,2.2,123,167,165,1124,2478,250,184,RWD,F,1.4,I,4,T,Road,True,L,Door23",
+    "3767,Acura,NSX Type S,2022,Acura NSX '22,Modern Sport GT,USA,737,6.1,3.7,3.3,6.3,447,608,599,1770,3902,668,493,AWD,Dual,3.5,V,6,TT,Road,False,L,Door23",
+    "3420,Acura,#6 ARX-05 DPi,2020,Acura #6 ARX-05,Forza Proto-H,USA,943,6,9.5,9.6,7.7,447,608,599,986,2174,678,500,RWD,MR,3.5,V,6,TT,Race,False,L,Closed",
+    "3240,Acura,#36 NSX GT3,2018,Acura #36 NSX,Forza GT3,USA,819,4.7,6.7,6.9,6.3,389,529,522,1320,2910,550,406,RWD,MR,3.5,V,6,TT,Race,False,L,Door23",
+    "2352,Acura,NSX,2017,Acura NSX '17,Modern Sport GT,USA,731,5.2,3.8,3.3,6.1,427,581,573,1725,3803,845,623,AWD,MR,3.5,V,6,TT,Road,False,L,Door23",
+    "368,Acura,Integra Type R,2001,Acura ITR '01,Early Sport Compact,USA,338,3.3,1.5,1.9,2,145,197,194,1197,2639,176,130,FWD,F,1.8,I,4,NA,Road,False,L,Door23",
+    "2542,Alfa Romeo,Giulia Quadrifoglio,2017,Alfa Giulia '17,Modern Sport Touring,ITA,632,5.8,3.5,3.1,4.5,377,513,506,1734,3823,600,443,RWD,F,2.9,V,6,TT,Road,False,L,Door45",
+    "2038,Alfa Romeo,4C,2014,Alfa Romeo 4C,Modern Sport Coupe,ITA,522,3.1,2.9,3.1,3.5,179,243,240,1128,2487,323,238,RWD,MR,1.7,I,4,T,Road,False,L,Door23",
+    "1325,Alfa Romeo,Giulietta Quadrifoglio Verde,2011,AR Giulietta 11,Modern Hot Hatch,ITA,387,2.8,1.8,2.1,2.4,172,234,231,1320,2910,340,251,FWD,F,1.7,I,4,T,Road,False,L,Door23",
+    "1150,Alfa Romeo,Giulia Sprint GTA Stradale,1965,AR GTA '65,Vintage Sport Compact,ITA,263,1,1,1,1.8,86,117,115,794,1750,142,105,RWD,F,1.6,I,4,NA,Road,False,L,Door23"
+  ].join("\n");
+
+  var $ = function (s) { return document.querySelector(s); };
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmt(n, d) {
+    if (n == null || isNaN(n)) return "";
+    return Number(n).toLocaleString("en-US", { maximumFractionDigits: d == null ? 0 : d, minimumFractionDigits: 0 });
+  }
+
+  /* ---------- CSV parsing ---------- */
+  function parseCSV(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    var rows = [], row = [], f = "", q = false, i, c;
+    for (i = 0; i < text.length; i++) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+        else f += c;
+      } else if (c === '"' && f === "") q = true;
+      else if (c === ",") { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(f); f = ""; rows.push(row); row = [];
+      } else f += c;
+    }
+    if (f !== "" || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return !(r.length === 1 && r[0].trim() === ""); });
+  }
+
+  /* ---------- Analysis ---------- */
+  function analyze(text) {
+    var table = parseCSV(text);
+    if (table.length < 2) return { fatal: "No data rows found. The first line must be the header row, followed by one line per car." };
+    var header = table[0].map(function (h) { return h.trim(); });
+    var norm = header.map(function (h) { return h.toLowerCase().replace(/[^a-z0-9]/g, ""); });
+    var map = {}, used = {};
+    FIELDS.forEach(function (f) {
+      var idx = -1, n;
+      for (n = 0; n < norm.length; n++) {
+        if (!used[n] && f.aliases.indexOf(norm[n]) >= 0) { idx = n; break; }
+      }
+      if (idx >= 0) { map[f.key] = idx; used[idx] = true; }
+    });
+    var unmapped = header.filter(function (h, i) { return !used[i]; });
+    var missingRequired = FIELDS.filter(function (f) { return f.required && map[f.key] === undefined; });
+
+    var issues = {};
+    function add(code, level, label, row, detail) {
+      if (!issues[code]) issues[code] = { level: level, label: label, rows: [] };
+      issues[code].rows.push({ row: row, detail: detail });
+    }
+
+    var cars = [], seenOrd = {}, seenKey = {}, r, cells, rowNo, car, skip, perRowOk;
+    for (r = 1; r < table.length; r++) {
+      cells = table[r]; rowNo = r + 1;
+      if (cells.length !== header.length) {
+        add("width", "error", "Row has a different number of cells than the header (row skipped)", rowNo, cells.length + " vs " + header.length);
+        continue;
+      }
+      car = {}; skip = false;
+      FIELDS.forEach(function (f) {
+        var i = map[f.key];
+        if (i === undefined) { car[f.key] = null; return; }
+        var v = cells[i].trim();
+        if (v === "") {
+          car[f.key] = null;
+          if (f.required) { add("blank:" + f.key, "error", f.label + " is blank (row skipped)", rowNo); skip = true; }
+          else if (f.key !== "nickname") add("blank:" + f.key, "warn", f.label + " is blank", rowNo);
+          return;
+        }
+        if (f.type === "int" || f.type === "num") {
+          var n = Number(v);
+          if (!isFinite(n)) {
+            car[f.key] = null;
+            add("nan:" + f.key, f.required ? "error" : "warn", f.label + " is not a number" + (f.required ? " (row skipped)" : " (left blank)"), rowNo, v);
+            if (f.required) skip = true;
+          } else {
+            car[f.key] = n;
+            if (f.type === "int" && n !== Math.round(n)) add("int:" + f.key, "warn", f.label + " should be a whole number", rowNo, v);
+          }
+        } else if (f.type === "bool") {
+          if (/^(true|1|yes)$/i.test(v)) car[f.key] = true;
+          else if (/^(false|0|no)$/i.test(v)) car[f.key] = false;
+          else { car[f.key] = null; add("bool:" + f.key, "warn", f.label + " is not True/False (left blank)", rowNo, v); }
+        } else car[f.key] = v;
+      });
+      if (skip) continue;
+
+      if (seenOrd[car.ordinal] !== undefined) {
+        add("dupOrd", "error", "Duplicate ordinal (later row skipped)", rowNo, "ordinal " + car.ordinal + ", first at row " + seenOrd[car.ordinal]);
+        continue;
+      }
+      seenOrd[car.ordinal] = rowNo;
+      var key = (car.make + "|" + car.model + "|" + car.year).toLowerCase();
+      if (seenKey[key] !== undefined) add("dupKey", "warn", "Same make, model and year as an earlier row", rowNo, car.make + " " + car.model + " " + car.year + ", first at row " + seenKey[key]);
+      else seenKey[key] = rowNo;
+
+      if (car.year != null && (car.year < 1885 || car.year > 2035)) add("range:year", "warn", "Year outside 1885–2035", rowNo, car.year);
+      if (car.pi != null && (car.pi < 100 || car.pi > 999)) add("range:pi", "warn", "PI outside 100–999", rowNo, car.pi);
+      ["speed", "braking", "handling", "accel"].forEach(function (k) {
+        if (car[k] != null && (car[k] < 0 || car[k] > 10)) add("range:" + k, "warn", FIELD_BY_KEY[k].label + " outside 0–10", rowNo, car[k]);
+      });
+      if (car.drivetrain && ["RWD", "AWD", "FWD"].indexOf(car.drivetrain) < 0) add("drive", "warn", "Drivetrain is not RWD, AWD or FWD", rowNo, car.drivetrain);
+
+      function conv(a, b, k, tolPct, minAbs, label) {
+        if (car[a] == null || car[b] == null) return;
+        var exp = car[a] * k;
+        if (Math.abs(exp - car[b]) > Math.max(minAbs, exp * tolPct)) add("unit:" + label, "warn", "Units disagree: " + label, rowNo, car[a] + " " + a + " ≈ " + fmt(exp, 1) + " expected, file has " + car[b] + " " + b);
+      }
+      conv("kw", "hp", 1.34102, 0.03, 3, "kW vs hp");
+      conv("kw", "ps", 1.35962, 0.03, 3, "kW vs PS");
+      conv("kg", "lb", 2.20462, 0.015, 4, "kg vs lb");
+      conv("nm", "ftlb", 0.737562, 0.03, 3, "N·m vs ft·lb");
+      cars.push(car);
+    }
+
+    var errors = 0, warns = 0;
+    Object.keys(issues).forEach(function (k) {
+      if (issues[k].level === "error") errors += issues[k].rows.length; else warns += issues[k].rows.length;
+    });
+    return {
+      header: header, map: map, unmapped: unmapped, missingRequired: missingRequired,
+      cars: cars, issues: issues, totalRows: table.length - 1, errors: errors, warns: warns
+    };
+  }
+
+  /* ---------- State ---------- */
+  var state = {
+    cars: [], meta: null,
+    sortKey: "make", sortDir: 1, limit: 100, units: "metric",
+    drives: {}, pending: null, pendingName: ""
+  };
+
+  function loadStore() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && Array.isArray(d.cars) && d.cars.length) { state.cars = d.cars; state.meta = d.meta; return; }
+      }
+    } catch (e) { /* storage unavailable: fall through to sample */ }
+    var a = analyze(SAMPLE_CSV);
+    state.cars = a.cars;
+    state.meta = { source: "Built-in sample (10 rows)", importedAt: null, sample: true };
+  }
+  function saveStore() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ cars: state.cars, meta: state.meta })); return true; }
+    catch (e) { return false; }
+  }
+
+  /* ---------- Derived values ---------- */
+  function powerKw(c) { return c.kw != null ? c.kw : (c.hp != null ? c.hp / 1.34102 : null); }
+  function powerHp(c) { return c.hp != null ? c.hp : (c.kw != null ? c.kw * 1.34102 : null); }
+  function massKg(c) { return c.kg != null ? c.kg : (c.lb != null ? c.lb / 2.20462 : null); }
+  function massLb(c) { return c.lb != null ? c.lb : (c.kg != null ? c.kg * 2.20462 : null); }
+  function power(c) { return state.units === "metric" ? powerKw(c) : powerHp(c); }
+  function mass(c) { return state.units === "metric" ? massKg(c) : massLb(c); }
+
+  var COLS = [
+    { k: "make", l: "Make", get: function (c) { return c.make; } },
+    { k: "model", l: "Model", get: function (c) { return c.model; } },
+    { k: "year", l: "Year", num: true, raw: true, get: function (c) { return c.year; } },
+    { k: "division", l: "Division", get: function (c) { return c.division; } },
+    { k: "class", l: "Class", get: function (c) { return piClass(c.pi) || null; }, sortGet: function (c) { return c.pi; } },
+    { k: "pi", l: "PI", num: true, cls: "pi", get: function (c) { return c.pi; } },
+    { k: "power", l: function () { return state.units === "metric" ? "Power kW" : "Power hp"; }, num: true, get: power },
+    { k: "mass", l: function () { return state.units === "metric" ? "Weight kg" : "Weight lb"; }, num: true, get: mass },
+    { k: "drivetrain", l: "Drive", get: function (c) { return c.drivetrain; } },
+    { k: "speed", l: "Speed", num: true, dec: 1, get: function (c) { return c.speed; } },
+    { k: "braking", l: "Braking", num: true, dec: 1, get: function (c) { return c.braking; } },
+    { k: "handling", l: "Handling", num: true, dec: 1, get: function (c) { return c.handling; } },
+    { k: "accel", l: "Accel", num: true, dec: 1, get: function (c) { return c.accel; } }
+  ];
+
+  /* ---------- Filtering and sorting ---------- */
+  function num(id) { var v = $(id).value.trim(); return v === "" ? null : Number(v); }
+  function filtered() {
+    var q = $("#q").value.trim().toLowerCase();
+    var make = $("#fMake").value, div = $("#fDiv").value, type = $("#fType").value, cls = $("#fClass").value;
+    var yMin = num("#yMin"), yMax = num("#yMax"), piMin = num("#piMin"), piMax = num("#piMax");
+    var pwMin = num("#pwMin"), pwMax = num("#pwMax"), msMin = num("#msMin"), msMax = num("#msMax");
+    var drives = Object.keys(state.drives).filter(function (k) { return state.drives[k]; });
+    var terms = q ? q.split(/\s+/) : [];
+    var out = state.cars.filter(function (c) {
+      if (make && c.make !== make) return false;
+      if (div && c.division !== div) return false;
+      if (type && c.type !== type) return false;
+      if (cls && piClass(c.pi) !== cls) return false;
+      if (drives.length && drives.indexOf(c.drivetrain) < 0) return false;
+      if (yMin != null && (c.year == null || c.year < yMin)) return false;
+      if (yMax != null && (c.year == null || c.year > yMax)) return false;
+      if (piMin != null && (c.pi == null || c.pi < piMin)) return false;
+      if (piMax != null && (c.pi == null || c.pi > piMax)) return false;
+      var p = power(c), m = mass(c);
+      if (pwMin != null && (p == null || p < pwMin)) return false;
+      if (pwMax != null && (p == null || p > pwMax)) return false;
+      if (msMin != null && (m == null || m < msMin)) return false;
+      if (msMax != null && (m == null || m > msMax)) return false;
+      if (terms.length) {
+        var hay = (c.make + " " + c.model + " " + (c.nickname || "") + " " + c.division + " " + (c.year || "")).toLowerCase();
+        for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i]) < 0) return false;
+      }
+      return true;
+    });
+    var col = COLS.filter(function (x) { return x.k === state.sortKey; })[0] || COLS[0];
+    out.sort(function (a, b) {
+      var sg = col.sortGet || col.get, x = sg(a), y = sg(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      var r = (typeof x === "number" && typeof y === "number") ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: "base" });
+      if (r === 0) r = String(a.make + a.model).localeCompare(String(b.make + b.model));
+      return r * state.sortDir;
+    });
+    return out;
+  }
+
+  /* ---------- Rendering: catalogue ---------- */
+  function fillSelect(sel, values, allLabel) {
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">' + esc(allLabel) + "</option>" + values.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + "</option>"; }).join("");
+    if (values.indexOf(cur) >= 0) sel.value = cur;
+  }
+  function uniq(key) {
+    var s = {};
+    state.cars.forEach(function (c) { if (c[key]) s[c[key]] = 1; });
+    return Object.keys(s).sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+  }
+  function renderStatic() {
+    fillSelect($("#fMake"), uniq("make"), "All manufacturers");
+    fillSelect($("#fDiv"), uniq("division"), "All divisions");
+    fillSelect($("#fType"), uniq("type"), "All types");
+    fillSelect($("#fClass"), PI_CLASSES.map(function (x) { return x[0]; }), "All classes");
+    var pis = state.cars.map(function (c) { return c.pi; }).filter(function (v) { return v != null; });
+    var years = state.cars.map(function (c) { return c.year; }).filter(function (v) { return v != null; });
+    var m = state.meta || {};
+    var parts = [
+      "<span><b>" + fmt(state.cars.length) + "</b> cars</span>",
+      "<span><b>" + uniq("make").length + "</b> makes</span>",
+      "<span><b>" + uniq("division").length + "</b> divisions</span>"
+    ];
+    if (pis.length) parts.push("<span>PI <b>" + Math.min.apply(null, pis) + "–" + Math.max.apply(null, pis) + "</b></span>");
+    if (years.length) parts.push("<span>Years <b>" + Math.min.apply(null, years) + "–" + Math.max.apply(null, years) + "</b></span>");
+    parts.push("<span>Source <b>" + esc(m.source || "unknown") + "</b></span>");
+    if (m.importedAt) parts.push("<span>Imported <b>" + esc(new Date(m.importedAt).toLocaleString()) + "</b></span>");
+    $("#strip").innerHTML = parts.join("");
+    $("#banner").innerHTML = m.sample
+      ? '<div class="note warn">This is the 10-row sample built into the page, not the full catalogue. Use the Import tab to load your CSV.</div>'
+      : '<div class="note">Imported data is community-compiled and unverified. Each car keeps its source label until you verify it.</div>';
+    $("#pwrLbl").textContent = state.units === "metric" ? "Power (kW)" : "Power (hp)";
+    $("#massLbl").textContent = state.units === "metric" ? "Weight (kg)" : "Weight (lb)";
+  }
+  function renderHead() {
+    $("#thead").innerHTML = "<tr>" + COLS.map(function (c) {
+      var label = typeof c.l === "function" ? c.l() : c.l;
+      var active = state.sortKey === c.k;
+      var arrow = active ? (state.sortDir === 1 ? "▲" : "▼") : "";
+      return '<th class="' + (c.num ? "num" : "") + '" aria-sort="' + (active ? (state.sortDir === 1 ? "ascending" : "descending") : "none") + '">' +
+        '<button type="button" data-k="' + c.k + '">' + esc(label) + ' <span class="arrow">' + arrow + "</span></button></th>";
+    }).join("") + "</tr>";
+  }
+  var currentRows = [];
+  function renderBody() {
+    currentRows = filtered();
+    var shown = currentRows.slice(0, state.limit);
+    $("#count").textContent = "Showing " + fmt(shown.length) + " of " + fmt(currentRows.length) + " matching cars (" + fmt(state.cars.length) + " in catalogue)";
+    if (!currentRows.length) {
+      $("#tbody").innerHTML = '<tr><td colspan="' + COLS.length + '" class="empty">No cars match these filters.</td></tr>';
+    } else {
+      $("#tbody").innerHTML = shown.map(function (c, i) {
+        return '<tr tabindex="0" data-i="' + i + '">' + COLS.map(function (col) {
+          var v = col.get(c);
+          var txt = v == null ? "" : (typeof v === "number" ? (col.raw ? String(v) : fmt(v, col.dec || 0)) : v);
+          return '<td class="' + (col.num ? "num " : "") + (col.cls || "") + (v == null ? " muted" : "") + '">' + (v == null ? "—" : esc(txt)) + "</td>";
+        }).join("") + "</tr>";
+      }).join("");
+    }
+    var rest = currentRows.length - shown.length;
+    $("#more").hidden = rest <= 0;
+    $("#moreBtn").textContent = "Show " + Math.min(100, rest) + " more (" + fmt(rest) + " hidden)";
+  }
+  function renderAll() { renderStatic(); renderHead(); renderBody(); }
+
+  /* ---------- Detail drawer ---------- */
+  function openDrawer(c) {
+    function row(label, v, suffix) {
+      var has = v != null && v !== "";
+      return '<div class="kvr"><span class="muted">' + esc(label) + "</span><span>" + (has ? esc(typeof v === "number" ? fmt(v, 2) : v) + (suffix || "") : '<span class="muted">blank in source</span>') + "</span></div>";
+    }
+    var topless = c.topless == null ? null : (c.topless ? "Yes" : "No");
+    var html =
+      '<div class="scrim" id="scrim"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="Car details">' +
+      '<header><div><div class="eyebrow">Ordinal ' + esc(c.ordinal) + "</div><h2>" + esc(c.year) + " " + esc(c.make) + " " + esc(c.model) + "</h2>" +
+      (c.nickname ? '<div class="muted">' + esc(c.nickname) + "</div>" : "") +
+      '</div><button class="btn" type="button" id="closeDrawer">Close</button></header>' +
+      group("Classification", row("Forza division", c.division) + row("Model type", c.type) + row("Body / doors", c.doors) + row("Topless", topless) + row("Steering position", c.steer) + row("Country", c.country)) +
+      group("Performance", row("Class", piClass(c.pi) || null) + row("PI", c.pi) + row("Speed", c.speed) + row("Braking", c.braking) + row("Handling", c.handling) + row("Acceleration", c.accel)) +
+      group("Power, weight, torque", row("Power", c.kw, " kW") + row("Power", c.ps, " PS") + row("Power", c.hp, " hp") + row("Weight", c.kg, " kg") + row("Weight", c.lb, " lb") + row("Torque", c.nm, " N·m") + row("Torque", c.ftlb, " ft·lb")) +
+      group("Drivetrain and engine", row("Drivetrain", c.drivetrain) + row("Engine position", c.enginePos) + row("Displacement", c.disp, " L") + row("Layout", c.cfg) + row("Cylinders", c.cyl) + row("Induction", c.ind)) +
+      group("Record status", row("Source", state.meta && state.meta.source) + '<div class="kvr"><span class="muted">Verification</span><span><span class="pill warn">unverified</span></span></div>') +
+      "</aside>";
+    $("#drawerHost").innerHTML = html;
+    $("#closeDrawer").focus();
+  }
+  function group(title, inner) { return '<div class="group"><h3>' + esc(title) + '</h3><div class="kv" style="grid-template-columns:1fr">' + inner.replace(/class="kvr"/g, 'style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line);padding:3px 0"') + "</div></div>"; }
+  function closeDrawer() { $("#drawerHost").innerHTML = ""; }
+
+  /* ---------- Rendering: import report ---------- */
+  function diffAgainstCatalogue(newCars) {
+    var existing = {};
+    state.cars.forEach(function (c) { existing[c.ordinal] = c; });
+    var added = 0, changed = 0, same = 0, examples = [];
+    newCars.forEach(function (c) {
+      var o = existing[c.ordinal];
+      if (!o) { added++; return; }
+      var diffs = FIELDS.filter(function (f) { return o[f.key] !== c[f.key]; });
+      if (diffs.length) {
+        changed++;
+        if (examples.length < 6) examples.push(c.make + " " + c.model + " (" + c.year + "): " + diffs.slice(0, 4).map(function (f) { return f.label + " " + (o[f.key] == null ? "blank" : o[f.key]) + " → " + (c[f.key] == null ? "blank" : c[f.key]); }).join("; "));
+      } else same++;
+    });
+    var incoming = {}; newCars.forEach(function (c) { incoming[c.ordinal] = 1; });
+    var notInFile = state.cars.filter(function (c) { return !incoming[c.ordinal]; }).length;
+    return { added: added, changed: changed, same: same, examples: examples, notInFile: notInFile };
+  }
+  function renderReport() {
+    var a = state.pending, host = $("#report");
+    if (!a) { host.innerHTML = ""; return; }
+    if (a.fatal) { host.innerHTML = '<div class="note err">' + esc(a.fatal) + "</div>"; return; }
+    var blocked = a.missingRequired.length > 0 || a.cars.length === 0;
+    var d = diffAgainstCatalogue(a.cars);
+    var h = '<div class="card"><h2>2. Check results</h2><div class="stats">' +
+      '<span class="pill info">' + fmt(a.totalRows) + " data rows read</span>" +
+      '<span class="pill ' + (a.cars.length === a.totalRows ? "ok" : "warn") + '">' + fmt(a.cars.length) + " importable</span>" +
+      '<span class="pill ' + (a.errors ? "err" : "ok") + '">' + fmt(a.errors) + " errors</span>" +
+      '<span class="pill ' + (a.warns ? "warn" : "ok") + '">' + fmt(a.warns) + " warnings</span></div>";
+    if (a.missingRequired.length) h += '<div class="note err">Required columns not found: ' + esc(a.missingRequired.map(function (f) { return f.label; }).join(", ")) + ". Import is blocked until the file has them.</div>";
+    else if (!a.errors && !a.warns) h += '<div class="note ok">No problems found.</div>';
+
+    h += "<h3>Detected columns</h3><div class='kv'>" + FIELDS.map(function (f) {
+      var i = a.map[f.key];
+      return "<div><span>" + esc(f.label) + (f.required ? " *" : "") + "</span><span>" + (i === undefined ? '<span class="pill ' + (f.required ? "err" : "info") + '">not in file</span>' : esc(a.header[i])) + "</span></div>";
+    }).join("") + "</div>";
+    if (a.unmapped.length) h += '<p class="muted">Columns in the file that the catalogue does not use: ' + esc(a.unmapped.join(", ")) + ".</p>";
+    h += '<p class="muted">* required. Rows missing a required value are skipped. Other blanks stay blank and are never filled in.</p>';
+
+    var keys = Object.keys(a.issues).sort(function (x, y) { return (a.issues[x].level === "error" ? 0 : 1) - (a.issues[y].level === "error" ? 0 : 1) || a.issues[y].rows.length - a.issues[x].rows.length; });
+    if (keys.length) {
+      h += "<h3>Issues</h3>" + keys.map(function (k) {
+        var is = a.issues[k];
+        return '<details class="issue"><summary><span class="pill ' + (is.level === "error" ? "err" : "warn") + '">' + is.level + "</span><span>" + esc(is.label) + '</span><span class="muted">' + fmt(is.rows.length) + " row" + (is.rows.length === 1 ? "" : "s") + "</span></summary><ul>" +
+          is.rows.slice(0, 8).map(function (r) { return "<li>row " + r.row + (r.detail != null && r.detail !== "" ? ": " + esc(r.detail) : "") + "</li>"; }).join("") +
+          (is.rows.length > 8 ? "<li>… and " + (is.rows.length - 8) + " more</li>" : "") + "</ul></details>";
+      }).join("");
+    }
+
+    h += "<h3>Compared with the current catalogue</h3><div class='stats'>" +
+      '<span class="pill ok">' + fmt(d.added) + " new</span><span class=\"pill " + (d.changed ? "warn" : "info") + '">' + fmt(d.changed) + " changed</span><span class=\"pill info\">" + fmt(d.same) + " identical</span><span class=\"pill info\">" + fmt(d.notInFile) + " in catalogue but not in file</span></div>";
+    if (d.examples.length) h += '<ul class="muted" style="font-family:var(--font-data);font-size:12px;margin:6px 0 0;padding-left:18px">' + d.examples.map(function (e) { return "<li>" + esc(e) + "</li>"; }).join("") + "</ul>";
+    if (state.meta && state.meta.sample) h += '<p class="muted">The current catalogue is the built-in sample, so a replace is the usual choice.</p>';
+
+    var sample = a.cars.slice(0, 6);
+    h += "<h3>Preview (first " + sample.length + " importable rows)</h3><div class='tablewrap' style='max-height:none'><table><thead><tr><th>Ordinal</th><th>Make</th><th>Model</th><th>Year</th><th>Division</th><th>Class</th><th class='num'>PI</th><th class='num'>kW</th><th class='num'>kg</th><th>Drive</th></tr></thead><tbody>" +
+      sample.map(function (c) {
+        return "<tr><td class='muted'>" + esc(c.ordinal) + "</td><td>" + esc(c.make) + "</td><td>" + esc(c.model) + "</td><td>" + esc(c.year) + "</td><td>" + esc(c.division) + "</td><td>" + esc(piClass(c.pi) || "—") + "</td><td class='num'>" + esc(c.pi) + "</td><td class='num'>" + esc(c.kw == null ? "—" : c.kw) + "</td><td class='num'>" + esc(c.kg == null ? "—" : c.kg) + "</td><td>" + esc(c.drivetrain || "—") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+
+    h += "<h2>3. Approve</h2><p class=\"sub\">Replace swaps the whole catalogue for this file. Merge updates matching ordinals and adds new ones, and keeps cars that are not in the file.</p>" +
+      '<div class="actions"><button class="btn primary" type="button" id="approveReplace"' + (blocked ? " disabled" : "") + ">Approve and replace catalogue</button>" +
+      '<button class="btn" type="button" id="approveMerge"' + (blocked ? " disabled" : "") + ">Approve and merge</button>" +
+      '<button class="btn" type="button" id="discard">Discard</button></div></div>';
+    host.innerHTML = h;
+  }
+
+  function approve(mode) {
+    var a = state.pending;
+    if (!a || a.fatal) return;
+    var prev = { cars: state.cars, meta: state.meta };
+    if (mode === "replace" || (state.meta && state.meta.sample)) state.cars = a.cars.slice();
+    else {
+      var byOrd = {}; state.cars.forEach(function (c) { byOrd[c.ordinal] = c; });
+      a.cars.forEach(function (c) { byOrd[c.ordinal] = c; });
+      state.cars = Object.keys(byOrd).map(function (k) { return byOrd[k]; });
+    }
+    state.meta = { source: state.pendingName || "Pasted CSV text", importedAt: new Date().toISOString(), sample: false };
+    var ok = saveStore();
+    state.pending = null; $("#report").innerHTML = "";
+    $("#paste").value = ""; $("#check").disabled = true;
+    switchTab("cat");
+    renderAll();
+    toast(ok ? fmt(state.cars.length) + " cars in the catalogue and saved in this browser." : fmt(state.cars.length) + " cars loaded, but this browser blocked saving. They will be gone when you close the page.");
+  }
+
+  /* ---------- UI plumbing ---------- */
+  var toastTimer;
+  function toast(msg) {
+    var t = $("#toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 5000);
+  }
+  function switchTab(which) {
+    ["cat", "imp", "trk", "bld"].forEach(function (k) {
+      $("#tab-" + k).setAttribute("aria-selected", k === which);
+      $("#panel-" + k).hidden = k !== which;
+    });
+  }
+  function resetFilters() {
+    ["#q", "#yMin", "#yMax", "#piMin", "#piMax", "#pwMin", "#pwMax", "#msMin", "#msMax"].forEach(function (id) { $(id).value = ""; });
+    ["#fMake", "#fDiv", "#fType", "#fClass"].forEach(function (id) { $(id).value = ""; });
+    state.drives = {};
+    document.querySelectorAll("#fDrive .chip").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+    state.limit = 100;
+    renderBody();
+  }
+  function runCheck() {
+    var text = $("#paste").value;
+    if (!text.trim()) return;
+    state.pending = analyze(text);
+    renderReport();
+    var el = $("#report"); if (el.scrollIntoView) el.scrollIntoView({ block: "start" });
+  }
+  function readFile(file) {
+    if (!file) return;
+    var fr = new FileReader();
+    fr.onload = function () {
+      $("#paste").value = String(fr.result);
+      state.pendingName = file.name;
+      $("#check").disabled = false;
+      runCheck();
+    };
+    fr.onerror = function () { toast("Could not read that file. Try pasting its text instead."); };
+    fr.readAsText(file);
+  }
+
+  /* ---------- Tracks ---------- */
+  var TRACK_KEY = "fcm.tracks.v1";
+  var KM_PER_MI = 1.609344;
+  var tState = { tracks: [], meta: null, sortKey: "venue", sortDir: 1, pending: null, pendingName: "" };
+  var T_ALIASES = {
+    ordinal: ["ordinal", "trackordinal", "id"],
+    venue: ["venue", "environmentname", "environment"],
+    location: ["location"],
+    country: ["country", "countrycode"],
+    layout: ["layout", "layoutname", "trackname"],
+    km: ["lengthkm", "length", "km"]
+  };
+  var T_LABEL = { ordinal: "Ordinal", venue: "Venue", location: "Location", country: "Country", layout: "Layout", km: "Lap length (km)" };
+  var tCurrent = [];
+
+  function d2(n) { return Number(n).toFixed(2); }
+  function loadTracks() {
+    try {
+      var raw = localStorage.getItem(TRACK_KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && Array.isArray(d.tracks)) { tState.tracks = d.tracks; tState.meta = d.meta; }
+      }
+    } catch (e) { /* storage unavailable: start empty */ }
+  }
+  function saveTracks() {
+    try { localStorage.setItem(TRACK_KEY, JSON.stringify({ tracks: tState.tracks, meta: tState.meta })); return true; }
+    catch (e) { return false; }
+  }
+
+  function analyzeTracks(text) {
+    var table = parseCSV(text);
+    if (!table.length) return { fatal: "No rows found. Pick the track CSV or paste its text." };
+    var first = table[0];
+    var hasHeader = !/^\s*-?\d+\s*$/.test(first[0] || "");
+    var map = {}, header = [], rows, unused = [], i;
+    if (hasHeader) {
+      header = first.map(function (h) { return h.trim(); });
+      var norm = header.map(function (h) { return h.toLowerCase().replace(/[^a-z0-9]/g, ""); });
+      var used = {};
+      Object.keys(T_ALIASES).forEach(function (key) {
+        for (var n = 0; n < norm.length; n++) {
+          if (!used[n] && T_ALIASES[key].indexOf(norm[n]) >= 0) { map[key] = n; used[n] = true; break; }
+        }
+      });
+      header.forEach(function (h, n) { if (!used[n]) unused.push(h); });
+      rows = table.slice(1);
+    } else {
+      map = { ordinal: 0, venue: 1, location: 2, country: 3, layout: 4, km: 5 };
+      for (i = 6; i < first.length; i++) unused.push("column " + (i + 1));
+      rows = table;
+    }
+    var missing = ["ordinal", "venue", "layout", "km"].filter(function (k) { return map[k] === undefined; });
+    var out = { hasHeader: hasHeader, map: map, header: header, unused: unused, missing: missing, tracks: [], issues: {}, total: rows.length, errors: 0, warns: 0 };
+    if (missing.length) return out;
+
+    var need = Math.max.apply(null, Object.keys(map).map(function (k) { return map[k]; })) + 1;
+    var startRow = hasHeader ? 2 : 1;
+    function add(code, level, label, row, detail) {
+      if (!out.issues[code]) out.issues[code] = { level: level, label: label, rows: [] };
+      out.issues[code].rows.push({ row: row, detail: detail });
+    }
+    var seenOrd = {}, seenName = {};
+    rows.forEach(function (cells, idx) {
+      var rowNo = idx + startRow;
+      if (cells.length < need) { add("short", "error", "Row has too few cells (row skipped)", rowNo, cells.length + " cells, need " + need); return; }
+      function g(key) { return map[key] === undefined ? "" : String(cells[map[key]] || "").trim(); }
+      var ord = Number(g("ordinal")), venue = g("venue"), layout = g("layout"), km = Number(g("km"));
+      if (g("ordinal") === "" || !isFinite(ord) || ord !== Math.floor(ord)) { add("ord", "error", "Ordinal is not a whole number (row skipped)", rowNo, g("ordinal")); return; }
+      if (!venue) { add("venue", "error", "Venue is blank (row skipped)", rowNo); return; }
+      if (!layout) { add("layout", "error", "Layout name is blank (row skipped)", rowNo); return; }
+      if (g("km") === "" || !isFinite(km) || km <= 0) { add("km", "error", "Lap length is missing or not a positive number (row skipped)", rowNo, g("km")); return; }
+      if (seenOrd[ord] !== undefined) { add("dupOrd", "error", "Duplicate ordinal (later row skipped)", rowNo, "ordinal " + ord + ", first at row " + seenOrd[ord]); return; }
+      seenOrd[ord] = rowNo;
+      var nameKey = (venue + "|" + layout).toLowerCase();
+      if (seenName[nameKey] !== undefined) add("dupName", "warn", "Same venue and layout name as an earlier row", rowNo, venue + " / " + layout + ", first at row " + seenName[nameKey]);
+      else seenName[nameKey] = rowNo;
+      if (km < 0.5 || km > 60) add("range", "warn", "Lap length outside 0.5–60 km", rowNo, km + " km");
+      var loc = g("location"), cty = g("country").toUpperCase();
+      if (!loc) add("noLoc", "warn", "Location is blank", rowNo);
+      if (!cty) add("noCty", "warn", "Country is blank", rowNo);
+      out.tracks.push({ ordinal: ord, venue: venue, location: loc || null, country: cty || null, layout: layout, km: km, reverse: /\breverse\b/i.test(layout) });
+    });
+
+    out.tracks.forEach(function (t) {
+      if (!t.reverse) return;
+      var base = t.layout.replace(/\s*reverse\s*$/i, "").trim().toLowerCase();
+      var b = out.tracks.filter(function (o) { return o.venue === t.venue && !o.reverse && o.layout.toLowerCase() === base; })[0];
+      if (!b) add("noBase", "warn", "Reverse layout has no matching forward layout", seenOrd[t.ordinal], t.venue + " / " + t.layout);
+      else if (Math.abs(b.km - t.km) > 0.01) add("revLen", "warn", "Reverse length differs from its forward layout", seenOrd[t.ordinal], t.layout + " " + t.km + " km vs " + b.km + " km");
+    });
+
+    Object.keys(out.issues).forEach(function (k) {
+      if (out.issues[k].level === "error") out.errors += out.issues[k].rows.length; else out.warns += out.issues[k].rows.length;
+    });
+    return out;
+  }
+
+  function tDiff(newT) {
+    var ex = {}; tState.tracks.forEach(function (t) { ex[t.ordinal] = t; });
+    var added = 0, changed = 0, same = 0, examples = [], inc = {};
+    newT.forEach(function (t) {
+      inc[t.ordinal] = 1;
+      var o = ex[t.ordinal];
+      if (!o) { added++; return; }
+      var f = ["venue", "location", "country", "layout", "km"].filter(function (k) { return o[k] !== t[k]; });
+      if (f.length) {
+        changed++;
+        if (examples.length < 6) examples.push(t.venue + " / " + t.layout + ": " + f.map(function (k) { return T_LABEL[k] + " " + (o[k] == null ? "blank" : o[k]) + " → " + (t[k] == null ? "blank" : t[k]); }).join("; "));
+      } else same++;
+    });
+    var notInFile = tState.tracks.filter(function (t) { return !inc[t.ordinal]; }).length;
+    return { added: added, changed: changed, same: same, examples: examples, notInFile: notInFile };
+  }
+
+  function renderTrackReport() {
+    var a = tState.pending, host = $("#tReport");
+    if (!a) { host.innerHTML = ""; return; }
+    if (a.fatal) { host.innerHTML = '<div class="note err">' + esc(a.fatal) + "</div>"; return; }
+    var blocked = a.missing.length > 0 || a.tracks.length === 0;
+    var d = tDiff(a.tracks);
+    var venues = {}, rev = 0;
+    a.tracks.forEach(function (t) { venues[t.venue] = 1; if (t.reverse) rev++; });
+    var h = '<div class="card"><h2>Track check results</h2><div class="stats">' +
+      '<span class="pill info">' + fmt(a.total) + " data rows read</span>" +
+      '<span class="pill ' + (a.tracks.length === a.total ? "ok" : "warn") + '">' + fmt(a.tracks.length) + " importable</span>" +
+      '<span class="pill info">' + Object.keys(venues).length + " venues</span>" +
+      '<span class="pill info">' + rev + " reverse layouts</span>" +
+      '<span class="pill ' + (a.errors ? "err" : "ok") + '">' + fmt(a.errors) + " errors</span>" +
+      '<span class="pill ' + (a.warns ? "warn" : "ok") + '">' + fmt(a.warns) + " warnings</span></div>";
+    if (a.missing.length) h += '<div class="note err">Required columns not found: ' + esc(a.missing.map(function (k) { return T_LABEL[k]; }).join(", ")) + ". Import is blocked until the file has them.</div>";
+    else if (!a.errors && !a.warns) h += '<div class="note ok">No problems found.</div>';
+    h += "<h3>Detected columns</h3><div class='kv'>" + Object.keys(T_LABEL).map(function (k) {
+      var i = a.map[k];
+      var shown = i === undefined ? '<span class="pill err">not in file</span>' : esc(a.hasHeader ? a.header[i] : "column " + (i + 1));
+      return "<div><span>" + esc(T_LABEL[k]) + "</span><span>" + shown + "</span></div>";
+    }).join("") + "</div>";
+    if (!a.hasHeader) h += '<p class="muted">No header row was found, so the FM23Data column order was assumed: ordinal, venue, location, country, layout, lap length in km.</p>';
+    if (a.unused.length) h += '<p class="muted">Not used: ' + esc(a.unused.join(", ")) + ". These columns are not documented, so they are ignored.</p>";
+
+    var keys = Object.keys(a.issues).sort(function (x, y) { return (a.issues[x].level === "error" ? 0 : 1) - (a.issues[y].level === "error" ? 0 : 1) || a.issues[y].rows.length - a.issues[x].rows.length; });
+    if (keys.length) {
+      h += "<h3>Issues</h3>" + keys.map(function (k) {
+        var is = a.issues[k];
+        return '<details class="issue"><summary><span class="pill ' + (is.level === "error" ? "err" : "warn") + '">' + is.level + "</span><span>" + esc(is.label) + '</span><span class="muted">' + fmt(is.rows.length) + " row" + (is.rows.length === 1 ? "" : "s") + "</span></summary><ul>" +
+          is.rows.slice(0, 8).map(function (r) { return "<li>row " + r.row + (r.detail != null && r.detail !== "" ? ": " + esc(r.detail) : "") + "</li>"; }).join("") +
+          (is.rows.length > 8 ? "<li>… and " + (is.rows.length - 8) + " more</li>" : "") + "</ul></details>";
+      }).join("");
+    }
+    h += "<h3>Compared with the current track list</h3><div class='stats'>" +
+      '<span class="pill ok">' + fmt(d.added) + " new</span><span class=\"pill " + (d.changed ? "warn" : "info") + '">' + fmt(d.changed) + " changed</span><span class=\"pill info\">" + fmt(d.same) + " identical</span><span class=\"pill info\">" + fmt(d.notInFile) + " in list but not in file</span></div>";
+    if (d.examples.length) h += '<ul class="muted" style="font-family:var(--font-data);font-size:12px;margin:6px 0 0;padding-left:18px">' + d.examples.map(function (e) { return "<li>" + esc(e) + "</li>"; }).join("") + "</ul>";
+
+    var sample = a.tracks.slice(0, 8);
+    h += "<h3>Preview (first " + sample.length + " importable rows)</h3><div class='tablewrap' style='max-height:none'><table><thead><tr><th><span style='display:block;padding:9px 10px'>Ordinal</span></th><th><span style='display:block;padding:9px 10px'>Venue</span></th><th><span style='display:block;padding:9px 10px'>Layout</span></th><th><span style='display:block;padding:9px 10px'>Country</span></th><th class='num'><span style='display:block;padding:9px 10px'>km</span></th></tr></thead><tbody>" +
+      sample.map(function (t) {
+        return "<tr><td class='muted'>" + esc(t.ordinal) + "</td><td>" + esc(t.venue) + "</td><td>" + esc(t.layout) + "</td><td>" + esc(t.country || "—") + "</td><td class='num'>" + d2(t.km) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+    h += "<h2>Approve</h2><p class=\"sub\">Replace swaps the whole track list for this file. Merge updates matching ordinals and adds new ones, and keeps tracks that are not in the file. Every imported length is marked unverified.</p>" +
+      '<div class="actions"><button class="btn primary" type="button" id="tApproveReplace"' + (blocked ? " disabled" : "") + ">Approve and replace track list</button>" +
+      '<button class="btn" type="button" id="tApproveMerge"' + (blocked ? " disabled" : "") + ">Approve and merge</button>" +
+      '<button class="btn" type="button" id="tDiscard">Discard</button></div></div>';
+    host.innerHTML = h;
+  }
+
+  function approveTracks(mode) {
+    var a = tState.pending;
+    if (!a || a.fatal) return;
+    if (mode === "replace" || !tState.tracks.length) tState.tracks = a.tracks.slice();
+    else {
+      var by = {}; tState.tracks.forEach(function (t) { by[t.ordinal] = t; });
+      a.tracks.forEach(function (t) { by[t.ordinal] = t; });
+      tState.tracks = Object.keys(by).map(function (k) { return by[k]; });
+    }
+    tState.meta = { source: tState.pendingName || "Pasted CSV text", importedAt: new Date().toISOString() };
+    var ok = saveTracks();
+    tState.pending = null; $("#tReport").innerHTML = ""; $("#tPaste").value = ""; $("#tCheck").disabled = true;
+    renderTracks();
+    toast(ok ? fmt(tState.tracks.length) + " track layouts loaded and saved in this browser." : fmt(tState.tracks.length) + " track layouts loaded, but this browser blocked saving.");
+  }
+
+  var TCOLS = [
+    { k: "venue", l: "Venue", get: function (t) { return t.venue; } },
+    { k: "layout", l: "Layout", get: function (t) { return t.layout; } },
+    { k: "country", l: "Country", get: function (t) { return t.country; } },
+    { k: "km", l: "Length km", num: true, get: function (t) { return t.km; }, show: d2 },
+    { k: "mi", l: "Length mi", num: true, get: function (t) { return t.km / KM_PER_MI; }, show: d2 },
+    { k: "reverse", l: "Reverse", get: function (t) { return t.reverse ? "Reverse" : ""; } },
+    { k: "status", l: "Status", nosort: true }
+  ];
+  function tUniq(key) {
+    var s = {};
+    tState.tracks.forEach(function (t) { if (t[key]) s[t[key]] = 1; });
+    return Object.keys(s).sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+  }
+  function fillLayoutSelect() {
+    var sel = $("#cLayout"), cur = sel.value, by = {};
+    tState.tracks.forEach(function (t) { (by[t.venue] = by[t.venue] || []).push(t); });
+    var venues = Object.keys(by).sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+    sel.innerHTML = '<option value="">Choose a layout</option>' + venues.map(function (v) {
+      return '<optgroup label="' + esc(v) + '">' + by[v].sort(function (a, b) { return a.layout.localeCompare(b.layout); }).map(function (t) {
+        return '<option value="' + t.ordinal + '">' + esc(t.layout) + " · " + d2(t.km) + " km</option>";
+      }).join("") + "</optgroup>";
+    }).join("");
+    sel.value = cur;
+  }
+  function renderTrackHead() {
+    $("#tHead").innerHTML = "<tr>" + TCOLS.map(function (c) {
+      if (c.nosort) return "<th><span style='display:block;padding:9px 10px'>" + esc(c.l) + "</span></th>";
+      var active = tState.sortKey === c.k;
+      return '<th class="' + (c.num ? "num" : "") + '" aria-sort="' + (active ? (tState.sortDir === 1 ? "ascending" : "descending") : "none") + '"><button type="button" data-k="' + c.k + '"' + (c.k === "mi" ? ' title="Derived from km"' : "") + ">" + esc(c.l) + ' <span class="arrow">' + (active ? (tState.sortDir === 1 ? "▲" : "▼") : "") + "</span></button></th>";
+    }).join("") + "</tr>";
+  }
+  function filteredTracks() {
+    var q = $("#tq").value.trim().toLowerCase(), v = $("#tVenue").value, c = $("#tCountry").value, r = $("#tRev").value;
+    var terms = q ? q.split(/\s+/) : [];
+    var out = tState.tracks.filter(function (t) {
+      if (v && t.venue !== v) return false;
+      if (c && t.country !== c) return false;
+      if (r === "only" && !t.reverse) return false;
+      if (r === "none" && t.reverse) return false;
+      if (terms.length) {
+        var hay = (t.venue + " " + t.layout + " " + (t.location || "") + " " + (t.country || "")).toLowerCase();
+        for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i]) < 0) return false;
+      }
+      return true;
+    });
+    var col = TCOLS.filter(function (x) { return x.k === tState.sortKey; })[0] || TCOLS[0];
+    out.sort(function (a, b) {
+      var x = col.get(a), y = col.get(b), r2;
+      if (typeof x === "number" && typeof y === "number") r2 = x - y;
+      else r2 = String(x || "").localeCompare(String(y || ""), undefined, { numeric: true, sensitivity: "base" });
+      if (r2 === 0) r2 = a.venue.localeCompare(b.venue) || a.layout.localeCompare(b.layout);
+      return r2 * tState.sortDir;
+    });
+    return out;
+  }
+  function renderTrackBody() {
+    tCurrent = filteredTracks();
+    $("#tCount").textContent = "Showing " + fmt(tCurrent.length) + " of " + fmt(tState.tracks.length) + " layouts. Click a row to use it in the calculator.";
+    if (!tCurrent.length) {
+      $("#tBody").innerHTML = '<tr><td colspan="' + TCOLS.length + '" class="empty">' + (tState.tracks.length ? "No layouts match these filters." : "No tracks loaded yet. Use Import tracks below.") + "</td></tr>";
+      return;
+    }
+    $("#tBody").innerHTML = tCurrent.map(function (t, i) {
+      return '<tr tabindex="0" data-i="' + i + '">' + TCOLS.map(function (c) {
+        if (c.k === "status") return '<td><span class="pill warn">unverified</span></td>';
+        var v = c.get(t);
+        var txt = v == null || v === "" ? "—" : (c.show ? c.show(v) : v);
+        return '<td class="' + (c.num ? "num" : "") + (v == null || v === "" ? " muted" : "") + '">' + esc(txt) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+  }
+  function renderTracks() {
+    var T = tState.tracks, m = tState.meta || {};
+    if (T.length) {
+      var kms = T.map(function (t) { return t.km; });
+      $("#tStrip").innerHTML = "<span><b>" + fmt(T.length) + "</b> layouts</span><span><b>" + tUniq("venue").length + "</b> venues</span><span><b>" + T.filter(function (t) { return t.reverse; }).length + "</b> reverse</span><span>Lap length <b>" + d2(Math.min.apply(null, kms)) + "–" + d2(Math.max.apply(null, kms)) + " km</b></span><span>Source <b>" + esc(m.source || "unknown") + "</b></span>" + (m.importedAt ? "<span>Imported <b>" + esc(new Date(m.importedAt).toLocaleString()) + "</b></span>" : "");
+      $("#tBanner").innerHTML = '<div class="note">Imported lap lengths are unverified. They come from a community file and stay marked unverified until you correct and verify them.</div>';
+    } else {
+      $("#tStrip").innerHTML = "<span>No tracks loaded</span>";
+      $("#tBanner").innerHTML = '<div class="note warn">There is no built-in track data. Load the track CSV with Import tracks, further down this page.</div>';
+    }
+    var fs = function (sel, vals, all) {
+      var cur = sel.value;
+      sel.innerHTML = '<option value="">' + esc(all) + "</option>" + vals.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + "</option>"; }).join("");
+      if (vals.indexOf(cur) >= 0) sel.value = cur;
+    };
+    fs($("#tVenue"), tUniq("venue"), "All venues");
+    fs($("#tCountry"), tUniq("country"), "All countries");
+    fillLayoutSelect();
+    renderTrackHead();
+    renderTrackBody();
+    calcRender();
+  }
+
+  function selTrack() {
+    var v = $("#cLayout").value;
+    return tState.tracks.filter(function (t) { return String(t.ordinal) === v; })[0] || null;
+  }
+  function calcRender() {
+    var t = selTrack(), a = $("#calcA"), b = $("#calcB");
+    if (!t) {
+      var msg = '<span class="muted">' + (tState.tracks.length ? "Choose a track layout above." : "Load the track CSV first (Import tracks, below).") + "</span>";
+      a.innerHTML = msg; b.innerHTML = msg; return;
+    }
+    var perLapMi = t.km / KM_PER_MI;
+    var lapsTxt = $("#cLaps").value.trim();
+    if (lapsTxt === "") a.innerHTML = '<span class="muted">Enter a lap count.</span>';
+    else {
+      var n = Number(lapsTxt);
+      if (!isFinite(n) || n < 1 || n !== Math.floor(n)) a.innerHTML = '<span class="pill err">Lap count must be a whole number, 1 or more.</span>';
+      else a.innerHTML = '<div class="big">' + d2(n * t.km) + " km · " + d2(n * perLapMi) + ' mi</div><div>' + n + " lap" + (n === 1 ? "" : "s") + " × " + d2(t.km) + " km (" + d2(perLapMi) + " mi per lap)</div>";
+    }
+    var tgtTxt = $("#cTarget").value.trim(), unit = $("#cUnit").value;
+    if (tgtTxt === "" || !unit) { b.innerHTML = '<span class="muted">Enter a target distance and choose its unit.</span>'; return; }
+    var tg = Number(tgtTxt);
+    if (!isFinite(tg) || tg <= 0) { b.innerHTML = '<span class="pill err">Target distance must be greater than 0.</span>'; return; }
+    var tgKm = unit === "mi" ? tg * KM_PER_MI : tg;
+    var exact = tgKm / t.km;
+    var nearest = Math.max(1, Math.round(exact));
+    var actKm = nearest * t.km;
+    var diff = unit === "mi" ? actKm / KM_PER_MI - tg : actKm - tg;
+    var unitName = unit === "mi" ? "mi" : "km";
+    var alts = [Math.floor(exact), Math.ceil(exact)].filter(function (x, i, arr) { return x >= 1 && x !== nearest && arr.indexOf(x) === i; });
+    var h = '<div class="big">' + nearest + " lap" + (nearest === 1 ? "" : "s") + "</div>" +
+      "<div>Race distance " + d2(actKm) + " km · " + d2(actKm / KM_PER_MI) + " mi</div>" +
+      "<div>" + (Math.abs(diff) < 0.005 ? "Matches the target." : d2(Math.abs(diff)) + " " + unitName + (diff > 0 ? " over" : " under") + " the " + esc(tgtTxt) + " " + unitName + " target.") + "</div>";
+    if (alts.length) h += "<div>Other options: " + alts.map(function (x) { return x + " laps = " + d2(x * t.km) + " km (" + d2(x * t.km / KM_PER_MI) + " mi)"; }).join("; ") + ".</div>";
+    h += '<div class="explain">Exact value is ' + exact.toFixed(2) + " laps (target ÷ " + d2(t.km) + " km per lap). Races use whole laps, so this is rounded to the nearest whole lap" + (exact < 0.5 ? ", with a minimum of 1 lap" : "") + ".</div>";
+    b.innerHTML = h;
+  }
+
+  function runTrackCheck() {
+    var text = $("#tPaste").value;
+    if (!text.trim()) return;
+    tState.pending = analyzeTracks(text);
+    renderTrackReport();
+    var el = $("#tReport"); if (el.scrollIntoView) el.scrollIntoView({ block: "start" });
+  }
+  function initTracks() {
+    loadTracks();
+    renderTracks();
+    $("#tab-trk").addEventListener("click", function () { switchTab("trk"); });
+    ["#tq", "#tVenue", "#tCountry", "#tRev"].forEach(function (id) {
+      $(id).addEventListener(id === "#tq" ? "input" : "change", renderTrackBody);
+    });
+    $("#tReset").addEventListener("click", function () {
+      ["#tq", "#tVenue", "#tCountry", "#tRev"].forEach(function (id) { $(id).value = ""; });
+      renderTrackBody();
+    });
+    $("#tHead").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-k]"); if (!b) return;
+      if (tState.sortKey === b.dataset.k) tState.sortDir *= -1; else { tState.sortKey = b.dataset.k; tState.sortDir = 1; }
+      renderTrackHead(); renderTrackBody();
+    });
+    function pick(tr) {
+      var t = tCurrent[Number(tr.dataset.i)]; if (!t) return;
+      $("#cLayout").value = String(t.ordinal);
+      calcRender();
+      var el = $("#cLayout"); if (el.scrollIntoView) el.scrollIntoView({ block: "center" });
+    }
+    $("#tBody").addEventListener("click", function (e) { var tr = e.target.closest("tr[data-i]"); if (tr) pick(tr); });
+    $("#tBody").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var tr = e.target.closest("tr[data-i]"); if (tr) { e.preventDefault(); pick(tr); }
+    });
+    ["#cLayout", "#cUnit"].forEach(function (id) { $(id).addEventListener("change", calcRender); });
+    ["#cLaps", "#cTarget"].forEach(function (id) { $(id).addEventListener("input", calcRender); });
+    $("#tPaste").addEventListener("input", function () { tState.pendingName = ""; $("#tCheck").disabled = !$("#tPaste").value.trim(); });
+    $("#tCheck").addEventListener("click", runTrackCheck);
+    $("#tClearPaste").addEventListener("click", function () { $("#tPaste").value = ""; $("#tCheck").disabled = true; tState.pending = null; $("#tReport").innerHTML = ""; $("#tFile").value = ""; });
+    $("#tFile").addEventListener("change", function (e) {
+      var file = e.target.files[0]; if (!file) return;
+      var fr = new FileReader();
+      fr.onload = function () { $("#tPaste").value = String(fr.result); tState.pendingName = file.name; $("#tCheck").disabled = false; runTrackCheck(); };
+      fr.onerror = function () { toast("Could not read that file. Try pasting its text instead."); };
+      fr.readAsText(file);
+    });
+    $("#tReport").addEventListener("click", function (e) {
+      if (e.target.id === "tApproveReplace") approveTracks("replace");
+      else if (e.target.id === "tApproveMerge") approveTracks("merge");
+      else if (e.target.id === "tDiscard") { tState.pending = null; $("#tReport").innerHTML = ""; }
+    });
+  }
+
+  /* ---------- Build specs ---------- */
+  var BUILD_KEY = "fcm.builds.v1";
+  var UPGRADE_GROUPS = [
+    { g: "Fuel and Air", f: ["Fuel System", "Ignition", "Exhaust", "Air Filter", "Intake Manifold and Throttle Body"] },
+    { g: "Engine", f: ["Camshaft", "Valves", "Displacement", "Pistons and Compression", "Flywheel", "Oil and Cooling"] },
+    { g: "Platform and Handling", f: ["Brakes", "Spring and Dampers", "Front Anti-roll Bars", "Rear Anti-roll Bars", "Weight Reduction", "Chassis Reinforcement and Roll Cage", "Ballast"] },
+    { g: "Tires", f: ["Tire Compound", "Front Tire Width", "Rear Tire Width"] },
+    { g: "Wheels", f: [] },
+    { g: "Drivetrain", f: ["Clutch", "Transmission", "Driveline", "Differential"] },
+    { g: "Aero and Appearance", f: ["Rear Wing", "Front Bumper", "Rear Bumper", "Hood"] },
+    { g: "Conversion", f: ["Engine Swap", "Drivetrain Swap", "Aspiration Conversion"] }
+  ];
+  var B_RULES = [["allowed", "Allowed"], ["prohibited", "Prohibited"], ["required", "Required"], ["note", "Note only"]];
+  var B_TIERS = [["stock", "Stock"], ["street", "Street"], ["sport", "Sport"], ["race", "Race"]];
+  var B_TYPES = { stock: "Stock", custom: "Custom", approved: "Approved build" };
+  // Class letter from PI. Ranges from samurai-gamers.com (third-party, not Turn 10), consistent with
+  // the top-car PI values on ggrecon.com and with one in-game check (PI 388 shows as D). Unverified otherwise.
+  var PI_CLASSES = [["E", 100, 300], ["D", 301, 400], ["C", 401, 500], ["B", 501, 600], ["A", 601, 700], ["S", 701, 800], ["R", 801, 900], ["P", 901, 998], ["X", 999, 999]];
+  function piClass(pi) {
+    if (pi == null || !isFinite(pi)) return "";
+    for (var i = 0; i < PI_CLASSES.length; i++) if (pi >= PI_CLASSES[i][1] && pi <= PI_CLASSES[i][2]) return PI_CLASSES[i][0];
+    return "";
+  }
+  function piLabel(pi) { var c = piClass(pi); return c ? c + " " + pi : String(pi); }
+  var WHEEL_CATS = ["A", "B-G", "H-K", "L-Q", "R", "S-V", "W-Z"]; // the game's wheel pages, from the Upgrade Shop screenshots
+  var bState = { builds: [], custom: [], wheelCats: [], sel: null, mode: "edit", armDelete: false };
+  var bDelTimer;
+
+  function loadBuilds() {
+    try {
+      var raw = localStorage.getItem(BUILD_KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && Array.isArray(d.builds)) { bState.builds = d.builds; bState.custom = Array.isArray(d.custom) ? d.custom : []; bState.wheelCats = Array.isArray(d.wheelCats) ? d.wheelCats : []; }
+      }
+    } catch (e) { /* storage unavailable: start empty */ }
+  }
+  function saveBuilds() {
+    try { localStorage.setItem(BUILD_KEY, JSON.stringify({ builds: bState.builds, custom: bState.custom, wheelCats: bState.wheelCats })); return true; }
+    catch (e) { return false; }
+  }
+  function bSel() { return bState.builds.filter(function (b) { return b.id === bState.sel; })[0] || null; }
+  function carLabel(c) { return c.year + " " + c.make + " " + c.model; }
+  function bGroups() {
+    return UPGRADE_GROUPS.map(function (grp) {
+      var fields = grp.f.map(function (n) { return { key: grp.g + "|" + n, name: n, custom: false }; });
+      bState.custom.forEach(function (c) { if (c.g === grp.g) fields.push({ key: c.g + "|" + c.name, name: c.name, custom: true }); });
+      return { g: grp.g, fields: fields };
+    });
+  }
+  function isStock(v) { return !!v && v.rule === "required" && v.tier === "stock" && !(v.value && v.value.trim()); }
+  function countSet(b) {
+    return Object.keys(b.values).filter(function (k) { return b.values[k] && b.values[k].rule && !isStock(b.values[k]); }).length;
+  }
+  // Every part without a rule becomes Required, Stock tier. Parts already set are left alone.
+  function stockAll(b) {
+    bGroups().forEach(function (grp) {
+      grp.fields.forEach(function (f) {
+        var v = b.values[f.key] || {};
+        if (!v.rule) {
+          v.rule = "required";
+          if (!v.tier) v.tier = "stock";
+          if (v.value == null) v.value = "";
+          b.values[f.key] = v;
+        }
+      });
+    });
+  }
+  function opts(list, cur, blank) {
+    return '<option value="">' + esc(blank) + "</option>" + list.map(function (o) {
+      return '<option value="' + o[0] + '"' + (cur === o[0] ? " selected" : "") + ">" + esc(o[1]) + "</option>";
+    }).join("");
+  }
+  function bNumField(id, key, label, val) {
+    return '<div class="field"><label for="' + id + '">' + esc(label) + '</label><input id="' + id + '" data-top="' + key + '" data-num="1" type="number" step="any" inputmode="decimal" value="' + (val == null ? "" : esc(val)) + '"></div>';
+  }
+
+  function phrase(v) {
+    var tier = "";
+    B_TIERS.forEach(function (t) { if (t[0] === v.tier) tier = t[1]; });
+    var s;
+    if (v.rule === "allowed") s = "Allowed" + (tier ? ", up to " + tier + " tier" : "");
+    else if (v.rule === "required") s = "Required" + (tier ? ", " + tier + " tier" : "");
+    else if (v.rule === "prohibited") s = "Prohibited";
+    else s = "Note";
+    return v.value && v.value.trim() ? s + ". " + v.value.trim() : s;
+  }
+  function specModel(b) {
+    var head = [];
+    head.push(["Stock PI", piLabel(b.car.pi)]);
+    if (b.type) head.push(["Build type", B_TYPES[b.type]]);
+    if (b.piLimit != null) head.push(["PI limit", piLabel(b.piLimit)]);
+    if (b.powerKw != null) head.push(["Power", fmt(b.powerKw, 1) + " kW"]);
+    if (b.torqueNm != null) head.push(["Torque", fmt(b.torqueNm, 1) + " N·m"]);
+    if (b.weightKg != null) head.push(["Weight", fmt(b.weightKg, 1) + " kg"]);
+    if (b.tune) head.push(["Tune policy", b.tune === "prescribed" ? "Prescribed tune" : "Driver's own tune"]);
+    if (b.tuneText && b.tuneText.trim()) head.push(["Prescribed tune", b.tuneText.trim()]);
+    var groups = [];
+    bGroups().forEach(function (grp) {
+      var items = [], stockNames = [];
+      grp.fields.forEach(function (f) {
+        var v = b.values[f.key];
+        if (!v || !v.rule) return;
+        if (isStock(v)) stockNames.push(f.name); else items.push({ name: f.name, text: phrase(v) });
+      });
+      if (grp.g === "Wheels") {
+        var w = b.wheel || { src: "stock" };
+        if (w.src === "stock") items.unshift({ name: "Wheels", text: "Stock wheels, stock rim" });
+        else {
+          var ws = "Aftermarket" + (w.category && w.category.trim() ? ", category " + w.category.trim() : "") + (w.style && w.style.trim() ? ", style " + w.style.trim() : "");
+          items.unshift({ name: "Wheels", text: ws });
+          items.splice(1, 0, { name: "Rim size", text: w.rim && w.rim.trim() ? w.rim.trim() : "Not set" });
+        }
+      }
+      else if (stockNames.length === grp.fields.length && grp.fields.length) items.push({ name: "All parts", text: "Stock" });
+      else if (stockNames.length) items.push({ name: grp.g === "Wheels" ? "Stock parts" : "Stock", text: stockNames.join(", ") });
+      if (items.length) groups.push({ g: grp.g, items: items });
+    });
+    return { head: head, groups: groups, notes: (b.notes || "").trim() };
+  }
+  function specText(b) {
+    var m = specModel(b), L = [];
+    L.push(carLabel(b.car) + (b.name ? " (" + b.name + ")" : ""));
+    m.head.forEach(function (h) { L.push(h[0] + ": " + h[1]); });
+    m.groups.forEach(function (g) {
+      L.push(""); L.push(g.g);
+      g.items.forEach(function (i) { L.push("- " + i.name + ": " + i.text); });
+    });
+    if (m.notes) { L.push(""); L.push("Notes: " + m.notes); }
+    if (!m.head.length && !m.groups.length && !m.notes) L.push("Nothing set yet.");
+    return L.join("\n");
+  }
+  function specViewHtml(b) {
+    var m = specModel(b);
+    var h = '<div class="card"><div class="eyebrow">Build spec</div><h2>' + esc(carLabel(b.car)) + (b.name ? " · " + esc(b.name) : "") + "</h2>";
+    if (m.head.length) h += '<dl class="specgrid">' + m.head.map(function (x) { return "<div><dt>" + esc(x[0]) + "</dt><dd>" + esc(x[1]) + "</dd></div>"; }).join("") + "</dl>";
+    if (!m.head.length && !m.groups.length && !m.notes) h += '<p class="muted">Nothing is set yet, so racers would see an empty spec. Switch to Edit and set the parts that matter.</p>';
+    h += "</div>";
+    m.groups.forEach(function (g) {
+      h += '<div class="card"><h3>' + esc(g.g) + '</h3><ul class="specitems">' + g.items.map(function (i) { return "<li><b>" + esc(i.name) + "</b><span>" + esc(i.text) + "</span></li>"; }).join("") + "</ul></div>";
+    });
+    if (m.notes) h += '<div class="card"><h3>Notes</h3><p style="margin:0;white-space:pre-wrap">' + esc(m.notes) + "</p></div>";
+    var txt = specText(b);
+    h += '<div class="card"><div class="field"><label for="bText">Plain text to paste into chat or Discord</label><textarea id="bText" readonly rows="' + Math.min(16, txt.split("\n").length + 1) + '">' + esc(txt) + '</textarea></div><div class="actions"><button class="btn primary" type="button" id="bCopy">Copy text</button></div></div>';
+    return h;
+  }
+  function editHtml(b) {
+    var c = b.car;
+    var h = '<div class="card"><h2>' + esc(carLabel(c)) + '</h2><div class="strip"><span>Stock PI <b>' + esc(piLabel(c.pi)) + "</b></span><span>" + esc(c.division) + "</span>" +
+      (c.drivetrain ? "<span>" + esc(c.drivetrain) + "</span>" : "") +
+      (c.kw != null ? "<span><b>" + fmt(c.kw) + "</b> kW stock</span>" : "") +
+      (c.kg != null ? "<span><b>" + fmt(c.kg) + "</b> kg stock</span>" : "") + "</div>" +
+      '<div class="row">' +
+      '<div class="field grow"><label for="bName">Build name</label><input id="bName" data-top="name" type="text" value="' + esc(b.name) + '"></div>' +
+      '<div class="field"><label for="bType">Build type</label><select id="bType" data-top="type">' + opts([["stock", "Stock"], ["custom", "Custom"], ["approved", "Approved build"]], b.type, "Not set") + "</select></div>" +
+      '<div class="field"><label for="bTune">Tune policy</label><select id="bTune" data-top="tune">' + opts([["drivers_own", "Driver's own tune"], ["prescribed", "Prescribed tune"]], b.tune, "Not set") + "</select></div></div>" +
+      '<p class="muted" style="margin:8px 0">The figures below are typed in by you. This page has no data on what each upgrade does to PI, power, torque or weight, so it does not calculate or check them. Stock figures for the car are shown above for reference.</p>' +
+      '<div class="row">' + bNumField("bPi", "piLimit", "PI limit (entered by you)", b.piLimit) + bNumField("bPw", "powerKw", "Power (kW, entered by you)", b.powerKw) + bNumField("bTq", "torqueNm", "Torque (N·m, entered by you)", b.torqueNm) + bNumField("bWt", "weightKg", "Weight (kg, entered by you)", b.weightKg) + "</div>" +
+      '<div class="field"><label for="bTuneText">Prescribed tune (share code or values)</label><textarea id="bTuneText" class="short" data-top="tuneText">' + esc(b.tuneText) + "</textarea></div>" +
+      '<div class="field"><label for="bNotes">Notes for racers</label><textarea id="bNotes" class="short" data-top="notes">' + esc(b.notes) + "</textarea></div></div>";
+    bGroups().forEach(function (grp, idx) {
+      var wheelHtml = "";
+      if (grp.g === "Wheels") {
+        var w = b.wheel || (b.wheel = { src: "stock", category: "", style: "", rim: "" }), aft = w.src === "aftermarket";
+        var cats = WHEEL_CATS.concat(bState.wheelCats);
+        if (w.category && cats.indexOf(w.category) < 0) cats.push(w.category);
+        wheelHtml = '<div class="wheelbox"><div class="field"><span class="lbl">Wheels</span><div class="seg" id="bWheelSrc">' +
+          '<button type="button" data-wsrc="stock" aria-pressed="' + !aft + '">Stock wheels</button>' +
+          '<button type="button" data-wsrc="aftermarket" aria-pressed="' + aft + '">Choose wheel</button></div></div>' +
+          (aft ? '<div class="row"><div class="field"><label for="bWCat">Category</label><select id="bWCat" data-w="category">' + opts(cats.map(function (c) { return [c, c]; }), w.category, "Not set") + "</select></div>" +
+          '<div class="field grow"><label for="bWStyle">Wheel style</label><input id="bWStyle" data-w="style" type="text" value="' + esc(w.style) + '"></div>' +
+          '<div class="field"><label for="bWRim">Rim size</label><input id="bWRim" data-w="rim" type="text" placeholder="As shown in the game" value="' + esc(w.rim) + '"></div></div>' +
+          '<div class="row"><div class="field grow"><label for="bWAddCat">Add a category to the list</label><input id="bWAddCat" type="text" placeholder="For example H-M"></div><button class="btn" type="button" id="bWAddCatBtn">Add category</button></div>' : "") + "</div>";
+      }
+      var wStock = grp.g === "Wheels" && !(b.wheel && b.wheel.src === "aftermarket");
+      h += '<div class="card bgroup"><h3>' + esc(grp.g) + "</h3>" + wheelHtml + (wStock ? [] : grp.fields).map(function (f) {
+        var v = b.values[f.key] || {};
+        return '<div class="brow' + (v.rule ? "" : " unset") + (!v.rule && v.tier ? " needrule" : "") + '" data-key="' + esc(f.key) + '"><span class="bname">' + esc(f.name) +
+          (f.custom ? ' <span class="pill info">added</span> <button class="btn" type="button" data-rmfield="' + esc(f.key) + '">Remove</button>' : "") + "</span>" +
+          '<select data-p="rule" aria-label="' + esc(f.name) + ' rule">' + opts(B_RULES, v.rule, "Not set") + "</select>" +
+          '<select data-p="tier" aria-label="' + esc(f.name) + ' tier">' + opts(B_TIERS, v.tier, "Any tier") + "</select>" +
+          '<input data-p="value" type="text" aria-label="' + esc(f.name) + ' note" placeholder="Note, for example the exact part" value="' + esc(v.value || "") + '"></div>';
+      }).join("") +
+      (wStock ? "" : '<div class="row addfield"><div class="field grow"><label for="add-' + idx + '">Add a part to ' + esc(grp.g) + '</label><input id="add-' + idx + '" type="text" placeholder="Part name"></div><button class="btn" type="button" data-addbtn="' + esc(grp.g) + '">Add part</button></div>') + "</div>";
+    });
+    return h;
+  }
+
+  function carMatches() {
+    var q = $("#bCarQ").value.trim().toLowerCase(), terms = q ? q.split(/\s+/) : [];
+    return state.cars.filter(function (c) {
+      var hay = (c.year + " " + c.make + " " + c.model + " " + (c.nickname || "")).toLowerCase();
+      for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i]) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return (a.make + a.model).localeCompare(b.make + b.model) || a.year - b.year; });
+  }
+  function fillCarSelect() {
+    var m = carMatches(), shown = m.slice(0, 80);
+    $("#bCar").innerHTML = shown.length ? shown.map(function (c) { return '<option value="' + c.ordinal + '">' + esc(carLabel(c)) + " · PI " + esc(c.pi) + "</option>"; }).join("") : '<option value="">No matching cars</option>';
+    $("#bCarHint").textContent = fmt(m.length) + " matching car" + (m.length === 1 ? "" : "s") +
+      (m.length > shown.length ? ". Showing the first " + shown.length + ", so type more to narrow it." : ".") +
+      (state.meta && state.meta.sample ? " The catalogue is only the 10-car sample. Import your CSV on the Car import tab for the full list." : "");
+  }
+  function addBuild() {
+    var ord = Number($("#bCar").value);
+    var c = state.cars.filter(function (x) { return x.ordinal === ord; })[0];
+    if (!c) { toast("Choose a car first."); return; }
+    var b = {
+      id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      car: { ordinal: c.ordinal, year: c.year, make: c.make, model: c.model, division: c.division, pi: c.pi, drivetrain: c.drivetrain, kw: c.kw != null ? c.kw : null, kg: c.kg != null ? c.kg : null },
+      name: "", type: "", piLimit: null, powerKw: null, torqueNm: null, weightKg: null, tune: "", tuneText: "", notes: "", values: {},
+      wheel: { src: "stock", category: "", style: "", rim: "" }
+    };
+    stockAll(b);
+    bState.builds.push(b); bState.sel = b.id; bState.mode = "edit";
+    var ok = saveBuilds();
+    renderBuilds();
+    toast(ok ? "Build spec created and saved in this browser." : "Build spec created, but this browser blocked saving.");
+  }
+  function renderList() {
+    $("#bList").innerHTML = bState.builds.length ? '<div class="blist">' + bState.builds.map(function (b) {
+      var n = countSet(b);
+      return '<button type="button" class="bitem" data-id="' + esc(b.id) + '" aria-pressed="' + (b.id === bState.sel) + '"><span>' + esc(carLabel(b.car)) + (b.name ? " · " + esc(b.name) : "") + "</span><span>" + n + " part" + (n === 1 ? "" : "s") + " changed from stock</span></button>";
+    }).join("") + "</div>" : '<p class="muted" style="margin:0">No build specs yet. Pick a car above and create one.</p>';
+  }
+  function renderEditorWrap() {
+    var b = bSel();
+    $("#bEditorWrap").hidden = !b;
+    document.querySelectorAll("#bMode button").forEach(function (x) { x.setAttribute("aria-pressed", x.dataset.m === bState.mode); });
+    if (b) $("#bEditor").innerHTML = bState.mode === "view" ? specViewHtml(b) : editHtml(b);
+  }
+  function renderBuilds() { renderList(); renderEditorWrap(); }
+
+  function onBuildInput(e) {
+    var b = bSel(), t = e.target; if (!b) return;
+    if (t.dataset.top) {
+      var k = t.dataset.top;
+      if (t.dataset.num) { var s = t.value.trim(); b[k] = s === "" || !isFinite(Number(s)) ? null : Number(s); }
+      else b[k] = t.value;
+      saveBuilds(); renderList(); return;
+    }
+    if (t.dataset.w) { (b.wheel || (b.wheel = { src: "stock" }))[t.dataset.w] = t.value; saveBuilds(); return; }
+    var row = t.closest ? t.closest(".brow") : null;
+    if (row && t.dataset.p) {
+      var key = row.dataset.key, v = b.values[key] || (b.values[key] = {});
+      v[t.dataset.p] = t.value;
+      if (t.dataset.p === "value" && t.value.trim() && !v.rule) { v.rule = "note"; row.querySelector('[data-p="rule"]').value = "note"; }
+      if (!v.rule && !v.tier && !(v.value && v.value.trim())) delete b.values[key];
+      row.classList.toggle("unset", !v.rule);
+      row.classList.toggle("needrule", !v.rule && !!v.tier);
+      saveBuilds(); renderList();
+    }
+  }
+  function onBuildClick(e) {
+    var t = e.target.closest("button"); if (!t) return;
+    var b = bSel();
+    if (t.dataset.wsrc && b) {
+      (b.wheel || (b.wheel = { category: "", style: "", rim: "" })).src = t.dataset.wsrc;
+      saveBuilds(); renderBuilds(); return;
+    }
+    if (t.id === "bWAddCatBtn" && b) {
+      var ci = $("#bWAddCat"), cv = ci.value.trim();
+      if (!cv) { toast("Type a category first."); return; }
+      if (WHEEL_CATS.concat(bState.wheelCats).indexOf(cv) < 0) bState.wheelCats.push(cv);
+      (b.wheel || (b.wheel = { src: "aftermarket" })).category = cv;
+      saveBuilds(); renderBuilds(); return;
+    }
+    if (t.id === "bCopy") {
+      var ta = $("#bText");
+      var done = function () { toast("Copied. Paste it into your chat or Discord."); };
+      var fallback = function () { ta.focus(); ta.select(); toast("Select and copy the text in the box."); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, fallback); else fallback();
+    } else if (t.dataset.addbtn) {
+      var inp = t.closest(".addfield").querySelector("input"), name = inp.value.trim(), g = t.dataset.addbtn;
+      if (!name) { toast("Type a part name first."); return; }
+      var exists = bGroups().some(function (grp) { return grp.g === g && grp.fields.some(function (f) { return f.name.toLowerCase() === name.toLowerCase(); }); });
+      if (exists) { toast("That part is already in " + g + "."); return; }
+      bState.custom.push({ g: g, name: name });
+      bState.builds.forEach(function (x) { x.values[g + "|" + name] = { rule: "required", tier: "stock", value: "" }; });
+      saveBuilds(); renderEditorWrap();
+    } else if (t.dataset.rmfield) {
+      var key = t.dataset.rmfield, i = key.indexOf("|"), g2 = key.slice(0, i), n2 = key.slice(i + 1);
+      bState.custom = bState.custom.filter(function (c) { return !(c.g === g2 && c.name === n2); });
+      bState.builds.forEach(function (x) { delete x.values[key]; });
+      saveBuilds(); renderBuilds();
+    }
+  }
+  function initBuilds() {
+    loadBuilds();
+    if (bState.builds.length) bState.sel = bState.builds[0].id;
+    fillCarSelect(); renderBuilds();
+    $("#tab-bld").addEventListener("click", function () { switchTab("bld"); fillCarSelect(); });
+    $("#bCarQ").addEventListener("input", fillCarSelect);
+    $("#bAdd").addEventListener("click", addBuild);
+    $("#bStockAll").addEventListener("click", function () {
+      var b = bSel(); if (!b) return;
+      stockAll(b); saveBuilds(); renderBuilds();
+      toast("Every unset part is now Required, Stock tier.");
+    });
+    $("#bList").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-id]"); if (!b) return;
+      bState.sel = b.dataset.id; bState.armDelete = false; renderBuilds();
+    });
+    $("#bMode").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-m]"); if (!b) return;
+      bState.mode = b.dataset.m; renderEditorWrap();
+    });
+    $("#bDelete").addEventListener("click", function () {
+      var b = bSel(); if (!b) return;
+      var btn = $("#bDelete");
+      if (!bState.armDelete) {
+        bState.armDelete = true; btn.textContent = "Click again to delete";
+        clearTimeout(bDelTimer);
+        bDelTimer = setTimeout(function () { bState.armDelete = false; btn.textContent = "Delete this build spec"; }, 4000);
+        return;
+      }
+      clearTimeout(bDelTimer); bState.armDelete = false; btn.textContent = "Delete this build spec";
+      bState.builds = bState.builds.filter(function (x) { return x.id !== b.id; });
+      bState.sel = bState.builds.length ? bState.builds[0].id : null;
+      saveBuilds(); renderBuilds(); toast("Build spec deleted.");
+    });
+    $("#bEditor").addEventListener("input", onBuildInput);
+    $("#bEditor").addEventListener("change", onBuildInput);
+    $("#bEditor").addEventListener("click", onBuildClick);
+  }
+
+  function init() {
+    loadStore();
+    renderAll();
+
+    $("#tab-cat").addEventListener("click", function () { switchTab("cat"); });
+    $("#tab-imp").addEventListener("click", function () { switchTab("imp"); });
+
+    ["#q", "#fMake", "#fDiv", "#fType", "#fClass", "#yMin", "#yMax", "#piMin", "#piMax", "#pwMin", "#pwMax", "#msMin", "#msMax"].forEach(function (id) {
+      var ev = id === "#fMake" || id === "#fDiv" || id === "#fType" || id === "#fClass" ? "change" : "input";
+      $(id).addEventListener(ev, function () { state.limit = 100; renderBody(); });
+    });
+    $("#fDrive").addEventListener("click", function (e) {
+      var b = e.target.closest(".chip"); if (!b) return;
+      var on = b.getAttribute("aria-pressed") !== "true";
+      b.setAttribute("aria-pressed", on); state.drives[b.dataset.v] = on;
+      state.limit = 100; renderBody();
+    });
+    $("#units").addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b || b.dataset.u === state.units) return;
+      state.units = b.dataset.u;
+      document.querySelectorAll("#units button").forEach(function (x) { x.setAttribute("aria-pressed", x.dataset.u === state.units); });
+      ["#pwMin", "#pwMax", "#msMin", "#msMax"].forEach(function (id) { $(id).value = ""; });
+      renderAll();
+    });
+    $("#reset").addEventListener("click", resetFilters);
+    $("#thead").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-k]"); if (!b) return;
+      if (state.sortKey === b.dataset.k) state.sortDir *= -1; else { state.sortKey = b.dataset.k; state.sortDir = 1; }
+      renderHead(); renderBody();
+    });
+    $("#moreBtn").addEventListener("click", function () { state.limit += 100; renderBody(); });
+    $("#tbody").addEventListener("click", function (e) {
+      var tr = e.target.closest("tr[data-i]"); if (tr) openDrawer(currentRows[Number(tr.dataset.i)]);
+    });
+    $("#tbody").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var tr = e.target.closest("tr[data-i]"); if (tr) { e.preventDefault(); openDrawer(currentRows[Number(tr.dataset.i)]); }
+    });
+    $("#drawerHost").addEventListener("click", function (e) {
+      if (e.target.id === "scrim" || e.target.id === "closeDrawer") closeDrawer();
+    });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+
+    $("#paste").addEventListener("input", function () { state.pendingName = ""; $("#check").disabled = !$("#paste").value.trim(); });
+    $("#check").addEventListener("click", runCheck);
+    $("#clearPaste").addEventListener("click", function () { $("#paste").value = ""; $("#check").disabled = true; state.pending = null; $("#report").innerHTML = ""; $("#file").value = ""; });
+    $("#file").addEventListener("change", function (e) { readFile(e.target.files[0]); });
+    var drop = $("#drop");
+    ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+    ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+    drop.addEventListener("drop", function (e) { readFile(e.dataTransfer.files[0]); });
+    $("#report").addEventListener("click", function (e) {
+      if (e.target.id === "approveReplace") approve("replace");
+      else if (e.target.id === "approveMerge") approve("merge");
+      else if (e.target.id === "discard") { state.pending = null; $("#report").innerHTML = ""; }
+    });
+  }
+  init();
+  initTracks();
+  initBuilds();
+})();
+</script>
