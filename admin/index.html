@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forza Championship Manager · Admin</title>
+<style>
+:root { --bg:#f6f6f4; --card:#fff; --ink:#1b1b1b; --muted:#666; --line:#d8d8d2; --accent:#1f5fbf; --accent-ink:#fff; --err:#b3261e; --ok:#1d7a3a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141414; --card:#1e1e1e; --ink:#eee; --muted:#9a9a9a; --line:#333; --accent:#6ea3f5; --accent-ink:#0b1a30; --err:#f2877f; --ok:#6fcf8a; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+header.top { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); }
+h1 { font-size:18px; margin:0; } h2 { font-size:17px; margin:0 0 10px; } h3 { font-size:15px; margin:14px 0 8px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin:12px 0; }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+.field { display:flex; flex-direction:column; gap:3px; min-width:0; } .grow { flex:1 1 180px; }
+label, .lbl { font-size:13px; color:var(--muted); }
+input, select, textarea, button { font:inherit; color:inherit; }
+input, select, textarea { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; max-width:100%; }
+textarea { min-height:70px; resize:vertical; width:100%; }
+button { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 12px; cursor:pointer; }
+button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+button.danger { border-color:var(--err); color:var(--err); }
+button:disabled { opacity:.5; cursor:default; }
+.muted { color:var(--muted); } .err { color:var(--err); } .ok { color:var(--ok); }
+.pill { display:inline-block; border:1px solid var(--line); border-radius:99px; padding:1px 9px; font-size:12px; }
+.list button.item { display:flex; width:100%; justify-content:space-between; text-align:left; margin:4px 0; }
+.msg { min-height:20px; margin:6px 0; }
+details.ev { border:1px solid var(--line); border-radius:6px; margin:8px 0; padding:8px 10px; }
+details.ev > summary { cursor:pointer; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+ul.missing { margin:6px 0 0 18px; padding:0; }
+</style>
+</head>
+<body>
+<header class="top"><h1>Forza Championship Manager · Admin</h1><div id="who" class="muted"></div></header>
+<main id="app"><p class="muted">Loading…</p></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/tz.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

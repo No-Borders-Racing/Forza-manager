@@ -2,7 +2,7 @@
 
 A league manager for Forza Motorsport (2023): championships, seasons, recurring event schedules with proper time zones, cars and classes, tracks and race distances, results and standings, and a public calendar.
 
-Status: database design. The app has not been built yet.
+Status: database is live on Supabase. The admin app (`admin/`) has login, championships, seasons and events so far. Recurring schedules, importers, classes, build specs, results and the public page are not built yet.
 
 ## Stack
 
@@ -44,7 +44,8 @@ Deliberately left out: any attempt to list or control Forza's lobby settings. Ra
 - The licence of the FM23Data files has not been checked, and there is no licence file in that repository.
 - Imported car and track values are unverified community data.
 - The schema has not been run against a real Supabase project.
-- No front end, importer, schedule generator or scoring code yet.
+- Admin app: login, championships, seasons and events are built and were tested only against a fake in-memory database, not your real Supabase project.
+- No importer, schedule generator, class, build spec, results or scoring screens yet, and no public page.
 
 ## Setup (when the app exists)
 
