@@ -17,6 +17,27 @@
       return '<option value="' + esc(v) + '"' + (cur === v ? " selected" : "") + ">" + esc(l) + "</option>";
     }).join("");
   }
+  // Time zone dropdown: popular zones first, then every other zone. Values stay as IANA names
+  // (needed for daylight saving); the label shows today's offset from GMT.
+  var COMMON = [
+    ["Australia/Sydney", "Sydney, Australia"], ["Australia/Melbourne", "Melbourne, Australia"], ["Australia/Brisbane", "Brisbane, Australia"],
+    ["Australia/Adelaide", "Adelaide, Australia"], ["Australia/Perth", "Perth, Australia"], ["Pacific/Auckland", "Auckland, New Zealand"],
+    ["America/New_York", "US Eastern (New York)"], ["America/Chicago", "US Central (Chicago)"], ["America/Denver", "US Mountain (Denver)"],
+    ["America/Los_Angeles", "US Pacific (Los Angeles)"], ["America/Toronto", "Toronto, Canada"], ["Europe/London", "London, UK"],
+    ["Europe/Berlin", "Central Europe (Berlin)"], ["Asia/Tokyo", "Tokyo, Japan"], ["Asia/Singapore", "Singapore"], ["UTC", "UTC"]
+  ];
+  function gmt(tz) {
+    var m = Math.round(TZ.offsetMs(Date.now(), tz) / 60000), a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
+    return "GMT" + (m < 0 ? "-" : "+") + h + (mm ? ":" + (mm < 10 ? "0" : "") + mm : "");
+  }
+  function zoneOpts(cur, blank) {
+    function one(v, label) { return '<option value="' + esc(v) + '"' + (cur === v ? " selected" : "") + ">" + esc(label + " · " + gmt(v)) + "</option>"; }
+    var common = COMMON.filter(function (c) { return zones.indexOf(c[0]) >= 0; });
+    var names = common.map(function (c) { return c[0]; });
+    return '<option value="">' + esc(blank) + "</option>" +
+      '<optgroup label="Common">' + common.map(function (c) { return one(c[0], c[1]); }).join("") + "</optgroup>" +
+      '<optgroup label="All other time zones">' + zones.filter(function (z) { return names.indexOf(z) < 0; }).map(function (z) { return one(z, z.replace(/_/g, " ")); }).join("") + "</optgroup>";
+  }
   function msg(el, text, kind) { if (el) { el.className = "msg " + (kind || ""); el.textContent = text || ""; } }
   function nul(v) { v = (v || "").trim(); return v === "" ? null : v; }
   function numOrNull(v) { v = (v || "").trim(); return v === "" || !isFinite(Number(v)) ? null : Number(v); }
@@ -113,7 +134,7 @@
       '<div class="row"><div class="field grow"><label for="cn">Name</label><input id="cn" value="' + esc(c.name) + '"></div>' +
       '<div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
       '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
-      '<div class="field" style="margin-top:8px"><label for="ct">League time zone</label><select id="ct">' + opts(zones, c.intended_timezone, "Not set") + "</select></div>" +
+      '<div class="field" style="margin-top:8px"><label for="ct">League time zone</label><select id="ct">' + zoneOpts(c.intended_timezone, "Not set") + "</select></div>" +
       '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button></div><div class="msg" id="cm"></div>' +
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
@@ -170,7 +191,7 @@
       '<div class="field" id="gcw-' + k + '" hidden><label for="gi-' + k + '">Every</label><div class="row" style="gap:6px"><input id="gi-' + k + '" type="number" min="1" style="width:80px"><select id="gu-' + k + '" data-gf="' + k + '">' + opts([["day", "days"], ["week", "weeks"], ["month", "months"]], "", "Not set") + "</select></div></div></div>" +
       '<div class="row" style="margin-top:8px"><div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
       '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div>' +
-      '<div class="field grow"><label for="gz-' + k + '">Time zone the time is in</label><select id="gz-' + k + '">' + opts(zones, "", "Not set") + "</select></div></div>" +
+      '<div class="field grow"><label for="gz-' + k + '">Time zone the time is in</label><select id="gz-' + k + '">' + zoneOpts("", "Not set") + "</select></div></div>" +
       '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
   }
   function toggleGen(k) {
@@ -249,7 +270,7 @@
       '<div class="field"><label for="er-' + k + '">Round</label><input id="er-' + k + '" type="number" min="1" style="width:80px" value="' + esc(e.round_number == null ? "" : e.round_number) + '"></div></div>' +
       '<div class="row" style="margin-top:8px"><div class="field"><label for="ed-' + k + '">Date</label><input id="ed-' + k + '" type="date" value="' + esc(loc.date) + '"></div>' +
       '<div class="field"><label for="et-' + k + '">Start time</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
-      '<div class="field grow"><label for="ez-' + k + '">Time zone the time is in</label><select id="ez-' + k + '">' + opts(zones, e.timezone, "Not set") + "</select></div></div>" +
+      '<div class="field grow"><label for="ez-' + k + '">Time zone the time is in</label><select id="ez-' + k + '">' + zoneOpts(e.timezone, "Not set") + "</select></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
   }
