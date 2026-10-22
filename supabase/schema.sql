@@ -84,7 +84,8 @@ create table public.event_series (
   interval_unit text check (interval_unit in ('day', 'week', 'month')),
   monthly_mode text check (monthly_mode in ('day_of_month', 'nth_weekday')),
   first_local_date date,
-  local_time time,
+  local_time time,                      -- the race start, in the series' time zone
+  lobby_local_time time,                -- optional: when the lobby opens, same local day
   timezone text check (timezone is null or public.is_valid_timezone(timezone)),
   end_type text check (end_type in ('on_date', 'after_count')),
   until_date date,
@@ -106,7 +107,8 @@ create table public.events (
   name text,
   round_number integer check (round_number is null or round_number > 0),
   -- A well-defined instant plus the zone it was meant in. Viewers see it converted.
-  starts_at timestamptz,
+  starts_at timestamptz,                -- the race start
+  lobby_opens_at timestamptz,           -- optional: when the lobby opens
   timezone text check (timezone is null or public.is_valid_timezone(timezone)),
   -- What the series rule produced. Differs from starts_at once the event is moved.
   original_starts_at timestamptz,
@@ -115,7 +117,8 @@ create table public.events (
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((starts_at is null) = (timezone is null))
+  check ((starts_at is null) = (timezone is null)),
+  constraint events_lobby_before_start check (lobby_opens_at is null or (starts_at is not null and lobby_opens_at <= starts_at))
 );
 create index events_season_idx on public.events (season_id);
 create unique index events_series_occurrence_uq on public.events (series_id, occurrence_date)

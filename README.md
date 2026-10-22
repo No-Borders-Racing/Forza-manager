@@ -39,6 +39,8 @@ Deliberately left out: any attempt to list or control Forza's lobby settings. Ra
 
 **Public access.** Anonymous visitors can read only published, public championships and what hangs off them. The imported `cars` and `track_*` tables are admin-only because the licence of the community data is unverified. Visitors see cars by name and tracks by layout through `public_class_cars`, `public_races` and `public_build_specs`.
 
+**Lobby and race start.** A season's schedule has an optional lobby-open time and a race start time, both in the league time zone. Every round inherits both, and either can be changed on a single round. The lobby must open at or before the race start on the same day. A database that was created before this was added needs `supabase/migrations/001_lobby_time.sql` run once.
+
 ## Not done yet
 
 - The licence of the FM23Data files has not been checked, and there is no licence file in that repository.

@@ -218,7 +218,7 @@
     var f = FREQ[r.pattern] || r.pattern;
     if (r.pattern === "custom") f = "Every " + r.interval_count + " " + r.interval_unit + (r.interval_count > 1 ? "s" : "");
     if (r.monthly_mode) f += r.monthly_mode === "nth_weekday" ? ", same weekday" : ", same day of the month";
-    return f + " · " + String(r.local_time).slice(0, 5) + " " + r.timezone + " · first round " + r.first_local_date + " · " + r.occurrence_count + " round" + (r.occurrence_count === 1 ? "" : "s") + " so far";
+    return f + " · " + (r.lobby_local_time ? "lobby " + String(r.lobby_local_time).slice(0, 5) + ", race " : "race ") + String(r.local_time).slice(0, 5) + " " + r.timezone + " · first round " + r.first_local_date + " · " + r.occurrence_count + " round" + (r.occurrence_count === 1 ? "" : "s") + " so far";
   }
   function genHtml(k) {
     var ser = k === "new" ? null : seriesFor(k);
@@ -232,7 +232,8 @@
       h += '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
         '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts(Object.keys(FREQ_OPTS).map(function (x) { return [x, FREQ_OPTS[x].l]; }), "", "Not set") + "</select></div>" +
         '<div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
-        '<div class="field"><label for="gt-' + k + '">Start time</label><input id="gt-' + k + '" type="time"></div></div>' +
+        '<div class="field"><label for="gl-' + k + '">Lobby opens (optional)</label><input id="gl-' + k + '" type="time"></div>' +
+        '<div class="field"><label for="gt-' + k + '">Race start</label><input id="gt-' + k + '" type="time"></div></div>' +
         (lz ? '<p class="muted" style="margin:8px 0 0">Times are in the league time zone: ' + esc(lz) + ".</p>" : '<p class="err" style="margin:8px 0 0">Set the league time zone at the top of this page and save before adding rounds.</p>');
     }
     return h + '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
@@ -241,25 +242,27 @@
   function previewRounds(k) {
     var box = $("#gv-" + k), sid = k === "new" ? null : k; delete plans[k];
     var ser = sid ? seriesFor(sid) : null, done = ser ? ser.occurrence_count : 0, extra = numOrNull($("#gn-" + k).value), cfgv;
-    if (ser) cfgv = { pattern: ser.pattern, mode: ser.monthly_mode || "", ic: ser.interval_count, iu: ser.interval_unit, start: ser.first_local_date, t: String(ser.local_time).slice(0, 5), z: ser.timezone };
+    if (ser) cfgv = { pattern: ser.pattern, mode: ser.monthly_mode || "", ic: ser.interval_count, iu: ser.interval_unit, start: ser.first_local_date, t: String(ser.local_time).slice(0, 5), l: ser.lobby_local_time ? String(ser.lobby_local_time).slice(0, 5) : "", z: ser.timezone };
     else {
       var fo = FREQ_OPTS[$("#gf-" + k).value];
-      cfgv = { pattern: fo ? fo.pattern : "", mode: "", ic: fo ? fo.n : null, iu: "week", start: $("#gd-" + k).value, t: $("#gt-" + k).value, z: leagueZone() };
+      cfgv = { pattern: fo ? fo.pattern : "", mode: "", ic: fo ? fo.n : null, iu: "week", start: $("#gd-" + k).value, t: $("#gt-" + k).value, l: $("#gl-" + k).value, z: leagueZone() };
       if (!cfgv.z) { box.innerHTML = '<p class="err">Set the league time zone at the top of this page and save first.</p>'; return; }
     }
     if (k === "new" && !$("#sn").value.trim()) { box.innerHTML = '<p class="err">Type the season name first.</p>'; return; }
     if (!(extra >= 1)) { box.innerHTML = '<p class="err">Enter the number of rounds.</p>'; return; }
     var g = SCH.generate({ start: cfgv.start, count: done + extra, pattern: cfgv.pattern, monthlyMode: cfgv.mode, intervalCount: cfgv.ic, intervalUnit: cfgv.iu });
     if (g.error) { box.innerHTML = '<p class="err">' + esc(g.error) + "</p>"; return; }
-    if (!cfgv.t) { box.innerHTML = '<p class="err">Choose the start time.</p>'; return; }
+    if (!cfgv.t) { box.innerHTML = '<p class="err">Choose the race start time.</p>'; return; }
+    if (cfgv.l && cfgv.l > cfgv.t) { box.innerHTML = '<p class="err">The lobby must open at or before the race start, on the same day.</p>'; return; }
     var dates = g.dates.slice(done);
     var evs = sid ? state.sel.events.filter(function (e) { return e.season_id === sid; }) : [];
     var first = evs.reduce(function (m, e) { return Math.max(m, e.round_number || 0); }, 0) + 1;
     var bad = 0, rows = dates.map(function (d, i) {
-      var r = TZ.zonedToInstant(d, cfgv.t, cfgv.z), n = first + i, line;
+      var r = TZ.zonedToInstant(d, cfgv.t, cfgv.z), n = first + i, line, lr = cfgv.l ? TZ.zonedToInstant(d, cfgv.l, cfgv.z) : null;
+      if (!r.error && lr && lr.error) { r = lr; }
       if (r.error) { bad++; line = '<span class="err">' + esc(d) + " " + esc(cfgv.t) + ": " + (r.error === "nonexistent" ? "this time does not exist in " + esc(cfgv.z) + " that day, because the clocks skip forward" : r.error === "ambiguous" ? "this time happens twice in " + esc(cfgv.z) + " that day, because the clocks go back" : "not valid") + "</span>"; }
-      else { var mine = TZ.localText(Date.parse(r.instant), viewerTz); line = esc(d + " " + cfgv.t) + (viewerTz !== cfgv.z ? ' <span class="muted">(your time: ' + esc(mine.date + " " + mine.time) + ")</span>" : ""); }
-      return { d: d, n: n, inst: r.instant, line: "<li>Round " + n + " · " + line + "</li>" };
+      else { var mine = TZ.localText(Date.parse(r.instant), viewerTz); line = esc(d + " " + (cfgv.l ? "lobby " + cfgv.l + ", race " : "race ") + cfgv.t) + (viewerTz !== cfgv.z ? ' <span class="muted">(your time: ' + esc(mine.date + " " + mine.time) + ")</span>" : ""); }
+      return { d: d, n: n, inst: r.instant, lobby: lr && !lr.error ? lr.instant : null, line: "<li>Round " + n + " · " + line + "</li>" };
     });
     var last = g.dates[g.dates.length - 1], season = sid ? state.sel.seasons.filter(function (x) { return x.id === sid; })[0] : null;
     var h = '<ul class="missing" style="margin-top:8px">' + rows.map(function (r) { return r.line; }).join("") + "</ul>";
@@ -293,6 +296,7 @@
       else {
         var series = { season_id: sid, pattern: cf.pattern, first_local_date: cf.start, local_time: cf.t, timezone: cf.z, end_type: "after_count", occurrence_count: pl.rows.length };
         series.interval_count = cf.ic; series.interval_unit = "week";
+        if (cf.l) series.lobby_local_time = cf.l;
         ruleP = sb.from("event_series").insert(series).select("id").single();
       }
       ruleP.then(function (rr) {
@@ -302,7 +306,7 @@
           return u.then(undoSeason);
         };
         // 3. the events
-        var evs = pl.rows.map(function (r) { return { season_id: sid, series_id: rr.data.id, occurrence_date: r.d, round_number: r.n, starts_at: r.inst, original_starts_at: r.inst, timezone: cf.z }; });
+        var evs = pl.rows.map(function (r) { var o = { season_id: sid, series_id: rr.data.id, occurrence_date: r.d, round_number: r.n, starts_at: r.inst, original_starts_at: r.inst, timezone: cf.z }; if (r.lobby) o.lobby_opens_at = r.lobby; return o; });
         sb.from("events").insert(evs).then(function (er) {
           if (er.error) { fail("No rounds were created: " + dbError(er.error), undoRule); return; }
           // 4. the season end date
@@ -336,10 +340,12 @@
   /* ---------- events ---------- */
   function eventFields(k, e) {
     var loc = e.starts_at && e.timezone ? TZ.localText(Date.parse(e.starts_at), e.timezone) : { date: "", time: "" };
+    var lob = e.lobby_opens_at && e.timezone ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone) : { date: "", time: "" };
     return '<div class="row"><div class="field grow"><label for="en-' + k + '">Name</label><input id="en-' + k + '" value="' + esc(e.name || "") + '"></div>' +
       '<div class="field"><label for="er-' + k + '">Round</label><input id="er-' + k + '" type="number" min="1" style="width:80px" value="' + esc(e.round_number == null ? "" : e.round_number) + '"></div></div>' +
       '<div class="row" style="margin-top:8px"><div class="field"><label for="ed-' + k + '">Date</label><input id="ed-' + k + '" type="date" value="' + esc(loc.date) + '"></div>' +
-      '<div class="field"><label for="et-' + k + '">Start time</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
+      '<div class="field"><label for="el-' + k + '">Lobby opens (optional)</label><input id="el-' + k + '" type="time" value="' + esc(lob.time) + '"></div>' +
+      '<div class="field"><label for="et-' + k + '">Race start</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
       '<div class="field grow"><span class="lbl">Time zone</span><div id="ez-' + k + '" style="padding:7px 0">' + esc(e.timezone || leagueZone() || "Set the league time zone first") + (e.timezone && leagueZone() && e.timezone !== leagueZone() ? ' <span class="muted">(differs from the league zone)</span>' : "") + "</div></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
@@ -348,7 +354,8 @@
     var when = "Date and time not set";
     if (e.starts_at && e.timezone) {
       var a = TZ.localText(Date.parse(e.starts_at), e.timezone), b = TZ.localText(Date.parse(e.starts_at), viewerTz);
-      when = a.date + " " + a.time + " " + e.timezone + (viewerTz !== e.timezone ? " (your time: " + b.date + " " + b.time + ")" : "");
+      var lb = e.lobby_opens_at ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone).time : "";
+      when = a.date + " " + (lb ? "lobby " + lb + ", race " : "") + a.time + " " + e.timezone + (viewerTz !== e.timezone ? " (your time: " + b.date + " " + b.time + ")" : "");
     }
     return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(e.name || "Unnamed event") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
       '<div style="margin-top:10px">' + eventFields(e.id, e) +
@@ -358,7 +365,8 @@
     var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
     var z = (ev && ev.timezone) || leagueZone() || "";
     var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value) };
-    var any = d || t;
+    var lt = $("#el-" + k).value, any = d || t;
+    if (lt && !t) { msg(m, "Set the race start time as well as the lobby time.", "err"); return null; }
     if (any) {
       if (!z) { msg(m, "Set the league time zone at the top of this page and save first.", "err"); return null; }
       if (!d || !t) { msg(m, "Set the date and the start time together, or leave both blank.", "err"); return null; }
@@ -367,7 +375,14 @@
       if (r.error === "ambiguous") { msg(m, "That time happens twice in " + z + " on that date, because the clocks go back. Pick a time outside that hour.", "err"); return null; }
       if (r.error) { msg(m, "The date, time or time zone is not valid.", "err"); return null; }
       out.starts_at = r.instant; out.timezone = z;
-    } else { out.starts_at = null; out.timezone = null; }
+      if (lt) {
+        if (lt > t) { msg(m, "The lobby must open at or before the race start, on the same day.", "err"); return null; }
+        var lr = TZ.zonedToInstant(d, lt, z);
+        if (lr.error) { msg(m, "The lobby time is not valid in " + z + " on that date (the clocks change around then). Pick another time.", "err"); return null; }
+        out.lobby_opens_at = lr.instant;
+      } else if (ev && ev.lobby_opens_at) out.lobby_opens_at = null;
+    } else {
+      if (ev && ev.lobby_opens_at) out.lobby_opens_at = null; out.starts_at = null; out.timezone = null; }
     return out;
   }
   function addEvent(sid) {
