@@ -102,7 +102,8 @@
       });
     });
   }
-  function openChamp(id) {
+  function openChamp(id, nav) {
+    var prev = state.sel && state.sel.champ.id === id ? state.nav : null;
     Promise.all([
       sb.from("championships").select("*").eq("id", id).single(),
       sb.from("seasons").select("*").eq("championship_id", id).order("starts_on", { ascending: true, nullsFirst: false }),
@@ -113,8 +114,9 @@
       var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
       Promise.all([evP, srP]).then(function (xs) {
         state.sel = { champ: rs[0].data, seasons: seasons, events: xs[0].data || [], series: xs[1].data || [] };
-        renderChamp();
-        refreshMissing();
+        state.nav = nav || prev || { view: "champ" };
+        if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
+        renderCurrent();
       });
     });
   }
@@ -139,21 +141,45 @@
       '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button></div><div class="msg" id="cm"></div>' +
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
-    S.seasons.forEach(function (s) { h += seasonHtml(s); });
-    h += '<div class="card"><h3 style="margin-top:0">Add a season</h3><div class="row"><div class="field grow"><label for="sn">Name</label><input id="sn"></div>' +
-      '<button id="sadd" type="button">Add season without rounds</button></div><div class="msg" id="sm"></div>' + genHtml("new") + "</div>";
+    h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
+      var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
+      return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " event" + (n === 1 ? "" : "s") + "</span></button>";
+    }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
     app.innerHTML = h;
-    $("#back").addEventListener("click", loadChamps);
-    $("#csave").addEventListener("click", saveChamp);
-    $("#sadd").addEventListener("click", addSeason);
-    app.querySelectorAll("[data-sv]").forEach(function (b) { b.addEventListener("click", function () { saveSeason(b.dataset.sv); }); });
-    app.querySelectorAll("[data-sd]").forEach(function (b) { b.addEventListener("click", function () { del("seasons", b.dataset.sd, b); }); });
-    app.querySelectorAll("[data-gp]").forEach(function (b) { b.addEventListener("click", function () { previewRounds(b.dataset.gp); }); });
-    app.querySelectorAll("[data-gc]").forEach(function (b) { b.addEventListener("click", function () { createRounds(b.dataset.gc); }); });
-    app.querySelectorAll("[data-gf]").forEach(function (el) { el.addEventListener("change", function () { toggleGen(el.dataset.gf); delete plans[el.dataset.gf]; var pv = $("#gv-" + el.dataset.gf); if (pv) pv.innerHTML = ""; }); toggleGen(el.dataset.gf); });
-    app.querySelectorAll("[data-ea]").forEach(function (b) { b.addEventListener("click", function () { addEvent(b.dataset.ea); }); });
-    app.querySelectorAll("[data-es]").forEach(function (b) { b.addEventListener("click", function () { saveEvent(b.dataset.es); }); });
-    app.querySelectorAll("[data-ed]").forEach(function (b) { b.addEventListener("click", function () { del("events", b.dataset.ed, b); }); });
+    bindAll();
+    refreshMissing();
+  }
+  function renderCurrent() {
+    var n = state.nav || { view: "champ" };
+    if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
+  }
+  function renderSeason(sid) {
+    var s = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
+    app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" + seasonHtml(s);
+    bindAll();
+  }
+  function renderNewSeason() {
+    app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
+      '<div class="card"><h2>New season</h2><div class="row"><div class="field grow"><label for="sn">Season name</label><input id="sn"></div></div><div class="msg" id="sm"></div>' +
+      genHtml("new") + '<div class="row" style="margin-top:12px"><button id="sadd" type="button">Add season without rounds</button></div></div>';
+    bindAll();
+  }
+  function bindAll() {
+    function on(sel, fn) { app.querySelectorAll(sel).forEach(function (b) { b.addEventListener("click", function () { fn(b); }); }); }
+    on("#back", function () { loadChamps(); });
+    on("#backchamp", function () { state.nav = { view: "champ" }; renderCurrent(); });
+    on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
+    on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
+    on("#csave", saveChamp);
+    on("#sadd", addSeason);
+    on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
+    on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
+    on("[data-gp]", function (b) { previewRounds(b.dataset.gp); });
+    on("[data-gc]", function (b) { createRounds(b.dataset.gc); });
+    on("[data-ea]", function (b) { addEvent(b.dataset.ea); });
+    on("[data-es]", function (b) { saveEvent(b.dataset.es); });
+    on("[data-ed]", function (b) { del("events", b.dataset.ed, b); });
+    app.querySelectorAll("[data-gf]").forEach(function (el) { el.addEventListener("change", function () { delete plans[el.dataset.gf]; var pv = $("#gv-" + el.dataset.gf); if (pv) pv.innerHTML = ""; }); });
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
@@ -162,7 +188,7 @@
     msg(m, "Saving…");
     sb.from("championships").update(patch).eq("id", c.id).select("*").single().then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      state.sel.champ = r.data; renderChamp(); msg($("#cm"), "Saved.", "ok"); refreshMissing();
+      state.sel.champ = r.data; renderChamp(); msg($("#cm"), "Saved.", "ok");
     });
   }
 
@@ -177,8 +203,8 @@
       "<h3>Events (" + evs.length + ")</h3>";
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
-    h += '<div class="card" style="margin:12px 0 0"><div class="lbl" style="margin-bottom:6px">Add a single event</div>' + eventFields("new-" + s.id, {}) +
-      '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add event</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></div>';
+    h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single event outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
+      '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add event</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
     return h;
   }
   /* ---------- the season's schedule ---------- */
@@ -282,7 +308,7 @@
           // 4. the season end date
           sb.from("seasons").update({ ends_on: pl.last }).eq("id", sid).then(function (ur) {
             delete plans[k];
-            openChamp(state.sel.champ.id);
+            openChamp(state.sel.champ.id, { view: "season", sid: sid });
             if (ur.error) setTimeout(function () { msg($("#sm-" + sid), "Rounds were created, but the season end date could not be set: " + dbError(ur.error), "err"); }, 600);
           });
         });
@@ -293,9 +319,9 @@
   function addSeason() {
     var m = $("#sm"), name = $("#sn").value.trim();
     if (!name) { msg(m, "Type a season name first.", "err"); return; }
-    sb.from("seasons").insert({ championship_id: state.sel.champ.id, name: name, starts_on: null, ends_on: null }).then(function (r) {
+    sb.from("seasons").insert({ championship_id: state.sel.champ.id, name: name, starts_on: null, ends_on: null }).select("id").single().then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      openChamp(state.sel.champ.id);
+      openChamp(state.sel.champ.id, { view: "season", sid: r.data.id });
     });
   }
   function saveSeason(id) {
@@ -371,7 +397,7 @@
     armed = null;
     sb.from(table).delete().eq("id", id).then(function (r) {
       if (r.error) { btn.textContent = dbError(r.error); return; }
-      openChamp(state.sel.champ.id);
+      openChamp(state.sel.champ.id, table === "seasons" ? { view: "champ" } : undefined);
     });
   }
 
