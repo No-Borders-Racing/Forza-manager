@@ -112,8 +112,10 @@
       var seasons = rs[1].data || [], ids = seasons.map(function (s) { return s.id; });
       var evP = ids.length ? sb.from("events").select("*").in("season_id", ids).order("starts_at", { ascending: true, nullsFirst: false }) : Promise.resolve({ data: [] });
       var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
-      Promise.all([evP, srP]).then(function (xs) {
-        state.sel = { champ: rs[0].data, seasons: seasons, events: xs[0].data || [], series: xs[1].data || [] };
+      var psP = sb.from("points_systems").select("id,name,source_series").eq("championship_id", id).order("name", { ascending: true });
+      var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).order("name", { ascending: true });
+      Promise.all([evP, srP, psP, libP]).then(function (xs) {
+        state.sel = { champ: rs[0].data, seasons: seasons, events: xs[0].data || [], series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [] };
         state.nav = nav || prev || { view: "champ" };
         if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
         renderCurrent();
@@ -141,6 +143,7 @@
       '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button></div><div class="msg" id="cm"></div>' +
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
+    h += pointsCardHtml();
     h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
       var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
       return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " event" + (n === 1 ? "" : "s") + "</span></button>";
@@ -151,7 +154,7 @@
   }
   function renderCurrent() {
     var n = state.nav || { view: "champ" };
-    if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
+    if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
   }
   function renderSeason(sid) {
     var s = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
@@ -171,6 +174,12 @@
     on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
     on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
     on("#csave", saveChamp);
+    on("[data-pp]", function (b) { state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
+    on("#padd", addPoints);
+    on("#psave", savePoints);
+    on("#pbadd", function () { var box = $("#pbonus"); box.insertAdjacentHTML("beforeend", bonusRow({})); });
+    on("[data-pbrm]", function (b) { b.closest(".brow2").remove(); });
+    on("[data-pd]", function (b) { del("points_systems", b.dataset.pd, b); });
     on("#sadd", addSeason);
     on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
@@ -207,6 +216,136 @@
       '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add event</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
     return h;
   }
+  /* ---------- points systems ---------- */
+  function pointsCardHtml() {
+    var S = state.sel;
+    return '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">A championship can have several, such as one for sprints and one for features. Every race picks one.</p><div class="list">' +
+      (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + opts([["", "Empty custom system"]].concat(S.library.map(function (l) { return [l.id, l.name]; })), "", "Choose…") .replace('<option value="">Choose…</option>', "") + "</select></div>" +
+      '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +
+      (S.library.length ? '<p class="muted" style="margin:6px 0 0">Library tables are copied into this championship and can be edited. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
+  }
+  function addPoints() {
+    var C = state.sel.champ, m = $("#pm"), lid = $("#plib").value;
+    var lib = state.sel.library.filter(function (x) { return x.id === lid; })[0];
+    msg(m, "Adding…");
+    if (!lib) {
+      sb.from("points_systems").insert({ championship_id: C.id, name: "New points system" }).select("id").single().then(function (r) {
+        if (r.error) { msg(m, dbError(r.error), "err"); return; }
+        openChamp(C.id, { view: "points", pid: r.data.id });
+      });
+      return;
+    }
+    Promise.all([
+      sb.from("points_systems").select("*").eq("id", lid).single(),
+      sb.from("points_table_entries").select("*").eq("points_system_id", lid),
+      sb.from("points_status_rules").select("*").eq("points_system_id", lid),
+      sb.from("points_bonuses").select("*").eq("points_system_id", lid)
+    ]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { msg(m, dbError(bad.error), "err"); return; }
+      var src = rs[0].data;
+      sb.from("points_systems").insert({ championship_id: C.id, name: src.name, source_series: src.source_series, source_version: src.source_version, source_url: src.source_url, copied_from: src.id }).select("id").single().then(function (r) {
+        if (r.error) { msg(m, dbError(r.error), "err"); return; }
+        var nid = r.data.id, undo = function (t) { return sb.from("points_systems").delete().eq("id", nid).then(function () { msg(m, "Nothing was added: " + t, "err"); }); };
+        var ents = (rs[1].data || []).map(function (e) { return { points_system_id: nid, position: e.position, points: e.points }; });
+        var sts = (rs[2].data || []).map(function (e) { return { points_system_id: nid, status: e.status, points: e.points }; });
+        var bns = (rs[3].data || []).map(function (e) { return { points_system_id: nid, name: e.name, kind: e.kind, points: e.points, description: e.description }; });
+        var steps = [];
+        if (ents.length) steps.push(sb.from("points_table_entries").insert(ents));
+        if (sts.length) steps.push(sb.from("points_status_rules").insert(sts));
+        if (bns.length) steps.push(sb.from("points_bonuses").insert(bns));
+        Promise.all(steps).then(function (xs) {
+          var e2 = xs.filter(function (x) { return x.error; })[0];
+          if (e2) { undo(dbError(e2.error)); return; }
+          openChamp(C.id, { view: "points", pid: nid });
+        });
+      });
+    });
+  }
+  function bonusRow(b) {
+    return '<div class="row brow2" style="margin-top:6px"><div class="field grow"><label>Name</label><input data-bn value="' + esc(b.name || "") + '"></div>' +
+      '<div class="field"><label>Type</label><select data-bk>' + opts([["bonus", "Bonus"], ["penalty", "Penalty"]], b.kind, "Not set") + "</select></div>" +
+      '<div class="field"><label>Points</label><input data-bp type="number" step="any" style="width:90px" value="' + esc(b.points == null ? "" : b.points) + '"></div>' +
+      '<div class="field grow"><label>Note</label><input data-bd value="' + esc(b.description || "") + '"></div>' +
+      '<button type="button" data-pbrm>Remove</button></div>';
+  }
+  function renderPoints(pid) {
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    Promise.all([
+      sb.from("points_systems").select("*").eq("id", pid).single(),
+      sb.from("points_table_entries").select("*").eq("points_system_id", pid).order("position", { ascending: true }),
+      sb.from("points_status_rules").select("*").eq("points_system_id", pid),
+      sb.from("points_bonuses").select("*").eq("points_system_id", pid)
+    ]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + "</div>"; return; }
+      var sys = rs[0].data, ents = (rs[1].data || []).slice().sort(function (a, b) { return a.position - b.position; });
+      var st = {}; (rs[2].data || []).forEach(function (x) { st[x.status] = x.points; });
+      var lines = ents.map(function (e) { return e.points; }).join("\n");
+      var gap = ents.some(function (e, i) { return e.position !== i + 1; });
+      app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
+        '<div class="card"><h2>Points system</h2><input type="hidden" id="pid" value="' + esc(pid) + '">' +
+        '<div class="field"><label for="pn">Name</label><input id="pn" value="' + esc(sys.name) + '"></div>' +
+        (sys.source_series ? '<p class="muted" style="margin:8px 0 0">Copied from ' + esc(sys.source_series) + ". " + esc(sys.source_version || "") + (sys.source_url ? ' <a href="' + esc(sys.source_url) + '" target="_blank" rel="noopener">Source</a>' : "") + "</p>" : "") +
+        '<div class="field" style="margin-top:10px"><label for="pt">Points per finishing position: one number per line, 1st place first</label><textarea id="pt" style="min-height:160px">' + esc(lines) + "</textarea></div>" +
+        (gap ? '<p class="err">This system has gaps in its positions. Saving renumbers it from 1.</p>' : "") +
+        '<p class="muted" style="margin:4px 0 0">A position with no line has no points set. Enter 0 where a place scores nothing.</p>' +
+        '<h3>Non-finishers (leave blank if not set)</h3><div class="row">' +
+        ["dnf", "dns", "dsq", "other"].map(function (k) { return '<div class="field"><label for="ps-' + k + '">' + k.toUpperCase() + '</label><input id="ps-' + k + '" type="number" step="any" style="width:90px" value="' + esc(st[k] == null ? "" : st[k]) + '"></div>'; }).join("") + "</div>" +
+        '<h3>Bonuses and penalties</h3><div id="pbonus">' + (rs[3].data || []).map(bonusRow).join("") + '</div><div style="margin-top:8px"><button type="button" id="pbadd">Add bonus or penalty</button></div>' +
+        '<div class="row" style="margin-top:14px"><button class="primary" id="psave" type="button">Save</button><button class="danger" data-pd="' + esc(pid) + '" type="button">Delete this points system</button></div><div class="msg" id="pm2"></div></div>';
+      bindAll();
+    });
+  }
+  function savePoints() {
+    var pid = $("#pid").value, m = $("#pm2"), name = $("#pn").value.trim();
+    if (!name) { msg(m, "The name cannot be blank.", "err"); return; }
+    var ents = [], lines = $("#pt").value.split("\n").map(function (x) { return x.trim(); }).filter(function (x) { return x !== ""; });
+    for (var i = 0; i < lines.length; i++) {
+      if (!isFinite(Number(lines[i]))) { msg(m, "Line " + (i + 1) + " is not a number: " + lines[i], "err"); return; }
+      ents.push({ points_system_id: pid, position: i + 1, points: Number(lines[i]) });
+    }
+    if (!ents.length) { msg(m, "Enter the points for at least 1st place.", "err"); return; }
+    var sts = [];
+    ["dnf", "dns", "dsq", "other"].forEach(function (k) { var v = numOrNull($("#ps-" + k).value); if (v != null) sts.push({ points_system_id: pid, status: k, points: v }); });
+    var bns = [], badb = null;
+    document.querySelectorAll("#pbonus .brow2").forEach(function (r) {
+      var bn = r.querySelector("[data-bn]").value.trim(), bk = r.querySelector("[data-bk]").value, bp = numOrNull(r.querySelector("[data-bp]").value);
+      if (!bn && !bk && bp == null) return;
+      if (!bn || !bk || bp == null) { badb = "Every bonus or penalty needs a name, a type and a points value."; return; }
+      bns.push({ points_system_id: pid, name: bn, kind: bk, points: bp, description: nul(r.querySelector("[data-bd]").value) });
+    });
+    if (badb) { msg(m, badb, "err"); return; }
+    msg(m, "Saving…");
+    var fail = function (x) { msg(m, x ? dbError(x) : "Could not save.", "err"); };
+    sb.from("points_systems").update({ name: name }).eq("id", pid).then(function (r1) {
+      if (r1.error) { fail(r1.error); return; }
+      sb.from("points_table_entries").upsert(ents, { onConflict: "points_system_id,position" }).then(function (r2) {
+        if (r2.error) { fail(r2.error); return; }
+        sb.from("points_table_entries").delete().eq("points_system_id", pid).gt("position", ents.length).then(function (r3) {
+          if (r3.error) { fail(r3.error); return; }
+          sb.from("points_status_rules").delete().eq("points_system_id", pid).then(function (r4) {
+            if (r4.error) { fail(r4.error); return; }
+            var p5 = sts.length ? sb.from("points_status_rules").insert(sts) : Promise.resolve({});
+            p5.then(function (r5) {
+              if (r5.error) { fail(r5.error); return; }
+              sb.from("points_bonuses").delete().eq("points_system_id", pid).then(function (r6) {
+                if (r6.error) { fail(r6.error); return; }
+                var p7 = bns.length ? sb.from("points_bonuses").insert(bns) : Promise.resolve({});
+                p7.then(function (r7) {
+                  if (r7.error) { fail(r7.error); return; }
+                  openChamp(state.sel.champ.id, { view: "points", pid: pid });
+                  setTimeout(function () { msg($("#pm2"), "Saved.", "ok"); }, 500);
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+
   /* ---------- the season's schedule ---------- */
   // The frequency, start time and zone belong to the season. They are set once, either when the
   // season is created or the first time rounds are added, and later rounds reuse them.
@@ -412,7 +551,7 @@
     armed = null;
     sb.from(table).delete().eq("id", id).then(function (r) {
       if (r.error) { btn.textContent = dbError(r.error); return; }
-      openChamp(state.sel.champ.id, table === "seasons" ? { view: "champ" } : undefined);
+      openChamp(state.sel.champ.id, table === "seasons" || table === "points_systems" ? { view: "champ" } : undefined);
     });
   }
 

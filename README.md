@@ -41,6 +41,8 @@ Deliberately left out: any attempt to list or control Forza's lobby settings. Ra
 
 **Lobby and race start.** A season's schedule has an optional lobby-open time and a race start time, both in the league time zone. Every round inherits both, and either can be changed on a single round. The lobby must open at or before the race start on the same day. A database that was created before this was added needs `supabase/migrations/001_lobby_time.sql` run once.
 
+**Points systems.** A championship has any number of named points systems, each with points per position, optional DNF/DNS/DSQ points and bonuses or penalties. A library of real-world tables (`supabase/points_library.sql`, run once after the schema) can be copied into a championship and edited; each library row records its source and caveats. The tool does not yet model per-position stage points (NASCAR stages).
+
 ## Not done yet
 
 - The licence of the FM23Data files has not been checked, and there is no licence file in that repository.
