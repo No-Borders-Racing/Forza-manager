@@ -253,7 +253,7 @@
         var bns = (rs[3].data || []).map(function (e) { return { points_system_id: nid, name: e.name, kind: e.kind, points: e.points, description: e.description }; });
         var steps = [];
         if (ents.length) steps.push(sb.from("points_table_entries").insert(ents));
-        if (sts.length) steps.push(sb.from("points_status_rules").insert(sts));
+        if (sts.length) steps.push(sb.from("points_status_rules").upsert(sts, { onConflict: "points_system_id,status" }));
         if (bns.length) steps.push(sb.from("points_bonuses").insert(bns));
         Promise.all(steps).then(function (xs) {
           var e2 = xs.filter(function (x) { return x.error; })[0];
@@ -291,7 +291,7 @@
         '<div class="field" style="margin-top:10px"><label for="pt">Points per finishing position: one number per line, 1st place first</label><textarea id="pt" style="min-height:160px">' + esc(lines) + "</textarea></div>" +
         (gap ? '<p class="err">This system has gaps in its positions. Saving renumbers it from 1.</p>' : "") +
         '<p class="muted" style="margin:4px 0 0">A position with no line has no points set. Enter 0 where a place scores nothing.</p>' +
-        '<h3>Non-finishers (leave blank if not set)</h3><div class="row">' +
+        '<h3>Non-finishers</h3><p class="muted" style="margin:0 0 6px">A DNF scores 0 unless you change it here. Leave a box blank to leave it unset.</p><div class="row">' +
         ["dnf", "dns", "dsq", "other"].map(function (k) { return '<div class="field"><label for="ps-' + k + '">' + k.toUpperCase() + '</label><input id="ps-' + k + '" type="number" step="any" style="width:90px" value="' + esc(st[k] == null ? "" : st[k]) + '"></div>'; }).join("") + "</div>" +
         '<h3>Bonuses and penalties</h3><div id="pbonus">' + (rs[3].data || []).map(bonusRow).join("") + '</div><div style="margin-top:8px"><button type="button" id="pbadd">Add bonus or penalty</button></div>' +
         '<div class="row" style="margin-top:14px"><button class="primary" id="psave" type="button">Save</button><button class="danger" data-pd="' + esc(pid) + '" type="button">Delete this points system</button></div><div class="msg" id="pm2"></div></div>';
