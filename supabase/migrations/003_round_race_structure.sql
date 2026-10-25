@@ -8,13 +8,9 @@ alter table public.championships
   add column if not exists schedule_every_weeks integer,
   add column if not exists lobby_local_time time,
   add column if not exists race_local_time time;
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'championships_schedule_every_weeks_check') then
-    alter table public.championships add constraint championships_schedule_every_weeks_check
-      check (schedule_every_weeks is null or schedule_every_weeks between 1 and 4);
-  end if;
-end $$;
+alter table public.championships drop constraint if exists championships_schedule_every_weeks_check;
+alter table public.championships add constraint championships_schedule_every_weeks_check
+  check (schedule_every_weeks is null or schedule_every_weeks between 1 and 4);
 
 alter table public.events
   add column if not exists track_layout_id uuid references public.track_layouts (id) on delete restrict,
