@@ -56,6 +56,10 @@ create table public.championships (
   visibility text check (visibility in ('public', 'private')),
   -- IANA name such as 'Australia/Sydney'. Blank until the admin chooses one.
   intended_timezone text check (intended_timezone is null or public.is_valid_timezone(intended_timezone)),
+  -- The schedule pattern every season and round inherits. Blank until the admin sets it.
+  schedule_every_weeks integer check (schedule_every_weeks is null or schedule_every_weeks between 1 and 4),
+  lobby_local_time time,                -- optional: when the lobby opens, in intended_timezone
+  race_local_time time,                 -- race start, in intended_timezone
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -152,6 +156,11 @@ create table public.track_layouts (
   updated_at timestamptz not null default now(),
   unique (venue_id, name)
 );
+
+-- A round (stored in events) is held at one track layout; its races share it.
+alter table public.events
+  add column track_layout_id uuid references public.track_layouts (id) on delete restrict,
+  add column is_bonus boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- Scoring (points are calculated by application code from these rules, never by AI)
@@ -334,22 +343,27 @@ create table public.races (
   sort_order integer not null,
   session_type text,                    -- free text, for example "Sprint" or "Feature"
   starts_at timestamptz,
-  track_layout_id uuid references public.track_layouts (id) on delete restrict,
   laps integer check (laps is null or laps > 0),
   target_distance_km numeric check (target_distance_km is null or target_distance_km > 0),
   duration_minutes integer check (duration_minutes is null or duration_minutes > 0),
   points_system_id uuid references public.points_systems (id) on delete set null,
+  -- Ticked by the admin when results are uploaded for this race. The scoring code doubles points.
+  double_points boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index races_event_idx on public.races (event_id);
 
-create table public.race_classes (
-  race_id uuid not null references public.races (id) on delete cascade,
-  class_id uuid not null references public.classes (id) on delete cascade,
-  -- Optional class-specific scoring, overriding the race's points system.
+-- The races every new round starts with, set once on the championship. Existing rounds are not
+-- rewritten when this changes. Classes belong to the championship, not to a race.
+create table public.race_templates (
+  id uuid primary key default gen_random_uuid(),
+  championship_id uuid not null references public.championships (id) on delete cascade,
+  sort_order integer not null,
+  name text not null check (length(btrim(name)) > 0),
+  laps integer check (laps is null or laps > 0),
   points_system_id uuid references public.points_systems (id) on delete set null,
-  primary key (race_id, class_id)
+  unique (championship_id, sort_order)
 );
 
 -- ---------------------------------------------------------------------------
@@ -632,7 +646,7 @@ declare t text;
 begin
   foreach t in array array['admins', 'championships', 'seasons', 'event_series', 'events', 'track_venues',
     'track_layouts', 'points_systems', 'points_table_entries', 'points_status_rules', 'points_bonuses',
-    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_classes',
+    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_templates',
     'spec_fields', 'build_specs', 'build_spec_values', 'drivers', 'results', 'results_audit']
   loop
     execute format('alter table public.%I enable row level security', t);
@@ -641,7 +655,7 @@ begin
   -- Admins can do everything on every table except the admins list itself.
   foreach t in array array['championships', 'seasons', 'event_series', 'events', 'track_venues',
     'track_layouts', 'points_systems', 'points_table_entries', 'points_status_rules', 'points_bonuses',
-    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_classes',
+    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_templates',
     'spec_fields', 'build_specs', 'build_spec_values', 'drivers', 'results', 'results_audit']
   loop
     execute format('create policy %I on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())',
@@ -658,8 +672,6 @@ create policy events_public_read on public.events for select to anon, authentica
   using (public.season_is_public(season_id));
 create policy races_public_read on public.races for select to anon, authenticated
   using (public.event_is_public(event_id));
-create policy race_classes_public_read on public.race_classes for select to anon, authenticated
-  using (public.race_is_public(race_id));
 create policy classes_public_read on public.classes for select to anon, authenticated
   using (public.championship_is_public(championship_id));
 create policy points_systems_public_read on public.points_systems for select to anon, authenticated
@@ -697,14 +709,14 @@ join public.cars c on c.id = e.car_id;
 
 create view public.public_races as
 select r.id as race_id, r.event_id, r.name, r.session_type, r.sort_order, r.starts_at,
-       r.laps, r.target_distance_km, r.duration_minutes,
+       r.double_points, e.is_bonus, r.laps, r.target_distance_km, r.duration_minutes,
        v.name as venue, l.name as layout, l.length_km, l.length_mi, l.is_reverse, l.verified as length_verified
 from public.races r
 join public.events e on e.id = r.event_id
 join public.seasons s on s.id = e.season_id
 join public.championships ch on ch.id = s.championship_id
  and ch.status = 'published' and ch.visibility = 'public'
-left join public.track_layouts l on l.id = r.track_layout_id
+left join public.track_layouts l on l.id = e.track_layout_id
 left join public.track_venues v on v.id = l.venue_id;
 
 create view public.public_build_specs as
