@@ -156,7 +156,7 @@
       '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
       '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
       '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button></div><div class="msg" id="cm"></div>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button class="danger" id="cgodel" type="button">Delete championship…</button></div><div class="msg" id="cm"></div>' +
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
     h += pointsCardHtml() + templateCardHtml();
     h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
@@ -192,6 +192,7 @@
     on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
     on("#csave", saveChamp);
     on("#cdel", deleteChamp);
+    on("#cgodel", function () { var t = $("#cdn"); t.scrollIntoView({ block: "center" }); t.focus(); });
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
     on("[data-pp]", function (b) { state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
