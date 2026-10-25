@@ -38,6 +38,9 @@
       '<optgroup label="Common">' + common.map(function (c) { return one(c[0], c[1]); }).join("") + "</optgroup>" +
       '<optgroup label="All other time zones">' + zones.filter(function (z) { return names.indexOf(z) < 0; }).map(function (z) { return one(z, z.replace(/_/g, " ")); }).join("") + "</optgroup>";
   }
+  function browserZone() {
+    try { var z = Intl.DateTimeFormat().resolvedOptions().timeZone; return z && zones.indexOf(z) >= 0 ? z : null; } catch (e) { return null; }
+  }
   function msg(el, text, kind) { if (el) { el.className = "msg " + (kind || ""); el.textContent = text || ""; } }
   function nul(v) { v = (v || "").trim(); return v === "" ? null : v; }
   function numOrNull(v) { v = (v || "").trim(); return v === "" || !isFinite(Number(v)) ? null : Number(v); }
@@ -92,7 +95,7 @@
         return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
       }).join("") : '<p class="muted">None yet.</p>') + '</div><div id="ldelbox"></div></div>' +
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
-      '<p class="muted">It starts as a draft with every other setting blank.</p></div>';
+      '<p class="muted">It starts as a draft. The league time zone is filled in from the time zone of this browser (you can change it on the championship page); every other setting is blank.</p></div>';
     app.querySelectorAll("button.item").forEach(function (b) { b.addEventListener("click", function () { openChamp(b.dataset.id); }); });
     app.querySelectorAll("[data-ldel]").forEach(function (b) { b.addEventListener("click", function () {
       var c = state.champs.filter(function (x) { return x.id === b.dataset.ldel; })[0], box = $("#ldelbox");
@@ -111,7 +114,7 @@
     }); });
     $("#nadd").addEventListener("click", function () {
       var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }
-      sb.from("championships").insert({ name: n }).select("id").single().then(function (r) {
+      sb.from("championships").insert({ name: n, intended_timezone: browserZone() }).select("id").single().then(function (r) {
         if (r.error) { msg($("#nm"), dbError(r.error), "err"); return; }
         openChamp(r.data.id);
       });
