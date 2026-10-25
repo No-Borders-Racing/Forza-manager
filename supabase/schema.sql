@@ -240,7 +240,7 @@ create table public.cars (
   drivetrain text check (drivetrain in ('RWD', 'AWD', 'FWD')),
   engine_position text, displacement_l numeric, engine_layout text,
   cylinders integer, induction text,
-  model_type text, body text, topless boolean, steering_position text,
+  model_type text, steering_position text,
   source text not null,
   verified boolean not null default false,
   verified_at timestamptz,
