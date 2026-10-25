@@ -161,6 +161,8 @@
       var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
       return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " round" + (n === 1 ? "" : "s") + "</span></button>";
     }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
+    h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
+      '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
     app.innerHTML = h;
     bindAll();
     refreshMissing();
@@ -187,6 +189,8 @@
     on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
     on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
     on("#csave", saveChamp);
+    on("#cdel", deleteChamp);
+    var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
     on("[data-pp]", function (b) { state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
     on("#tadd", function () { $("#tpl").insertAdjacentHTML("beforeend", templateRow({})); });
@@ -207,6 +211,15 @@
     on("[data-es]", function (b) { saveEvent(b.dataset.es); });
     on("[data-ed]", function (b) { del("events", b.dataset.ed, b); });
     app.querySelectorAll("[data-gf]").forEach(function (el) { el.addEventListener("change", function () { delete plans[el.dataset.gf]; var pv = $("#gv-" + el.dataset.gf); if (pv) pv.innerHTML = ""; }); });
+  }
+  function deleteChamp() {
+    var c = state.sel.champ, m = $("#cdm");
+    if ($("#cdn").value.trim() !== c.name) { msg(m, "Type the championship name exactly to confirm.", "err"); return; }
+    $("#cdel").disabled = true; msg(m, "Deleting…");
+    sb.from("championships").delete().eq("id", c.id).then(function (r) {
+      if (r.error) { msg(m, dbError(r.error), "err"); $("#cdel").disabled = false; return; }
+      loadChamps();
+    });
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
