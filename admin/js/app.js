@@ -91,9 +91,11 @@
       (state.champs.length ? state.champs.map(function (c) {
         return '<button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + "</span></button>";
       }).join("") : '<p class="muted">None yet.</p>') + "</div></div>" +
+      '<div class="card"><h3 style="margin-top:0">Data</h3><p class="muted" style="margin:0 0 8px">Tracks and cars used by every championship.</p><button type="button" id="imtracks">Import tracks</button></div>' +
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
       '<p class="muted">It starts as a draft with every other setting blank.</p></div>';
     app.querySelectorAll("button.item").forEach(function (b) { b.addEventListener("click", function () { openChamp(b.dataset.id); }); });
+    $("#imtracks").addEventListener("click", function () { FCMImport.renderTracks(app, sb, renderChampList); });
     $("#nadd").addEventListener("click", function () {
       var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }
       sb.from("championships").insert({ name: n }).select("id").single().then(function (r) {
