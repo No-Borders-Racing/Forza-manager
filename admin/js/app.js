@@ -114,11 +114,20 @@
       var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
       var psP = sb.from("points_systems").select("id,name,source_series").eq("championship_id", id).order("name", { ascending: true });
       var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).order("name", { ascending: true });
-      Promise.all([evP, srP, psP, libP]).then(function (xs) {
-        state.sel = { champ: rs[0].data, seasons: seasons, events: xs[0].data || [], series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [] };
-        state.nav = nav || prev || { view: "champ" };
-        if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
-        renderCurrent();
+      var tplP = sb.from("race_templates").select("*").eq("championship_id", id).order("sort_order", { ascending: true });
+      var trkP = sb.from("track_layouts").select("id,name,length_km,is_reverse,track_venues(name)").order("name", { ascending: true });
+      Promise.all([evP, srP, psP, libP, tplP, trkP]).then(function (xs) {
+        var evList = xs[0].data || [];
+        var raceP = evList.length ? sb.from("races").select("*").in("event_id", evList.map(function (e) { return e.id; })).order("sort_order", { ascending: true }) : Promise.resolve({ data: [] });
+        raceP.then(function (rr) {
+          var bad = [xs[4], xs[5], rr].filter(function (x) { return x.error; })[0];
+          if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + ' Has the latest database change (migrations/003_round_race_structure.sql) been run?</div>'; return; }
+          state.sel = { champ: rs[0].data, seasons: seasons, events: evList, series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [], templates: xs[4].data || [], races: rr.data || [] };
+          state.tracks = xs[5].data || [];
+          state.nav = nav || prev || { view: "champ" };
+          if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
+          renderCurrent();
+        });
       });
     });
   }
@@ -140,13 +149,17 @@
       '<div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
       '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
       '<div class="field" style="margin-top:8px"><label for="ct">League time zone</label><select id="ct">' + zoneOpts(c.intended_timezone, "Not set") + "</select></div>" +
+      '<h3>Schedule pattern</h3><p class="muted" style="margin:0 0 6px">Every season and round inherits this. A season only asks for a starting date and a number of rounds. Times are in the league time zone.</p>' +
+      '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
+      '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
+      '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
       '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button></div><div class="msg" id="cm"></div>' +
       '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
-    h += pointsCardHtml();
+    h += pointsCardHtml() + templateCardHtml();
     h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
       var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
-      return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " event" + (n === 1 ? "" : "s") + "</span></button>";
+      return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " round" + (n === 1 ? "" : "s") + "</span></button>";
     }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
     app.innerHTML = h;
     bindAll();
@@ -176,6 +189,11 @@
     on("#csave", saveChamp);
     on("[data-pp]", function (b) { state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
+    on("#tadd", function () { $("#tpl").insertAdjacentHTML("beforeend", templateRow({})); });
+    on("[data-trm]", function (b) { b.closest(".trow").remove(); });
+    on("#tsave", saveTemplates);
+    on("[data-radd]", function (b) { $("#rc-" + b.dataset.radd).insertAdjacentHTML("beforeend", raceRow({}, b.dataset.radd)); });
+    on("[data-rrm]", function (b) { b.closest(".rrow").remove(); });
     on("#psave", savePoints);
     on("#pbadd", function () { var box = $("#pbonus"); box.insertAdjacentHTML("beforeend", bonusRow({})); });
     on("[data-pbrm]", function (b) { b.closest(".brow2").remove(); });
@@ -192,8 +210,11 @@
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
-    var patch = { name: $("#cn").value.trim(), visibility: nul($("#cv").value), intended_timezone: nul($("#ct").value), description: nul($("#cd").value), status: $("#cs").value };
+    var patch = { name: $("#cn").value.trim(), visibility: nul($("#cv").value), intended_timezone: nul($("#ct").value), description: nul($("#cd").value), status: $("#cs").value,
+      schedule_every_weeks: numOrNull($("#cfreq").value), lobby_local_time: nul($("#clob").value), race_local_time: nul($("#crace").value) };
     if (!patch.name) { msg(m, "The name cannot be blank.", "err"); return; }
+    if (patch.lobby_local_time && !patch.race_local_time) { msg(m, "Set the race start as well as the lobby time.", "err"); return; }
+    if (patch.lobby_local_time && patch.lobby_local_time > patch.race_local_time) { msg(m, "The lobby must open at or before the race start, on the same day.", "err"); return; }
     msg(m, "Saving…");
     sb.from("championships").update(patch).eq("id", c.id).select("*").single().then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
@@ -209,11 +230,11 @@
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<div class="field"><label for="se-' + s.id + '">Ends</label><input id="se-' + s.id + '" type="date" value="' + esc(s.ends_on || "") + '"></div>' +
       '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
-      "<h3>Events (" + evs.length + ")</h3>";
+      "<h3>Rounds (" + evs.length + ")</h3>";
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
-    h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single event outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
-      '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add event</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
+    h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single round outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
+      '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add round</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
     return h;
   }
   /* ---------- points systems ---------- */
@@ -225,6 +246,48 @@
       '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +
       (S.library.length ? '<p class="muted" style="margin:6px 0 0">Library tables are copied into this championship and can be edited. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
   }
+  /* ---------- race format template ---------- */
+  function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Not set"); }
+  function templateRow(t) {
+    return '<div class="row trow" style="margin-top:6px"><div class="field grow"><label>Race name</label><input data-tn value="' + esc(t.name || "") + '" placeholder="For example Sprint"></div>' +
+      '<div class="field"><label>Laps</label><input data-tl type="number" min="1" style="width:90px" value="' + esc(t.laps == null ? "" : t.laps) + '"></div>' +
+      '<div class="field grow"><label>Points system</label><select data-tp>' + pointsOpts(t.points_system_id) + "</select></div>" +
+      '<button type="button" data-trm>Remove</button></div>';
+  }
+  function templateCardHtml() {
+    var S = state.sel;
+    return '<div class="card"><h2>Race format</h2><p class="muted" style="margin:0 0 8px">The races every new round starts with. You can change or remove them on any one round. Rounds that already exist are not changed when you edit this.</p>' +
+      '<div id="tpl">' + S.templates.map(templateRow).join("") + '</div>' +
+      '<div class="row" style="margin-top:10px"><button type="button" id="tadd">Add a race</button><button class="primary" type="button" id="tsave">Save race format</button></div><div class="msg" id="tm"></div></div>';
+  }
+  function saveTemplates() {
+    var m = $("#tm"), rows = [], bad = null;
+    document.querySelectorAll("#tpl .trow").forEach(function (r) {
+      var name = r.querySelector("[data-tn]").value.trim(), laps = numOrNull(r.querySelector("[data-tl]").value), pts = nul(r.querySelector("[data-tp]").value);
+      if (!name) { bad = "Every race needs a name."; return; }
+      if (laps != null && (laps < 1 || Math.floor(laps) !== laps)) { bad = "Laps must be a whole number of 1 or more."; return; }
+      rows.push({ championship_id: state.sel.champ.id, sort_order: rows.length + 1, name: name, laps: laps, points_system_id: pts });
+    });
+    if (bad) { msg(m, bad, "err"); return; }
+    msg(m, "Saving…");
+    var fin = function (e) { if (e) { msg(m, dbError(e), "err"); return; } openChamp(state.sel.champ.id); setTimeout(function () { msg($("#tm"), "Saved.", "ok"); }, 500); };
+    var cid = state.sel.champ.id;
+    (rows.length ? sb.from("race_templates").upsert(rows, { onConflict: "championship_id,sort_order" }) : Promise.resolve({})).then(function (r1) {
+      if (r1.error) { fin(r1.error); return; }
+      sb.from("race_templates").delete().eq("championship_id", cid).gt("sort_order", rows.length).then(function (r2) { fin(r2.error); });
+    });
+  }
+  // The races a new round starts with, copied from the championship's race format.
+  function racesForNewRounds(events) {
+    var T = state.sel.templates, out = [];
+    events.forEach(function (e) { T.forEach(function (t) { out.push({ event_id: e.id, sort_order: t.sort_order, name: t.name, laps: t.laps, points_system_id: t.points_system_id }); }); });
+    return out;
+  }
+  function insertRaces(events) {
+    var rows = racesForNewRounds(events);
+    return rows.length ? sb.from("races").insert(rows) : Promise.resolve({});
+  }
+
   function addPoints() {
     var C = state.sel.champ, m = $("#pm"), lid = $("#plib").value;
     var lib = state.sel.library.filter(function (x) { return x.id === lid; })[0];
@@ -350,6 +413,13 @@
   // The frequency, start time and zone belong to the season. They are set once, either when the
   // season is created or the first time rounds are added, and later rounds reuse them.
   var FREQ_OPTS = { weekly: { l: "Weekly", pattern: "weekly", n: 1 }, fortnightly: { l: "Fortnightly", pattern: "fortnightly", n: 2 }, w3: { l: "Every 3 weeks", pattern: "custom", n: 3 }, w4: { l: "Every 4 weeks", pattern: "custom", n: 4 } };
+  // The schedule pattern lives on the championship; a season copies it when its rounds are first made.
+  function champPattern() {
+    var c = state.sel.champ, fo = { 1: "weekly", 2: "fortnightly", 3: "w3", 4: "w4" }[c.schedule_every_weeks];
+    if (!fo || !c.race_local_time || !c.intended_timezone) return { error: "Set the frequency, the race start and the time zone on the championship page first, then save." };
+    var o = FREQ_OPTS[fo], race = String(c.race_local_time).slice(0, 5), lob = c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "";
+    return { pattern: o.pattern, n: o.n, t: race, l: lob, z: c.intended_timezone, text: o.l + " · " + (lob ? "lobby " + lob + ", race " : "race ") + race + " " + c.intended_timezone };
+  }
   function leagueZone() { return state.sel && state.sel.champ.intended_timezone || null; }
   var FREQ = { weekly: "Weekly", fortnightly: "Fortnightly", monthly: "Monthly", custom: "Custom" };
   function seriesFor(sid) { return (state.sel.series || []).filter(function (x) { return x.season_id === sid; })[0] || null; }
@@ -367,13 +437,10 @@
       h += '<p class="muted" style="margin:0 0 8px">Schedule for this season: ' + esc(scheduleText(ser)) + ". New rounds follow it.</p>" +
         '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds to add</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div></div>';
     } else {
-      var lz = leagueZone();
-      h += '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
-        '<div class="field"><label for="gf-' + k + '">Frequency</label><select id="gf-' + k + '" data-gf="' + k + '">' + opts(Object.keys(FREQ_OPTS).map(function (x) { return [x, FREQ_OPTS[x].l]; }), "", "Not set") + "</select></div>" +
-        '<div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div>' +
-        '<div class="field"><label for="gl-' + k + '">Lobby opens (optional)</label><input id="gl-' + k + '" type="time"></div>' +
-        '<div class="field"><label for="gt-' + k + '">Race start</label><input id="gt-' + k + '" type="time"></div></div>' +
-        (lz ? '<p class="muted" style="margin:8px 0 0">Times are in the league time zone: ' + esc(lz) + ".</p>" : '<p class="err" style="margin:8px 0 0">Set the league time zone at the top of this page and save before adding rounds.</p>');
+      var pat = champPattern();
+      h += (pat.error ? '<p class="err" style="margin:0 0 8px">' + esc(pat.error) + "</p>" : '<p class="muted" style="margin:0 0 8px">Schedule from the championship: ' + esc(pat.text) + ".</p>") +
+        '<div class="row"><div class="field"><label for="gn-' + k + '">Number of rounds</label><input id="gn-' + k + '" type="number" min="1" max="200" style="width:110px"></div>' +
+        '<div class="field"><label for="gd-' + k + '">Starting date</label><input id="gd-' + k + '" type="date"></div></div>';
     }
     return h + '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
   }
@@ -383,9 +450,9 @@
     var ser = sid ? seriesFor(sid) : null, done = ser ? ser.occurrence_count : 0, extra = numOrNull($("#gn-" + k).value), cfgv;
     if (ser) cfgv = { pattern: ser.pattern, mode: ser.monthly_mode || "", ic: ser.interval_count, iu: ser.interval_unit, start: ser.first_local_date, t: String(ser.local_time).slice(0, 5), l: ser.lobby_local_time ? String(ser.lobby_local_time).slice(0, 5) : "", z: ser.timezone };
     else {
-      var fo = FREQ_OPTS[$("#gf-" + k).value];
-      cfgv = { pattern: fo ? fo.pattern : "", mode: "", ic: fo ? fo.n : null, iu: "week", start: $("#gd-" + k).value, t: $("#gt-" + k).value, l: $("#gl-" + k).value, z: leagueZone() };
-      if (!cfgv.z) { box.innerHTML = '<p class="err">Set the league time zone at the top of this page and save first.</p>'; return; }
+      var pt = champPattern();
+      if (pt.error) { box.innerHTML = '<p class="err">' + esc(pt.error) + "</p>"; return; }
+      cfgv = { pattern: pt.pattern, mode: "", ic: pt.n, iu: "week", start: $("#gd-" + k).value, t: pt.t, l: pt.l, z: pt.z };
     }
     if (k === "new" && !$("#sn").value.trim()) { box.innerHTML = '<p class="err">Type the season name first.</p>'; return; }
     if (!(extra >= 1)) { box.innerHTML = '<p class="err">Enter the number of rounds.</p>'; return; }
@@ -408,7 +475,7 @@
     if (bad) h += '<p class="err">Change the start time, the date or the zone so every round is valid, then preview again.</p>';
     else {
       h += "<p>" + (k === "new" ? "The season will start on <b>" + esc(g.dates[0]) + "</b> and end on <b>" + esc(last) + "</b>." : "The season end date will be set to <b>" + esc(last) + "</b>" + (season && season.ends_on && season.ends_on !== last ? ' <span class="muted">(it is currently ' + esc(season.ends_on) + ")</span>" : "") + ".") + "</p>" +
-        (evs.length ? '<p class="muted">This season already has ' + evs.length + " event" + (evs.length === 1 ? "" : "s") + ", so numbering continues from round " + first + ".</p>" : "") +
+        (evs.length ? '<p class="muted">This season already has ' + evs.length + " round" + (evs.length === 1 ? "" : "s") + ", so numbering continues from round " + first + ".</p>" : "") +
         '<button class="primary" data-gc="' + k + '" type="button">' + (k === "new" ? "Create season with " : "Create ") + rows.length + " round" + (rows.length === 1 ? "" : "s") + '</button><div class="msg" id="gm2-' + k + '"></div>';
       plans[k] = { rows: rows, first: g.dates[0], last: last, cfg: cfgv, done: done, ser: ser };
     }
@@ -446,8 +513,9 @@
         };
         // 3. the events
         var evs = pl.rows.map(function (r) { var o = { season_id: sid, series_id: rr.data.id, occurrence_date: r.d, round_number: r.n, starts_at: r.inst, original_starts_at: r.inst, timezone: cf.z }; if (r.lobby) o.lobby_opens_at = r.lobby; return o; });
-        sb.from("events").insert(evs).then(function (er) {
+        sb.from("events").insert(evs).select("id").then(function (er) {
           if (er.error) { fail("No rounds were created: " + dbError(er.error), undoRule); return; }
+          insertRaces(er.data || []).then(function (rrs) { if (rrs.error) setTimeout(function () { msg($("#sm-" + sid), "Rounds were created, but their races could not be added: " + dbError(rrs.error), "err"); }, 600); });
           // 4. the season end date
           sb.from("seasons").update({ ends_on: pl.last }).eq("id", sid).then(function (ur) {
             delete plans[k];
@@ -477,6 +545,30 @@
   }
 
   /* ---------- events ---------- */
+  function trackOpts(cur) {
+    var T = state.tracks || [];
+    if (!T.length) return '<option value="">No tracks loaded yet</option>';
+    return '<option value="">Not set</option>' + T.map(function (t) {
+      var v = t.track_venues && t.track_venues.name ? t.track_venues.name : "";
+      return '<option value="' + esc(t.id) + '"' + (cur === t.id ? " selected" : "") + ">" + esc((v ? v + " · " : "") + t.name + (t.length_km ? " (" + Number(t.length_km).toFixed(2) + " km)" : "")) + "</option>";
+    }).join("");
+  }
+  function trackById(id) { return (state.tracks || []).filter(function (t) { return t.id === id; })[0] || null; }
+  function raceRow(r, eid) {
+    return '<div class="row rrow" data-rid="' + esc(r.id || "") + '" style="margin-top:6px"><div class="field grow"><label>Race</label><input data-rn value="' + esc(r.name || "") + '" placeholder="For example Sprint"></div>' +
+      '<div class="field"><label>Laps</label><input data-rl type="number" min="1" style="width:90px" value="' + esc(r.laps == null ? "" : r.laps) + '"></div>' +
+      '<div class="field grow"><label>Points system</label><select data-rp>' + pointsOpts(r.points_system_id) + "</select></div>" +
+      '<div class="field"><span class="lbl">Distance</span><div style="padding:7px 0" class="muted" data-rd>' + esc(raceDistance(r, eid)) + "</div></div>" +
+      '<button type="button" data-rrm>Remove</button></div>';
+  }
+  function raceDistance(r, eid) {
+    var ev = state.sel.events.filter(function (e) { return e.id === eid; })[0], t = ev && trackById(ev.track_layout_id);
+    return t && r.laps && t.length_km ? "≈ " + (Number(t.length_km) * r.laps).toFixed(1) + " km" : "";
+  }
+  function racesBlock(e) {
+    var rs = state.sel.races.filter(function (r) { return r.event_id === e.id; }).sort(function (a, b) { return a.sort_order - b.sort_order; });
+    return '<h3>Races in this round</h3><div id="rc-' + e.id + '">' + rs.map(function (r) { return raceRow(r, e.id); }).join("") + '</div><div style="margin-top:8px"><button type="button" data-radd="' + e.id + '">Add a race</button></div>';
+  }
   function eventFields(k, e) {
     var loc = e.starts_at && e.timezone ? TZ.localText(Date.parse(e.starts_at), e.timezone) : { date: "", time: "" };
     var lob = e.lobby_opens_at && e.timezone ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone) : { date: "", time: "" };
@@ -487,6 +579,8 @@
       '<div class="field"><label for="et-' + k + '">Race start</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
       '<div class="field grow"><span class="lbl">Time zone</span><div id="ez-' + k + '" style="padding:7px 0">' + esc(e.timezone || leagueZone() || "Set the league time zone first") + (e.timezone && leagueZone() && e.timezone !== leagueZone() ? ' <span class="muted">(differs from the league zone)</span>' : "") + "</div></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
+      '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etk-' + k + '">Track and layout</label><select id="etk-' + k + '">' + trackOpts(e.track_layout_id) + "</select></div>" +
+      '<div class="field"><label for="eb-' + k + '">Bonus round</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="eb-' + k + '" type="checkbox"' + (e.is_bonus ? " checked" : "") + "> Counts as a bonus round</label></div></div>" +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
   }
   function eventHtml(e) {
@@ -496,14 +590,14 @@
       var lb = e.lobby_opens_at ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone).time : "";
       when = a.date + " " + (lb ? "lobby " + lb + ", race " : "") + a.time + " " + e.timezone + (viewerTz !== e.timezone ? " (your time: " + b.date + " " + b.time + ")" : "");
     }
-    return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(e.name || "Unnamed event") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
-      '<div style="margin-top:10px">' + eventFields(e.id, e) +
-      '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save event</button><button class="danger" data-ed="' + e.id + '" type="button">Delete event</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
+    return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(e.name || "Unnamed round") + (e.is_bonus ? ' <span class="pill">bonus</span>' : "") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
+      '<div style="margin-top:10px">' + eventFields(e.id, e) + racesBlock(e) +
+      '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save round</button><button class="danger" data-ed="' + e.id + '" type="button">Delete round</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
   }
   function readEvent(k, m) {
     var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
     var z = (ev && ev.timezone) || leagueZone() || "";
-    var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value) };
+    var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value), track_layout_id: nul($("#etk-" + k).value), is_bonus: $("#eb-" + k).checked };
     var lt = $("#el-" + k).value, any = d || t;
     if (lt && !t) { msg(m, "Set the race start time as well as the lobby time.", "err"); return null; }
     if (any) {
@@ -527,10 +621,35 @@
   function addEvent(sid) {
     var k = "new-" + sid, m = $("#em-" + k), v = readEvent(k, m); if (!v) return;
     v.season_id = sid;
-    sb.from("events").insert(v).then(function (r) {
+    sb.from("events").insert(v).select("id").then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      openChamp(state.sel.champ.id);
+      insertRaces(r.data || []).then(function (rr) {
+        if (rr.error) { msg(m, "The round was created, but its races could not be added: " + dbError(rr.error), "err"); return; }
+        openChamp(state.sel.champ.id);
+      });
     });
+  }
+  function readRaces(eid, m) {
+    var out = [], bad = null;
+    document.querySelectorAll("#rc-" + eid + " .rrow").forEach(function (r) {
+      var name = r.querySelector("[data-rn]").value.trim(), laps = numOrNull(r.querySelector("[data-rl]").value);
+      if (!name) { bad = "Every race needs a name."; return; }
+      if (laps != null && (laps < 1 || Math.floor(laps) !== laps)) { bad = "Laps must be a whole number of 1 or more."; return; }
+      out.push({ id: r.dataset.rid || null, name: name, laps: laps, points_system_id: nul(r.querySelector("[data-rp]").value), sort_order: out.length + 1 });
+    });
+    if (bad) { msg(m, bad, "err"); return null; }
+    return out;
+  }
+  function syncRaces(eid, rows) {
+    var keep = rows.filter(function (r) { return r.id; }).map(function (r) { return r.id; });
+    var gone = state.sel.races.filter(function (r) { return r.event_id === eid && keep.indexOf(r.id) < 0; }).map(function (r) { return r.id; });
+    var ops = [];
+    rows.forEach(function (r) {
+      var f = { name: r.name, laps: r.laps, points_system_id: r.points_system_id, sort_order: r.sort_order };
+      if (r.id) ops.push(sb.from("races").update(f).eq("id", r.id)); else { f.event_id = eid; ops.push(sb.from("races").insert(f)); }
+    });
+    if (gone.length) ops.push(sb.from("races").delete().in("id", gone));
+    return Promise.all(ops).then(function (xs) { var e = xs.filter(function (x) { return x && x.error; })[0]; return e ? e.error : null; });
   }
   function saveEvent(id) {
     var m = $("#em-" + id), v = readEvent(id, m); if (!v) return;
@@ -538,9 +657,13 @@
     var old = state.sel.events.filter(function (e) { return e.id === id; })[0];
     // Moving an event that came from a schedule marks it as an override; the original time is kept.
     if (old && old.series_id && old.starts_at !== v.starts_at) v.is_override = true;
+    var rr = readRaces(id, m); if (!rr) return;
     sb.from("events").update(v).eq("id", id).then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      openChamp(state.sel.champ.id);
+      syncRaces(id, rr).then(function (e2) {
+        if (e2) { msg(m, "The round was saved, but its races were not: " + dbError(e2), "err"); return; }
+        openChamp(state.sel.champ.id);
+      });
     });
   }
 
