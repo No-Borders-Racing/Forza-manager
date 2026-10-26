@@ -171,6 +171,7 @@
   }
   function openChamp(id, nav) {
     var prev = state.sel && state.sel.champ.id === id ? state.nav : null;
+    if (!prev) state.tab = "settings";
     Promise.all([
       sb.from("championships").select("*").eq("id", id).single(),
       sb.from("seasons").select("*").eq("championship_id", id).order("starts_on", { ascending: true, nullsFirst: false }),
@@ -208,28 +209,37 @@
     });
   }
 
+  function leagueZone() { return (state.league && state.league.timezone) || browserZone() || null; }
   function renderChamp() {
-    var S = state.sel, c = S.champ;
+    var S = state.sel, c = S.champ, tab = state.tab || "settings";
+    var tabs = [["settings", "Settings"], ["points", "Points"], ["format", "Race format"], ["seasons", "Seasons"]];
     var h = '<p><button type="button" id="back">← All championships</button></p>' +
-      '<div class="card"><h2>' + esc(c.name) + ' <span class="pill">' + esc(c.status) + "</span></h2>" +
-      '<div class="row"><div class="field grow"><label for="cn">Name</label><input id="cn" value="' + esc(c.name) + '"></div>' +
-      '<div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
-      '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
-      '<div class="field" style="margin-top:8px"><label for="ct">League time zone</label><select id="ct">' + zoneOpts(c.intended_timezone, "Not set") + "</select></div>" +
-      '<h3>Schedule pattern</h3><p class="muted" style="margin:0 0 6px">Every season and round inherits this. A season only asks for a starting date and a number of rounds. Times are in the league time zone.</p>' +
-      '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
-      '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
-      '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
-      '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button class="danger" id="cgodel" type="button">Delete championship…</button></div><div class="msg" id="cm"></div>' +
-      '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
-    h += pointsCardHtml() + templateCardHtml();
-    h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
-      var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
-      return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " round" + (n === 1 ? "" : "s") + "</span></button>";
-    }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
-    h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
-      '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
+      '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
+      '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div></div>";
+    if (tab === "settings") {
+      var tzNote = c.intended_timezone ? '<b>' + esc(c.intended_timezone) + '</b> · ' + esc(gmt(c.intended_timezone)) + ' <span class="muted">(the league time zone when this championship was created; viewers see times in their own zone)</span>' :
+        '<span class="err">Not set.</span> <button type="button" id="cusetz">Use the league time zone (' + esc(leagueZone() || "none found") + ")</button>";
+      h += '<div class="card"><div class="row"><div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
+        '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
+        '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
+        '<h3>Schedule pattern</h3><p class="muted" style="margin:0 0 6px">Every season and round inherits this. A season only asks for a starting date and a number of rounds. Times are in the time zone above.</p>' +
+        '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
+        '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
+        '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
+        '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
+        '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button id="crename" type="button">Rename</button><button class="danger" id="cgodel" type="button">Delete championship…</button></div><div class="msg" id="cm"></div>' +
+        '<div id="renamebox"></div>' +
+        '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
+      h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
+        '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
+    } else if (tab === "points") h += pointsCardHtml();
+    else if (tab === "format") h += templateCardHtml();
+    else {
+      h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
+        var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
+        return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " round" + (n === 1 ? "" : "s") + "</span></button>";
+      }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
+    }
     app.innerHTML = h;
     bindAll();
     refreshMissing();
@@ -255,7 +265,26 @@
     on("#backchamp", function () { state.nav = { view: "champ" }; renderCurrent(); });
     on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
     on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
+    on("[data-tab]", function (b) { state.tab = b.dataset.tab; renderChamp(); });
     on("#csave", saveChamp);
+    on("#crename", function () {
+      $("#renamebox").innerHTML = '<div class="row" style="margin-top:8px"><div class="field grow"><label for="cn">New name</label><input id="cn" value="' + esc(state.sel.champ.name) + '"></div></div><p class="muted" style="margin:4px 0 0">Click Save to apply.</p>';
+      $("#cn").focus();
+    });
+    on("#cusetz", function () {
+      var z = leagueZone(); if (!z) return;
+      sb.from("championships").update({ intended_timezone: z }).eq("id", state.sel.champ.id).select("*").single().then(function (r) {
+        if (r.error) { msg($("#cm"), dbError(r.error), "err"); return; }
+        state.sel.champ = r.data; renderChamp();
+      });
+    });
+    var cpts = $("#cpts"); if (cpts) cpts.addEventListener("change", function () {
+      var v = nul(cpts.value);
+      sb.from("championships").update({ points_system_id: v }).eq("id", state.sel.champ.id).select("*").single().then(function (r) {
+        if (r.error) { msg($("#cptsm"), dbError(r.error), "err"); return; }
+        state.sel.champ = r.data; msg($("#cptsm"), "Saved.", "ok");
+      });
+    });
     on("#cdel", deleteChamp);
     on("#cgodel", function () { var t = $("#cdn"); t.scrollIntoView({ block: "center" }); t.focus(); });
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
@@ -291,7 +320,7 @@
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
-    var patch = { name: $("#cn").value.trim(), visibility: nul($("#cv").value), intended_timezone: nul($("#ct").value), description: nul($("#cd").value), status: $("#cs").value,
+    var patch = { name: $("#cn") ? $("#cn").value.trim() : c.name, visibility: nul($("#cv").value), description: nul($("#cd").value), status: $("#cs").value,
       schedule_every_weeks: numOrNull($("#cfreq").value), lobby_local_time: nul($("#clob").value), race_local_time: nul($("#crace").value) };
     if (!patch.name) { msg(m, "The name cannot be blank.", "err"); return; }
     if (patch.lobby_local_time && !patch.race_local_time) { msg(m, "Set the race start as well as the lobby time.", "err"); return; }
@@ -321,14 +350,16 @@
   /* ---------- points systems ---------- */
   function pointsCardHtml() {
     var S = state.sel;
-    return '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">A championship can have several, such as one for sprints and one for features. Every race picks one.</p><div class="list">' +
+    return '<div class="card"><h2>Championship points system</h2><p class="muted" style="margin:0 0 8px">Chosen once here. Every race uses it, unless you set a different one for a particular race in the race format or on a round.</p>' +
+      '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div><div class="msg" id="cptsm"></div></div>' +
+      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship can use. Add one from the library or build your own.</p><div class="list">' +
       (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
       '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + opts([["", "Empty custom system"]].concat(S.library.map(function (l) { return [l.id, l.name]; })), "", "Choose…") .replace('<option value="">Choose…</option>', "") + "</select></div>" +
       '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +
       (S.library.length ? '<p class="muted" style="margin:6px 0 0">Library tables are copied into this championship and can be edited. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
   }
   /* ---------- race format template ---------- */
-  function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Not set"); }
+  function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Same as the championship"); }
   function templateRow(t) {
     return '<div class="row trow" style="margin-top:6px"><div class="field grow"><label>Race name</label><input data-tn value="' + esc(t.name || "") + '" placeholder="For example Sprint"></div>' +
       '<div class="field"><label>Laps</label><input data-tl type="number" min="1" style="width:90px" value="' + esc(t.laps == null ? "" : t.laps) + '"></div>' +

@@ -661,6 +661,10 @@ begin
   end loop;
 end $$;
 
+-- The championship's own points system (same as migrations/007_championship_points.sql).
+alter table public.championships
+  add column if not exists points_system_id uuid references public.points_systems (id) on delete set null;
+
 -- League settings and admin management (same as migrations/006_league.sql).
 create table if not exists public.league (
   id boolean primary key default true check (id),
