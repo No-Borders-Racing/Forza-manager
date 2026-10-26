@@ -45,6 +45,8 @@ Deliberately left out: any attempt to list or control Forza's lobby settings. Ra
 
 **Structure.** Championship, then season, then round (stored in `events`), then race. The championship holds the time zone, visibility, schedule pattern (frequency, lobby time, race start), points systems, classes and the race format (`race_templates`). A season supplies a starting date and a number of rounds. A round holds the date, lobby time, track layout and a bonus flag. A race holds its laps and points system, and a `double_points` flag that is ticked when results are uploaded. New rounds copy the championship's race format; changing the format later does not rewrite existing rounds. A database created before this needs `supabase/migrations/003_round_race_structure.sql` run once (it drops `race_classes` and the track on `races`).
 
+**League settings.** A private, single-league setup: one `league` row (name and time zone) and an admin list managed from the League settings screen. New championships start with the league's time zone (editable per championship). Adding an admin needs a login created first under Supabase Authentication; `supabase/migrations/006_league.sql` adds this to an existing database.
+
 ## Not done yet
 
 - The licence of the FM23Data files has not been checked, and there is no licence file in that repository.

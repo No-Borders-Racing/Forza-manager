@@ -86,16 +86,64 @@
   function loadChamps() {
     sb.from("championships").select("id,name,status,visibility").order("created_at", { ascending: false }).then(function (r) {
       if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + "</div>"; return; }
-      state.champs = r.data; state.sel = null; renderChampList();
+      state.champs = r.data; state.sel = null;
+      sb.from("league").select("name,timezone").then(function (lr) {
+        state.league = !lr.error && lr.data && lr.data[0] ? lr.data[0] : null;
+        renderChampList();
+      });
+    });
+  }
+  function renderLeague() {
+    var lg = state.league || {}, tz = lg.timezone || browserZone() || "";
+    app.innerHTML = '<p><button type="button" id="lback">← Championships</button></p>' +
+      '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lz">League time zone</label><select id="lz">' + zoneOpts(tz, "Not set") + '</select></div>' +
+      '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' +
+      '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
+      '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
+      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>';
+    $("#lback").addEventListener("click", renderChampList);
+    $("#lsave").addEventListener("click", function () {
+      var row = { id: true, name: nul($("#ln").value), timezone: nul($("#lz").value), updated_at: new Date().toISOString() };
+      sb.from("league").upsert(row, { onConflict: "id" }).then(function (r) {
+        if (r.error) { msg($("#lm"), dbError(r.error), "err"); return; }
+        state.league = { name: row.name, timezone: row.timezone }; msg($("#lm"), "Saved.", "ok");
+      });
+    });
+    function loadAdmins() {
+      sb.rpc("list_admins").then(function (r) {
+        var el = $("#ladmins");
+        if (r.error) { el.className = "err"; el.textContent = dbError(r.error) + " (has migration 006 been run?)"; return; }
+        el.className = "";
+        el.innerHTML = r.data.map(function (a) {
+          var me = state.user && a.user_id === state.user.id;
+          return '<div class="row" style="justify-content:space-between;align-items:center;margin:4px 0"><span>' + esc(a.email) + (me ? ' <span class="pill">you</span>' : "") + "</span>" +
+            (me ? "" : '<button type="button" class="danger" data-ladel="' + esc(a.user_id) + '">Remove</button>') + "</div>";
+        }).join("");
+        el.querySelectorAll("[data-ladel]").forEach(function (b) { b.addEventListener("click", function () {
+          sb.rpc("remove_admin", { uid: b.dataset.ladel }).then(function (x) { if (x.error) msg($("#lam"), dbError(x.error), "err"); else loadAdmins(); });
+        }); });
+      });
+    }
+    loadAdmins();
+    $("#laadd").addEventListener("click", function () {
+      var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
+      sb.rpc("add_admin", { admin_email: e }).then(function (x) {
+        if (x.error) { msg($("#lam"), dbError(x.error), "err"); return; }
+        $("#lae").value = ""; msg($("#lam"), "Added.", "ok"); loadAdmins();
+      });
     });
   }
   function renderChampList() {
-    app.innerHTML = '<div class="card"><h2>Championships</h2><div class="list">' +
+    var lg = state.league;
+    app.innerHTML = '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><button type="button" id="leaguebtn">League settings</button></div></div>' +
+      '<div class="card"><h2>Championships</h2><div class="list">' +
       (state.champs.length ? state.champs.map(function (c) {
         return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
       }).join("") : '<p class="muted">None yet.</p>') + '</div><div id="ldelbox"></div></div>' +
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
-      '<p class="muted">It starts as a draft. The league time zone is filled in from the time zone of this browser (you can change it on the championship page); every other setting is blank.</p></div>';
+      '<p class="muted">It starts as a draft. The time zone is filled in from the league settings, or from this browser if the league has none (you can change it on the championship page); every other setting is blank.</p></div>';
     app.querySelectorAll("button.item").forEach(function (b) { b.addEventListener("click", function () { openChamp(b.dataset.id); }); });
     app.querySelectorAll("[data-ldel]").forEach(function (b) { b.addEventListener("click", function () {
       var c = state.champs.filter(function (x) { return x.id === b.dataset.ldel; })[0], box = $("#ldelbox");
@@ -112,9 +160,10 @@
         });
       });
     }); });
+    $("#leaguebtn").addEventListener("click", renderLeague);
     $("#nadd").addEventListener("click", function () {
       var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }
-      sb.from("championships").insert({ name: n, intended_timezone: browserZone() }).select("id").single().then(function (r) {
+      sb.from("championships").insert({ name: n, intended_timezone: (state.league && state.league.timezone) || browserZone() }).select("id").single().then(function (r) {
         if (r.error) { msg($("#nm"), dbError(r.error), "err"); return; }
         openChamp(r.data.id);
       });
