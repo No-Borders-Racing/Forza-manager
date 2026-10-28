@@ -121,7 +121,8 @@
       renderChampList();
     });
   }
-  function renderLeague() {
+  function renderLeague() { loadLeaguePts(renderLeagueBody); }
+  function renderLeagueBody() {
     var lg = state.league || {}, tz = lg.timezone || browserZone() || "";
     app.innerHTML = '<p><button type="button" id="lback">← Championships</button></p>' +
       '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
@@ -131,8 +132,13 @@
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' +
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
-      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>';
+      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
+      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">Saved for the whole league. Pick one for a championship and it is copied there, so changing it here never changes a running championship.</p><div class="list">' +
+      (state.lpts.length ? state.lpts.map(function (x) { return '<button type="button" class="item" data-lpp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="lplib">Start from</label><select id="lplib">' + fromOpts([], state.master) + '</select></div><button class="primary" id="lpadd" type="button">Add points system</button></div><div class="msg" id="lpm"></div></div>';
     $("#lback").addEventListener("click", renderChampList);
+    $("#lpadd").addEventListener("click", addLeaguePoints);
+    app.querySelectorAll("[data-lpp]").forEach(function (b) { b.addEventListener("click", function () { state.pscope = "league"; state.nav = { view: "points", pid: b.dataset.lpp }; renderPoints(b.dataset.lpp); }); });
     $("#lsave").addEventListener("click", function () {
       var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value) };
       if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
@@ -213,17 +219,18 @@
       var seasons = rs[1].data || [], ids = seasons.map(function (s) { return s.id; });
       var evP = ids.length ? sb.from("events").select("*").in("season_id", ids).order("starts_at", { ascending: true, nullsFirst: false }) : Promise.resolve({ data: [] });
       var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
-      var psP = sb.from("points_systems").select("id,name,source_series").eq("championship_id", id).order("name", { ascending: true });
+      var psP = sb.from("points_systems").select("id,name,source_series,copied_from,copied_at").eq("championship_id", id).order("name", { ascending: true });
       var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).is("league_id", null).order("name", { ascending: true });
+      var lpP = sb.from("points_systems").select("id,name,updated_at").eq("league_id", state.league.id).is("championship_id", null).order("name", { ascending: true });
       var tplP = sb.from("race_templates").select("*").eq("championship_id", id).order("sort_order", { ascending: true });
       var trkP = sb.from("track_layouts").select("id,name,length_km,is_reverse,track_venues(name)").order("name", { ascending: true });
-      Promise.all([evP, srP, psP, libP, tplP, trkP]).then(function (xs) {
+      Promise.all([evP, srP, psP, libP, tplP, trkP, lpP]).then(function (xs) {
         var evList = xs[0].data || [];
         var raceP = evList.length ? sb.from("races").select("*").in("event_id", evList.map(function (e) { return e.id; })).order("sort_order", { ascending: true }) : Promise.resolve({ data: [] });
         raceP.then(function (rr) {
           var bad = [xs[4], xs[5], rr].filter(function (x) { return x.error; })[0];
           if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + ' Has the latest database change (migrations/003_round_race_structure.sql) been run?</div>'; return; }
-          state.sel = { champ: rs[0].data, seasons: seasons, events: evList, series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [], templates: xs[4].data || [], races: rr.data || [] };
+          state.sel = { champ: rs[0].data, seasons: seasons, events: evList, series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [], leaguePts: xs[6].data || [], templates: xs[4].data || [], races: rr.data || [] };
           state.tracks = xs[5].data || [];
           state.nav = nav || prev || { view: "champ" };
           if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
@@ -321,7 +328,7 @@
     on("#cdel", deleteChamp);
     on("#cgodel", function () { var t = $("#cdn"); t.scrollIntoView({ block: "center" }); t.focus(); });
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
-    on("[data-pp]", function (b) { state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
+    on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
     on("#tadd", function () { $("#tpl").insertAdjacentHTML("beforeend", templateRow({})); });
     on("[data-trm]", function (b) { b.closest(".trow").remove(); });
@@ -332,6 +339,9 @@
     on("#pbadd", function () { var box = $("#pbonus"); box.insertAdjacentHTML("beforeend", bonusRow({})); });
     on("[data-pbrm]", function (b) { b.closest(".brow2").remove(); });
     on("[data-pd]", function (b) { del("points_systems", b.dataset.pd, b); });
+    on("[data-pupd]", function (b) { updateFromLeague($("#pid").value, b.dataset.pupd, b); });
+    on("#lpback", function () { renderLeague(); });
+
     on("#sadd", addSeason);
     on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
@@ -381,15 +391,19 @@
     return h;
   }
   /* ---------- points systems ---------- */
+  function updAvail(x) {
+    var src = state.sel.leaguePts.filter(function (l) { return l.id === x.copied_from; })[0];
+    return !!(src && x.copied_at && src.updated_at && src.updated_at > x.copied_at);
+  }
   function pointsCardHtml() {
     var S = state.sel;
     return '<div class="card"><h2>Championship points system</h2><p class="muted" style="margin:0 0 8px">Chosen once here. Every race uses it, unless you set a different one for a particular race in the race format or on a round.</p>' +
       '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div><div class="msg" id="cptsm"></div></div>' +
       '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship can use. Add one from the library or build your own.</p><div class="list">' +
-      (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
-      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + opts([["", "Empty custom system"]].concat(S.library.map(function (l) { return [l.id, l.name]; })), "", "Choose…") .replace('<option value="">Choose…</option>', "") + "</select></div>" +
+      (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.copied_from ? "copied" + (x.source_series ? " from " + x.source_series : "") : "custom") + (updAvail(x) ? ' <span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + fromOpts(S.leaguePts, S.library) + "</select></div>" +
       '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +
-      (S.library.length ? '<p class="muted" style="margin:6px 0 0">Library tables are copied into this championship and can be edited. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
+      (S.library.length ? '<p class="muted" style="margin:6px 0 0">Systems are copied into this championship and can be edited without changing the league or master list. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
   }
   /* ---------- race format template ---------- */
   function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Same as the championship"); }
@@ -433,43 +447,89 @@
     return rows.length ? sb.from("races").insert(rows) : Promise.resolve({});
   }
 
-  function addPoints() {
-    var C = state.sel.champ, m = $("#pm"), lid = $("#plib").value;
-    var lib = state.sel.library.filter(function (x) { return x.id === lid; })[0];
-    msg(m, "Adding…");
-    if (!lib) {
-      sb.from("points_systems").insert({ championship_id: C.id, name: "New points system" }).select("id").single().then(function (r) {
-        if (r.error) { msg(m, dbError(r.error), "err"); return; }
-        openChamp(C.id, { view: "points", pid: r.data.id });
-      });
-      return;
-    }
-    Promise.all([
-      sb.from("points_systems").select("*").eq("id", lid).single(),
-      sb.from("points_table_entries").select("*").eq("points_system_id", lid),
-      sb.from("points_status_rules").select("*").eq("points_system_id", lid),
-      sb.from("points_bonuses").select("*").eq("points_system_id", lid)
+  // Points systems are copied, never shared: master list -> league -> championship. A copy remembers where it came from.
+  function readSystem(srcId) {
+    return Promise.all([
+      sb.from("points_systems").select("*").eq("id", srcId).single(),
+      sb.from("points_table_entries").select("*").eq("points_system_id", srcId),
+      sb.from("points_status_rules").select("*").eq("points_system_id", srcId),
+      sb.from("points_bonuses").select("*").eq("points_system_id", srcId)
     ]).then(function (rs) {
       var bad = rs.filter(function (r) { return r.error; })[0];
-      if (bad) { msg(m, dbError(bad.error), "err"); return; }
-      var src = rs[0].data;
-      sb.from("points_systems").insert({ championship_id: C.id, name: src.name, source_series: src.source_series, source_version: src.source_version, source_url: src.source_url, copied_from: src.id }).select("id").single().then(function (r) {
-        if (r.error) { msg(m, dbError(r.error), "err"); return; }
-        var nid = r.data.id, undo = function (t) { return sb.from("points_systems").delete().eq("id", nid).then(function () { msg(m, "Nothing was added: " + t, "err"); }); };
-        var ents = (rs[1].data || []).map(function (e) { return { points_system_id: nid, position: e.position, points: e.points }; });
-        var sts = (rs[2].data || []).map(function (e) { return { points_system_id: nid, status: e.status, points: e.points }; });
-        var bns = (rs[3].data || []).map(function (e) { return { points_system_id: nid, name: e.name, kind: e.kind, points: e.points, description: e.description }; });
-        var steps = [];
-        if (ents.length) steps.push(sb.from("points_table_entries").insert(ents));
-        if (sts.length) steps.push(sb.from("points_status_rules").upsert(sts, { onConflict: "points_system_id,status" }));
-        if (bns.length) steps.push(sb.from("points_bonuses").insert(bns));
-        Promise.all(steps).then(function (xs) {
-          var e2 = xs.filter(function (x) { return x.error; })[0];
-          if (e2) { undo(dbError(e2.error)); return; }
-          openChamp(C.id, { view: "points", pid: nid });
+      if (bad) throw bad.error;
+      return { src: rs[0].data, ents: rs[1].data || [], sts: rs[2].data || [], bns: rs[3].data || [] };
+    });
+  }
+  function writeChildren(nid, d) {
+    var steps = [];
+    var ents = d.ents.map(function (e) { return { points_system_id: nid, position: e.position, points: e.points }; });
+    var sts = d.sts.map(function (e) { return { points_system_id: nid, status: e.status, points: e.points }; });
+    var bns = d.bns.map(function (e) { return { points_system_id: nid, name: e.name, kind: e.kind, points: e.points, description: e.description }; });
+    if (ents.length) steps.push(sb.from("points_table_entries").insert(ents));
+    if (sts.length) steps.push(sb.from("points_status_rules").upsert(sts, { onConflict: "points_system_id,status" }));
+    if (bns.length) steps.push(sb.from("points_bonuses").insert(bns));
+    return Promise.all(steps).then(function (xs) {
+      var e2 = xs.filter(function (x) { return x.error; })[0];
+      if (e2) throw e2.error;
+    });
+  }
+  // owner is { championship_id } or { league_id }; resolves with the new system's id.
+  function copySystem(srcId, owner) {
+    return readSystem(srcId).then(function (d) {
+      var row = Object.assign({ name: d.src.name, source_series: d.src.source_series, source_version: d.src.source_version, source_url: d.src.source_url, copied_from: d.src.id, copied_at: new Date().toISOString() }, owner);
+      return sb.from("points_systems").insert(row).select("id").single().then(function (r) {
+        if (r.error) throw r.error;
+        var nid = r.data.id;
+        return writeChildren(nid, d).then(function () { return nid; }, function (e) {
+          return sb.from("points_systems").delete().eq("id", nid).then(function () { throw e; });
         });
       });
     });
+  }
+  function fromOpts(league, master) {
+    function grp(label, list) { return list.length ? '<optgroup label="' + esc(label) + '">' + list.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.name) + "</option>"; }).join("") + "</optgroup>" : ""; }
+    return '<option value="">Empty custom system</option>' + grp("This league's systems", league) + grp("Master list", master);
+  }
+  function addPoints() {
+    var C = state.sel.champ, m = $("#pm"), sid = $("#plib").value;
+    msg(m, "Adding…");
+    var go = sid ? copySystem(sid, { championship_id: C.id }) :
+      sb.from("points_systems").insert({ championship_id: C.id, name: "New points system" }).select("id").single().then(function (r) { if (r.error) throw r.error; return r.data.id; });
+    go.then(function (nid) { state.pscope = "champ"; openChamp(C.id, { view: "points", pid: nid }); }, function (e) { msg(m, dbError(e), "err"); });
+  }
+  function loadLeaguePts(done) {
+    var lid = state.league.id;
+    Promise.all([
+      sb.from("points_systems").select("id,name,source_series,updated_at").eq("league_id", lid).is("championship_id", null).order("name", { ascending: true }),
+      sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).is("league_id", null).order("name", { ascending: true })
+    ]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + "</div>"; return; }
+      state.lpts = rs[0].data || []; state.master = rs[1].data || []; done();
+    });
+  }
+  function addLeaguePoints() {
+    var m = $("#lpm"), sid = $("#lplib").value;
+    msg(m, "Adding…");
+    var go = sid ? copySystem(sid, { league_id: state.league.id }) :
+      sb.from("points_systems").insert({ league_id: state.league.id, name: "New points system" }).select("id").single().then(function (r) { if (r.error) throw r.error; return r.data.id; });
+    go.then(function (nid) { state.pscope = "league"; state.nav = { view: "points", pid: nid }; renderPoints(nid); }, function (e) { msg(m, dbError(e), "err"); });
+  }
+  function updateFromLeague(pid, srcId, btn) {
+    if (armed !== "upd" + pid) { armed = "upd" + pid; btn.textContent = "This replaces this system with the league's version, losing any edits you made here. Click again to confirm"; return; }
+    armed = null; btn.disabled = true;
+    readSystem(srcId).then(function (d) {
+      return Promise.all([
+        sb.from("points_table_entries").delete().eq("points_system_id", pid),
+        sb.from("points_status_rules").delete().eq("points_system_id", pid),
+        sb.from("points_bonuses").delete().eq("points_system_id", pid)
+      ]).then(function (xs) {
+        var e = xs.filter(function (x) { return x.error; })[0]; if (e) throw e.error;
+        return writeChildren(pid, d);
+      }).then(function () {
+        return sb.from("points_systems").update({ name: d.src.name, copied_at: new Date().toISOString() }).eq("id", pid);
+      });
+    }).then(function () { openChamp(state.sel.champ.id, { view: "points", pid: pid }); }, function (e) { btn.disabled = false; btn.textContent = dbError(e); });
   }
   function bonusRow(b) {
     return '<div class="row brow2" style="margin-top:6px"><div class="field grow"><label>Name</label><input data-bn value="' + esc(b.name || "") + '"></div>' +
@@ -492,8 +552,10 @@
       var st = {}; (rs[2].data || []).forEach(function (x) { st[x.status] = x.points; });
       var lines = ents.map(function (e) { return e.points; }).join("\n");
       var gap = ents.some(function (e, i) { return e.position !== i + 1; });
-      app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
-        '<div class="card"><h2>Points system</h2><input type="hidden" id="pid" value="' + esc(pid) + '">' +
+      var lsc = state.pscope === "league", srcL = !lsc && sys.copied_from ? state.sel.leaguePts.filter(function (l) { return l.id === sys.copied_from; })[0] : null;
+      app.innerHTML = (lsc ? '<p><button type="button" id="lpback">← League settings</button></p>' : '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>") +
+        '<div class="card"><h2>Points system' + (lsc ? " (saved for the whole league)" : "") + '</h2>' +
+        (srcL && updAvail(sys) ? '<p class="err" style="margin:0 0 8px">The league\'s version of <b>' + esc(srcL.name) + '</b> has changed since this was copied. Nothing here has been changed. <button type="button" data-pupd="' + esc(srcL.id) + '">Update from the league\'s version</button></p>' : "") + '<input type="hidden" id="pid" value="' + esc(pid) + '">' +
         '<div class="field"><label for="pn">Name</label><input id="pn" value="' + esc(sys.name) + '"></div>' +
         (sys.source_series ? '<p class="muted" style="margin:8px 0 0">Copied from ' + esc(sys.source_series) + ". " + esc(sys.source_version || "") + (sys.source_url ? ' <a href="' + esc(sys.source_url) + '" target="_blank" rel="noopener">Source</a>' : "") + "</p>" : "") +
         '<div class="field" style="margin-top:10px"><label for="pt">Points per finishing position: one number per line, 1st place first</label><textarea id="pt" style="min-height:160px">' + esc(lines) + "</textarea></div>" +
@@ -543,7 +605,7 @@
                 var p7 = bns.length ? sb.from("points_bonuses").insert(bns) : Promise.resolve({});
                 p7.then(function (r7) {
                   if (r7.error) { fail(r7.error); return; }
-                  openChamp(state.sel.champ.id, { view: "points", pid: pid });
+                  if (state.pscope === "league") { renderPoints(pid); } else openChamp(state.sel.champ.id, { view: "points", pid: pid });
                   setTimeout(function () { msg($("#pm2"), "Saved.", "ok"); }, 500);
                 });
               });
@@ -819,6 +881,7 @@
     armed = null;
     sb.from(table).delete().eq("id", id).then(function (r) {
       if (r.error) { btn.textContent = dbError(r.error); return; }
+      if (table === "points_systems" && state.pscope === "league") { renderLeague(); return; }
       openChamp(state.sel.champ.id, table === "seasons" || table === "points_systems" ? { view: "champ" } : undefined);
     });
   }
