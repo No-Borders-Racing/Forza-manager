@@ -121,10 +121,31 @@
       renderChampList();
     });
   }
-  function renderLeague() { loadLeaguePts(renderLeagueBody); }
+  function navHtml(active) {
+    return '<div class="row" style="margin-bottom:12px">' + [["c", "Championships"], ["p", "Points systems"], ["l", "League settings"]].map(function (t) {
+      return '<button type="button" id="nav-' + t[0] + '"' + (t[0] === active ? ' class="primary"' : "") + ">" + t[1] + "</button>";
+    }).join("") + "</div>";
+  }
+  function bindNav() {
+    var c = $("#nav-c"), p = $("#nav-p"), l = $("#nav-l");
+    if (c) c.addEventListener("click", renderChampList);
+    if (p) p.addEventListener("click", renderLeaguePoints);
+    if (l) l.addEventListener("click", renderLeague);
+  }
+  function renderLeague() { renderLeagueBody(); }
+  function renderLeaguePoints() { loadLeaguePts(renderLeaguePointsBody); }
+  function renderLeaguePointsBody() {
+    app.innerHTML = navHtml("p") +
+      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">Saved for the whole league. Pick one for a championship and it is copied there, so changing it here never changes a running championship.</p><div class="list">' +
+      (state.lpts.length ? state.lpts.map(function (x) { return '<button type="button" class="item" data-lpp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="lplib">Start from</label><select id="lplib">' + fromOpts([], state.master) + '</select></div><button class="primary" id="lpadd" type="button">Add points system</button></div><div class="msg" id="lpm"></div></div>';
+    bindNav();
+    $("#lpadd").addEventListener("click", addLeaguePoints);
+    app.querySelectorAll("[data-lpp]").forEach(function (b) { b.addEventListener("click", function () { state.pscope = "league"; state.nav = { view: "points", pid: b.dataset.lpp }; renderPoints(b.dataset.lpp); }); });
+  }
   function renderLeagueBody() {
     var lg = state.league || {}, tz = lg.timezone || browserZone() || "";
-    app.innerHTML = '<p><button type="button" id="lback">← Championships</button></p>' +
+    app.innerHTML = navHtml("l") +
       '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
       '<div class="field" style="margin-top:8px"><label for="lz">League time zone</label><select id="lz">' + zoneOpts(tz, "Not set") + '</select></div>' +
       '<div class="field" style="margin-top:8px"><label for="lu">Units of measurement</label><select id="lu">' + opts([["imperial", "Imperial (hp, lb-ft, lbs, mi)"], ["metric", "Metric (kW, N·m, kg, km)"]], lg.units || "", "Not set") + '</select></div>' +
@@ -132,13 +153,8 @@
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' +
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
-      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
-      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">Saved for the whole league. Pick one for a championship and it is copied there, so changing it here never changes a running championship.</p><div class="list">' +
-      (state.lpts.length ? state.lpts.map(function (x) { return '<button type="button" class="item" data-lpp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
-      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="lplib">Start from</label><select id="lplib">' + fromOpts([], state.master) + '</select></div><button class="primary" id="lpadd" type="button">Add points system</button></div><div class="msg" id="lpm"></div></div>';
-    $("#lback").addEventListener("click", renderChampList);
-    $("#lpadd").addEventListener("click", addLeaguePoints);
-    app.querySelectorAll("[data-lpp]").forEach(function (b) { b.addEventListener("click", function () { state.pscope = "league"; state.nav = { view: "points", pid: b.dataset.lpp }; renderPoints(b.dataset.lpp); }); });
+      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>';
+    bindNav();
     $("#lsave").addEventListener("click", function () {
       var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value) };
       if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
@@ -175,7 +191,7 @@
   }
   function renderChampList() {
     var lg = state.league;
-    app.innerHTML = '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><div class="row">' + ((state.leagues || []).length > 1 || state.owner ? '<button type="button" id="switchbtn">Switch league</button>' : "") + '<button type="button" id="leaguebtn">League settings</button></div></div></div>' +
+    app.innerHTML = navHtml("c") + '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><div class="row">' + ((state.leagues || []).length > 1 || state.owner ? '<button type="button" id="switchbtn">Switch league</button>' : "") + '</div></div></div>' +
       '<div class="card"><h2>Championships</h2><div class="list">' +
       (state.champs.length ? state.champs.map(function (c) {
         return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
@@ -198,7 +214,7 @@
         });
       });
     }); });
-    $("#leaguebtn").addEventListener("click", renderLeague);
+    bindNav();
     if ($("#switchbtn")) $("#switchbtn").addEventListener("click", renderLeaguePicker);
     $("#nadd").addEventListener("click", function () {
       var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }
@@ -340,7 +356,7 @@
     on("[data-pbrm]", function (b) { b.closest(".brow2").remove(); });
     on("[data-pd]", function (b) { del("points_systems", b.dataset.pd, b); });
     on("[data-pupd]", function (b) { updateFromLeague($("#pid").value, b.dataset.pupd, b); });
-    on("#lpback", function () { renderLeague(); });
+    on("#lpback", function () { renderLeaguePoints(); });
 
     on("#sadd", addSeason);
     on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
@@ -553,7 +569,7 @@
       var lines = ents.map(function (e) { return e.points; }).join("\n");
       var gap = ents.some(function (e, i) { return e.position !== i + 1; });
       var lsc = state.pscope === "league", srcL = !lsc && sys.copied_from ? state.sel.leaguePts.filter(function (l) { return l.id === sys.copied_from; })[0] : null;
-      app.innerHTML = (lsc ? '<p><button type="button" id="lpback">← League settings</button></p>' : '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>") +
+      app.innerHTML = (lsc ? '<p><button type="button" id="lpback">← Points systems</button></p>' : '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>") +
         '<div class="card"><h2>Points system' + (lsc ? " (saved for the whole league)" : "") + '</h2>' +
         (srcL && updAvail(sys) ? '<p class="err" style="margin:0 0 8px">The league\'s version of <b>' + esc(srcL.name) + '</b> has changed since this was copied. Nothing here has been changed. <button type="button" data-pupd="' + esc(srcL.id) + '">Update from the league\'s version</button></p>' : "") + '<input type="hidden" id="pid" value="' + esc(pid) + '">' +
         '<div class="field"><label for="pn">Name</label><input id="pn" value="' + esc(sys.name) + '"></div>' +
@@ -881,7 +897,7 @@
     armed = null;
     sb.from(table).delete().eq("id", id).then(function (r) {
       if (r.error) { btn.textContent = dbError(r.error); return; }
-      if (table === "points_systems" && state.pscope === "league") { renderLeague(); return; }
+      if (table === "points_systems" && state.pscope === "league") { renderLeaguePoints(); return; }
       openChamp(state.sel.champ.id, table === "seasons" || table === "points_systems" ? { view: "champ" } : undefined);
     });
   }
