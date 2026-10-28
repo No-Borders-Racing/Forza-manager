@@ -77,20 +77,48 @@
         if (a.error) { app.innerHTML = '<div class="card err">Could not check admin access: ' + esc(a.error.message) + "</div>"; return; }
         state.admin = a.data === true;
         if (!state.admin) { app.innerHTML = '<div class="card"><h2>Signed in, but not an admin</h2><p>This login is not in the admins list, so it cannot change anything. Add it to the <code>admins</code> table in Supabase.</p></div>'; return; }
-        loadChamps();
+        sb.rpc("is_owner").then(function (o) {
+          state.owner = o.data === true;
+          loadLeagues();
+        });
+      });
+    });
+  }
+  function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+  // Each league is its own folder: the admin works inside one league at a time.
+  function loadLeagues(pick) {
+    sb.from("leagues").select("id,name,slug,timezone,units").order("name", { ascending: true }).then(function (r) {
+      if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + " Has migration 008 (leagues) been run?</div>"; return; }
+      state.leagues = r.data || [];
+      var want = pick || lsGet("fcm.league"), cur = state.leagues.filter(function (l) { return l.id === want; })[0] || (state.leagues.length === 1 ? state.leagues[0] : null);
+      if (!cur) { renderLeaguePicker(); return; }
+      state.league = cur; lsSet("fcm.league", cur.id); loadChamps();
+    });
+  }
+  function renderLeaguePicker() {
+    app.innerHTML = '<div class="card"><h2>Choose a league</h2>' +
+      (state.leagues.length ? '<div class="list">' + state.leagues.map(function (l) {
+        return '<button type="button" class="item" data-lg="' + esc(l.id) + '"><span>' + esc(l.name) + "</span></button>";
+      }).join("") + "</div>" : '<p class="muted">' + (state.owner ? "No leagues yet. Create the first one below." : "This login is not an admin of any league yet. Ask a league admin to add you.") + "</p>") + "</div>" +
+      (state.owner ? '<div class="card"><h3 style="margin-top:0">New league</h3><div class="row"><div class="field grow"><label for="nln">League name</label><input id="nln" type="text"></div><button class="primary" id="nlgo" type="button">Create league</button></div><div class="msg" id="nlm"></div></div>' : "");
+    app.querySelectorAll("[data-lg]").forEach(function (b) { b.addEventListener("click", function () { loadLeagues(b.dataset.lg); }); });
+    var go = $("#nlgo");
+    if (go) go.addEventListener("click", function () {
+      var n = $("#nln").value.trim(); if (!n) { msg($("#nlm"), "Type a name first.", "err"); return; }
+      sb.rpc("create_league", { league_name: n, league_slug: null }).then(function (x) {
+        if (x.error) { msg($("#nlm"), dbError(x.error), "err"); return; }
+        loadLeagues(x.data);
       });
     });
   }
 
   /* ---------- championships ---------- */
   function loadChamps() {
-    sb.from("championships").select("id,name,status,visibility").order("created_at", { ascending: false }).then(function (r) {
+    sb.from("championships").select("id,name,status,visibility").eq("league_id", state.league.id).order("created_at", { ascending: false }).then(function (r) {
       if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + "</div>"; return; }
       state.champs = r.data; state.sel = null;
-      sb.from("league").select("name,timezone").then(function (lr) {
-        state.league = !lr.error && lr.data && lr.data[0] ? lr.data[0] : null;
-        renderChampList();
-      });
+      renderChampList();
     });
   }
   function renderLeague() {
@@ -98,6 +126,7 @@
     app.innerHTML = '<p><button type="button" id="lback">← Championships</button></p>' +
       '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
       '<div class="field" style="margin-top:8px"><label for="lz">League time zone</label><select id="lz">' + zoneOpts(tz, "Not set") + '</select></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lu">Units of measurement</label><select id="lu">' + opts([["imperial", "Imperial (hp, lb-ft, lbs, mi)"], ["metric", "Metric (kW, N·m, kg, km)"]], lg.units || "", "Not set") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' +
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
@@ -105,16 +134,19 @@
       '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>';
     $("#lback").addEventListener("click", renderChampList);
     $("#lsave").addEventListener("click", function () {
-      var row = { id: true, name: nul($("#ln").value), timezone: nul($("#lz").value), updated_at: new Date().toISOString() };
-      sb.from("league").upsert(row, { onConflict: "id" }).then(function (r) {
+      var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value) };
+      if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
+      sb.from("leagues").update(row).eq("id", state.league.id).then(function (r) {
         if (r.error) { msg($("#lm"), dbError(r.error), "err"); return; }
-        state.league = { name: row.name, timezone: row.timezone }; msg($("#lm"), "Saved.", "ok");
+        state.league = Object.assign({}, state.league, row);
+        state.leagues = state.leagues.map(function (l) { return l.id === state.league.id ? state.league : l; });
+        msg($("#lm"), "Saved.", "ok");
       });
     });
     function loadAdmins() {
-      sb.rpc("list_admins").then(function (r) {
+      sb.rpc("list_league_admins", { lid: state.league.id }).then(function (r) {
         var el = $("#ladmins");
-        if (r.error) { el.className = "err"; el.textContent = dbError(r.error) + " (has migration 006 been run?)"; return; }
+        if (r.error) { el.className = "err"; el.textContent = dbError(r.error) + " (has migration 008 been run?)"; return; }
         el.className = "";
         el.innerHTML = r.data.map(function (a) {
           var me = state.user && a.user_id === state.user.id;
@@ -122,14 +154,14 @@
             (me ? "" : '<button type="button" class="danger" data-ladel="' + esc(a.user_id) + '">Remove</button>') + "</div>";
         }).join("");
         el.querySelectorAll("[data-ladel]").forEach(function (b) { b.addEventListener("click", function () {
-          sb.rpc("remove_admin", { uid: b.dataset.ladel }).then(function (x) { if (x.error) msg($("#lam"), dbError(x.error), "err"); else loadAdmins(); });
+          sb.rpc("remove_league_admin", { lid: state.league.id, uid: b.dataset.ladel }).then(function (x) { if (x.error) msg($("#lam"), dbError(x.error), "err"); else loadAdmins(); });
         }); });
       });
     }
     loadAdmins();
     $("#laadd").addEventListener("click", function () {
       var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
-      sb.rpc("add_admin", { admin_email: e }).then(function (x) {
+      sb.rpc("add_league_admin", { lid: state.league.id, admin_email: e }).then(function (x) {
         if (x.error) { msg($("#lam"), dbError(x.error), "err"); return; }
         $("#lae").value = ""; msg($("#lam"), "Added.", "ok"); loadAdmins();
       });
@@ -137,7 +169,7 @@
   }
   function renderChampList() {
     var lg = state.league;
-    app.innerHTML = '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><button type="button" id="leaguebtn">League settings</button></div></div>' +
+    app.innerHTML = '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><div class="row">' + ((state.leagues || []).length > 1 || state.owner ? '<button type="button" id="switchbtn">Switch league</button>' : "") + '<button type="button" id="leaguebtn">League settings</button></div></div></div>' +
       '<div class="card"><h2>Championships</h2><div class="list">' +
       (state.champs.length ? state.champs.map(function (c) {
         return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
@@ -161,9 +193,10 @@
       });
     }); });
     $("#leaguebtn").addEventListener("click", renderLeague);
+    if ($("#switchbtn")) $("#switchbtn").addEventListener("click", renderLeaguePicker);
     $("#nadd").addEventListener("click", function () {
       var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }
-      sb.from("championships").insert({ name: n, intended_timezone: (state.league && state.league.timezone) || browserZone() }).select("id").single().then(function (r) {
+      sb.from("championships").insert({ name: n, league_id: state.league.id, intended_timezone: (state.league && state.league.timezone) || browserZone() }).select("id").single().then(function (r) {
         if (r.error) { msg($("#nm"), dbError(r.error), "err"); return; }
         openChamp(r.data.id);
       });
@@ -181,7 +214,7 @@
       var evP = ids.length ? sb.from("events").select("*").in("season_id", ids).order("starts_at", { ascending: true, nullsFirst: false }) : Promise.resolve({ data: [] });
       var srP = ids.length ? sb.from("event_series").select("*").in("season_id", ids) : Promise.resolve({ data: [] });
       var psP = sb.from("points_systems").select("id,name,source_series").eq("championship_id", id).order("name", { ascending: true });
-      var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).order("name", { ascending: true });
+      var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).is("league_id", null).order("name", { ascending: true });
       var tplP = sb.from("race_templates").select("*").eq("championship_id", id).order("sort_order", { ascending: true });
       var trkP = sb.from("track_layouts").select("id,name,length_km,is_reverse,track_venues(name)").order("name", { ascending: true });
       Promise.all([evP, srP, psP, libP, tplP, trkP]).then(function (xs) {
