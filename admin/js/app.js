@@ -122,12 +122,13 @@
     });
   }
   function navHtml(active) {
-    return '<div class="row" style="margin-bottom:12px">' + [["c", "Championships"], ["p", "Points systems"], ["l", "League settings"]].map(function (t) {
+    return '<div class="row" style="margin-bottom:12px">' + [["c", "Championships"], ["d", "Drivers"], ["p", "Points systems"], ["l", "League settings"]].map(function (t) {
       return '<button type="button" id="nav-' + t[0] + '"' + (t[0] === active ? ' class="primary"' : "") + ">" + t[1] + "</button>";
     }).join("") + "</div>";
   }
   function bindNav() {
-    var c = $("#nav-c"), p = $("#nav-p"), l = $("#nav-l");
+    var c = $("#nav-c"), p = $("#nav-p"), l = $("#nav-l"), d = $("#nav-d");
+    if (d) d.addEventListener("click", renderDrivers);
     if (c) c.addEventListener("click", renderChampList);
     if (p) p.addEventListener("click", renderLeaguePoints);
     if (l) l.addEventListener("click", renderLeague);
@@ -268,7 +269,7 @@
   function leagueZone() { return (state.league && state.league.timezone) || browserZone() || null; }
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "settings";
-    var tabs = [["settings", "Settings"], ["points", "Points"], ["format", "Race format"], ["seasons", "Seasons"]];
+    var tabs = [["settings", "Settings"], ["points", "Points"], ["format", "Race format"], ["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
     var h = '<p><button type="button" id="back">← All championships</button></p>' +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div></div>";
@@ -290,6 +291,8 @@
         '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
     } else if (tab === "points") h += pointsCardHtml();
     else if (tab === "format") h += templateCardHtml();
+    else if (tab === "results") h += resultsTabHtml();
+    else if (tab === "standings") h += '<div class="card"><h2>Standings</h2><div id="stand" class="muted">Loading…</div></div>';
     else {
       h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
         var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
@@ -299,10 +302,12 @@
     app.innerHTML = h;
     bindAll();
     refreshMissing();
+    if (tab === "results") fillCounts();
+    if (tab === "standings") renderStandings();
   }
   function renderCurrent() {
     var n = state.nav || { view: "champ" };
-    if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
+    if (n.view === "race") renderRaceResults(n.rid); else if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
   }
   function renderSeason(sid) {
     var s = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
@@ -344,6 +349,7 @@
     on("#cdel", deleteChamp);
     on("#cgodel", function () { var t = $("#cdn"); t.scrollIntoView({ block: "center" }); t.focus(); });
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
+    on("[data-rr]", function (b) { state.nav = { view: "race", rid: b.dataset.rr }; renderCurrent(); });
     on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
     on("#tadd", function () { $("#tpl").insertAdjacentHTML("beforeend", templateRow({})); });
@@ -492,7 +498,7 @@
   // owner is { championship_id } or { league_id }; resolves with the new system's id.
   function copySystem(srcId, owner) {
     return readSystem(srcId).then(function (d) {
-      var row = Object.assign({ name: d.src.name, source_series: d.src.source_series, source_version: d.src.source_version, source_url: d.src.source_url, copied_from: d.src.id, copied_at: new Date().toISOString() }, owner);
+      var row = Object.assign({ name: d.src.name, source_series: d.src.source_series, source_version: d.src.source_version, source_url: d.src.source_url, dnf_rank_by_best_lap: !!d.src.dnf_rank_by_best_lap, copied_from: d.src.id, copied_at: new Date().toISOString() }, owner);
       return sb.from("points_systems").insert(row).select("id").single().then(function (r) {
         if (r.error) throw r.error;
         var nid = r.data.id;
@@ -543,7 +549,7 @@
         var e = xs.filter(function (x) { return x.error; })[0]; if (e) throw e.error;
         return writeChildren(pid, d);
       }).then(function () {
-        return sb.from("points_systems").update({ name: d.src.name, copied_at: new Date().toISOString() }).eq("id", pid);
+        return sb.from("points_systems").update({ name: d.src.name, dnf_rank_by_best_lap: !!d.src.dnf_rank_by_best_lap, copied_at: new Date().toISOString() }).eq("id", pid);
       });
     }).then(function () { openChamp(state.sel.champ.id, { view: "points", pid: pid }); }, function (e) { btn.disabled = false; btn.textContent = dbError(e); });
   }
@@ -577,7 +583,8 @@
         '<div class="field" style="margin-top:10px"><label for="pt">Points per finishing position: one number per line, 1st place first</label><textarea id="pt" style="min-height:160px">' + esc(lines) + "</textarea></div>" +
         (gap ? '<p class="err">This system has gaps in its positions. Saving renumbers it from 1.</p>' : "") +
         '<p class="muted" style="margin:4px 0 0">A position with no line has no points set. Enter 0 where a place scores nothing.</p>' +
-        '<h3>Non-finishers</h3><p class="muted" style="margin:0 0 6px">A DNF scores 0 unless you change it here. Leave a box blank to leave it unset.</p><div class="row">' +
+        '<h3>Non-finishers</h3><label style="display:flex;align-items:center;gap:6px;margin:0 0 8px"><input type="checkbox" id="pdr"' + (sys.dnf_rank_by_best_lap ? " checked" : "") + '> Rank DNFs after the last finisher by best lap, and score them for the position they land in</label>' +
+        '<p class="muted" style="margin:0 0 6px">With that ticked, a DNF with no recorded lap counts as DNS (0 points). Otherwise a DNF scores 0 unless you change it here. Leave a box blank to leave it unset.</p><div class="row">' +
         ["dnf", "dns", "dsq", "other"].map(function (k) { return '<div class="field"><label for="ps-' + k + '">' + k.toUpperCase() + '</label><input id="ps-' + k + '" type="number" step="any" style="width:90px" value="' + esc(st[k] == null ? "" : st[k]) + '"></div>'; }).join("") + "</div>" +
         '<h3>Bonuses and penalties</h3><div id="pbonus">' + (rs[3].data || []).map(bonusRow).join("") + '</div><div style="margin-top:8px"><button type="button" id="pbadd">Add bonus or penalty</button></div>' +
         '<div class="row" style="margin-top:14px"><button class="primary" id="psave" type="button">Save</button><button class="danger" data-pd="' + esc(pid) + '" type="button">Delete this points system</button></div><div class="msg" id="pm2"></div></div>';
@@ -605,7 +612,7 @@
     if (badb) { msg(m, badb, "err"); return; }
     msg(m, "Saving…");
     var fail = function (x) { msg(m, x ? dbError(x) : "Could not save.", "err"); };
-    sb.from("points_systems").update({ name: name }).eq("id", pid).then(function (r1) {
+    sb.from("points_systems").update({ name: name, dnf_rank_by_best_lap: $("#pdr").checked }).eq("id", pid).then(function (r1) {
       if (r1.error) { fail(r1.error); return; }
       sb.from("points_table_entries").upsert(ents, { onConflict: "points_system_id,position" }).then(function (r2) {
         if (r2.error) { fail(r2.error); return; }
@@ -899,6 +906,287 @@
       if (r.error) { btn.textContent = dbError(r.error); return; }
       if (table === "points_systems" && state.pscope === "league") { renderLeaguePoints(); return; }
       openChamp(state.sel.champ.id, table === "seasons" || table === "points_systems" ? { view: "champ" } : undefined);
+    });
+  }
+
+  /* ---------- drivers, results and standings ---------- */
+  var ENG = window.FCMResults;
+  function fmtMs(ms) {
+    if (ms == null) return "";
+    var t = Math.round(ms), h = Math.floor(t / 3600000), m = Math.floor(t % 3600000 / 60000), s = Math.floor(t % 60000 / 1000), r = t % 1000;
+    function p(n, w) { return ("00" + n).slice(-w); }
+    return (h ? h + ":" : "") + p(m, 2) + ":" + p(s, 2) + "." + ("000" + r).slice(-3);
+  }
+  // "22:14.742", "1:22:14.742" or "39.328" -> milliseconds. Blank -> null, unreadable -> NaN.
+  function parseMs(v) {
+    v = (v || "").trim(); if (!v) return null;
+    var parts = v.split(":"); if (parts.length > 3) return NaN;
+    var secs = Number(parts.pop().replace(",", "."));
+    if (!isFinite(secs) || secs < 0) return NaN;
+    var ms = secs * 1000, mult = 60;
+    while (parts.length) { var n = Number(parts.pop()); if (!isFinite(n) || n < 0 || n % 1) return NaN; ms += n * mult * 1000; mult *= 60; }
+    return Math.round(ms);
+  }
+  function loadDrivers(done) {
+    sb.from("drivers").select("id,display_name,aliases").eq("league_id", state.league.id).order("display_name", { ascending: true }).then(function (r) {
+      if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + " Has migration 010 been run?</div>"; return; }
+      state.drivers = r.data || []; done();
+    });
+  }
+  function driverByName(name) {
+    var n = (name || "").trim().toLowerCase(); if (!n) return null;
+    return state.drivers.filter(function (d) { return d.display_name.toLowerCase() === n || (d.aliases || []).some(function (a) { return a.toLowerCase() === n; }); })[0] || null;
+  }
+  function driverName(id) { var d = state.drivers.filter(function (x) { return x.id === id; })[0]; return d ? d.display_name : "?"; }
+
+  function renderDrivers() { loadDrivers(renderDriversBody); }
+  function renderDriversBody() {
+    app.innerHTML = navHtml("d") + '<div class="card"><h2>Drivers</h2><p class="muted" style="margin:0 0 8px">The league\'s drivers. Use the name exactly as the game shows it. Other names are spellings the screenshot scan or you might use for the same person; results entry matches on either.</p>' +
+      (state.drivers.length ? state.drivers.map(function (d) {
+        return '<div class="row" data-did="' + esc(d.id) + '" style="align-items:flex-end;margin:6px 0"><div class="field grow"><label>Name in the game</label><input data-dn value="' + esc(d.display_name) + '"></div>' +
+          '<div class="field grow"><label>Other names (comma separated)</label><input data-da value="' + esc((d.aliases || []).join(", ")) + '"></div>' +
+          '<button type="button" data-dsave>Save</button><button type="button" class="danger" data-ddel>Delete</button></div>';
+      }).join("") : '<p class="muted">No drivers yet. They are also added automatically when you type a new name in results entry.</p>') + '<div class="msg" id="dm"></div></div>' +
+      '<div class="card"><h3 style="margin-top:0">Add a driver</h3><div class="row"><div class="field grow"><label for="dnew">Name in the game</label><input id="dnew"></div><button class="primary" id="dadd" type="button">Add</button></div><div class="msg" id="dam"></div></div>';
+    bindNav();
+    function aliasList(v) { return v.split(",").map(function (x) { return x.trim(); }).filter(function (x) { return x; }); }
+    app.querySelectorAll("[data-dsave]").forEach(function (b) { b.addEventListener("click", function () {
+      var row = b.closest("[data-did]"), name = row.querySelector("[data-dn]").value.trim();
+      if (!name) { msg($("#dm"), "A driver needs a name.", "err"); return; }
+      sb.from("drivers").update({ display_name: name, aliases: aliasList(row.querySelector("[data-da]").value) }).eq("id", row.dataset.did).then(function (r) { msg($("#dm"), r.error ? dbError(r.error) : "Saved.", r.error ? "err" : "ok"); });
+    }); });
+    app.querySelectorAll("[data-ddel]").forEach(function (b) { b.addEventListener("click", function () {
+      var row = b.closest("[data-did]"), key = "dd" + row.dataset.did;
+      if (armed !== key) { armed = key; b.textContent = "Click again to delete"; return; }
+      armed = null;
+      sb.from("drivers").delete().eq("id", row.dataset.did).then(function (r) {
+        if (r.error) { msg($("#dm"), /foreign key|violates/i.test(r.error.message || "") ? "This driver has results, so they cannot be deleted." : dbError(r.error), "err"); b.textContent = "Delete"; return; }
+        renderDrivers();
+      });
+    }); });
+    $("#dadd").addEventListener("click", function () {
+      var n = $("#dnew").value.trim(); if (!n) { msg($("#dam"), "Type a name first.", "err"); return; }
+      sb.from("drivers").insert({ league_id: state.league.id, display_name: n, aliases: [] }).then(function (r) {
+        if (r.error) { msg($("#dam"), /duplicate|unique/i.test(r.error.message || "") ? "There is already a driver with that name." : dbError(r.error), "err"); return; }
+        renderDrivers();
+      });
+    });
+  }
+
+  // The points system a race uses, as the scoring engine wants it. Resolves null when none is set.
+  function loadSystem(id) {
+    if (!id) return Promise.resolve(null);
+    return Promise.all([
+      sb.from("points_systems").select("*").eq("id", id).single(),
+      sb.from("points_table_entries").select("*").eq("points_system_id", id),
+      sb.from("points_status_rules").select("*").eq("points_system_id", id),
+      sb.from("points_bonuses").select("*").eq("points_system_id", id)
+    ]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) throw bad.error;
+      var sys = { id: id, name: rs[0].data.name, table: {}, status: {}, fastestLap: null, dnfRank: !!rs[0].data.dnf_rank_by_best_lap };
+      (rs[1].data || []).forEach(function (e) { sys.table[e.position] = Number(e.points); });
+      (rs[2].data || []).forEach(function (e) { sys.status[e.status] = Number(e.points); });
+      (rs[3].data || []).forEach(function (b) { if (/fastest/i.test(b.name || "") && b.kind === "bonus" && sys.fastestLap == null) sys.fastestLap = Number(b.points); });
+      return sys;
+    });
+  }
+  function raceSystemId(race) { return race.points_system_id || state.sel.champ.points_system_id || null; }
+  function roundLabel(e) { return (e.round_number ? "Round " + e.round_number : "") + (e.round_number && e.name ? " · " : "") + (e.name || (e.round_number ? "" : "Round")); }
+
+  function resultsTabHtml() {
+    var S = state.sel, h = '<div class="card"><h2>Results</h2><p class="muted" style="margin:0 0 6px">Pick a race to enter or correct its results.</p>', any = false;
+    S.seasons.forEach(function (season) {
+      var evs = S.events.filter(function (e) { return e.season_id === season.id; });
+      if (!evs.length) return;
+      h += "<h3>" + esc(season.name) + "</h3>";
+      evs.forEach(function (e) {
+        var rs = S.races.filter(function (r) { return r.event_id === e.id; }).sort(function (a, b) { return a.sort_order - b.sort_order; });
+        if (!rs.length) return; any = true;
+        h += '<div class="row" style="align-items:center;margin:4px 0"><span style="min-width:200px">' + esc(roundLabel(e)) + "</span>" + rs.map(function (r) {
+          return '<button type="button" data-rr="' + esc(r.id) + '">' + esc(r.name || "Race") + ' <span class="muted" data-rc="' + esc(r.id) + '"></span></button>';
+        }).join("") + "</div>";
+      });
+    });
+    return h + (any ? "" : '<p class="muted">No races yet. Add a season and rounds first.</p>') + "</div>";
+  }
+  function fillCounts() {
+    var ids = state.sel.races.map(function (r) { return r.id; }); if (!ids.length) return;
+    sb.from("results").select("race_id").in("race_id", ids).then(function (r) {
+      var c = {}; (r.data || []).forEach(function (x) { c[x.race_id] = (c[x.race_id] || 0) + 1; });
+      app.querySelectorAll("[data-rc]").forEach(function (el) { var n = c[el.dataset.rc]; el.textContent = n ? "✓ " + n : ""; });
+    });
+  }
+
+  var STATUSES = [["finished", "Finished"], ["dnf", "DNF"], ["dns", "DNS"], ["dsq", "DSQ"]];
+  function renderRaceResults(rid) {
+    var S = state.sel, race = S.races.filter(function (r) { return r.id === rid; })[0];
+    if (!race) { state.nav = { view: "champ" }; renderCurrent(); return; }
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    loadDrivers(function () {
+      Promise.all([sb.from("results").select("*").eq("race_id", rid), loadSystem(raceSystemId(race))]).then(function (xs) {
+        if (xs[0].error) { app.innerHTML = '<div class="card err">' + esc(dbError(xs[0].error)) + "</div>"; return; }
+        var rows = (xs[0].data || []).slice().sort(function (a, b) { return (a.position == null ? 1e9 : a.position) - (b.position == null ? 1e9 : b.position); }).map(function (r) {
+          return { driver: driverName(r.driver_id), status: r.status === "other" ? "dns" : r.status, ranked: r.status === "dnf" && r.position != null,
+            best: fmtMs(r.best_lap_ms), raceT: fmtMs(r.race_time_ms), pen: r.penalty_ms ? String(r.penalty_ms / 1000) : "", total: fmtMs(r.total_time_ms) };
+        });
+        state.rr = { race: race, sys: xs[1], rows: rows, dbl: !!race.double_points };
+        if (!rows.length) for (var i = 0; i < 6; i++) rows.push(blankRow());
+        drawRace();
+      }, function (e) { app.innerHTML = '<div class="card err">' + esc(dbError(e)) + "</div>"; });
+    });
+  }
+  function blankRow() { return { driver: "", status: "finished", ranked: false, best: "", raceT: "", pen: "", total: "" }; }
+  function syncRows() {
+    var rr = state.rr; if (!rr) return;
+    var trs = app.querySelectorAll("tr[data-ri]"); if (!trs.length) return;
+    rr.rows = Array.prototype.map.call(trs, function (tr) {
+      var old = rr.rows[Number(tr.dataset.ri)] || blankRow(), st = tr.querySelector("[data-f=status]").value;
+      return { driver: tr.querySelector("[data-f=driver]").value, status: st, ranked: st === "dnf" && st === old.status ? old.ranked : false,
+        best: tr.querySelector("[data-f=best]").value, raceT: tr.querySelector("[data-f=raceT]").value, pen: tr.querySelector("[data-f=pen]").value, total: tr.querySelector("[data-f=total]").value };
+    });
+    var d = $("#rdbl"); if (d) rr.dbl = d.checked;
+  }
+  // Grid positions and points from the rows as they stand, in grid order.
+  function gridResults() {
+    var rr = state.rr, pos = 0, fastest = -1, bestMs = null;
+    rr.rows.forEach(function (r, i) { var b = parseMs(r.best); if (r.driver.trim() && b != null && isFinite(b) && (bestMs == null || b < bestMs)) { bestMs = b; fastest = i; } });
+    return rr.rows.map(function (r, i) {
+      var positioned = r.status === "finished" || (r.status === "dnf" && r.ranked), p = positioned && r.driver.trim() ? ++pos : null;
+      var res = { position: p, status: r.status === "finished" ? null : r.status, fastestLap: i === fastest };
+      return { position: p, res: res, points: rr.sys && r.driver.trim() ? ENG.resultPoints(rr.sys, res, rr.dbl) : null };
+    });
+  }
+  function refreshGrid() {
+    syncRows();
+    var g = gridResults();
+    app.querySelectorAll("tr[data-ri]").forEach(function (tr) {
+      var i = Number(tr.dataset.ri), x = g[i], r = state.rr.rows[i];
+      tr.querySelector("[data-pos]").textContent = x.position != null ? x.position : "–";
+      tr.querySelector("[data-pts]").textContent = x.points == null ? "" : x.points + (x.res.fastestLap && state.rr.sys && state.rr.sys.fastestLap ? " (FL)" : "");
+      var m = !r.driver.trim() ? "" : driverByName(r.driver) ? "" : "new driver";
+      tr.querySelector("[data-new]").textContent = m;
+    });
+  }
+  function drawRace() {
+    var rr = state.rr, race = rr.race, ev = state.sel.events.filter(function (e) { return e.id === race.event_id; })[0];
+    var rowsH = rr.rows.map(function (r, i) {
+      return '<tr data-ri="' + i + '"><td data-pos style="text-align:center"></td>' +
+        '<td><input data-f="driver" list="dl" value="' + esc(r.driver) + '" style="min-width:160px"><span class="pill" data-new style="margin-left:4px"></span></td>' +
+        '<td><select data-f="status">' + STATUSES.map(function (s) { return '<option value="' + s[0] + '"' + (r.status === s[0] ? " selected" : "") + ">" + s[1] + "</option>"; }).join("") + "</select>" + (r.ranked ? ' <span class="pill">ranked</span>' : "") + "</td>" +
+        '<td><input data-f="best" value="' + esc(r.best) + '" placeholder="00:39.328" style="width:92px"></td>' +
+        '<td><input data-f="raceT" value="' + esc(r.raceT) + '" placeholder="22:14.742" style="width:104px"></td>' +
+        '<td><input data-f="pen" type="number" step="any" min="0" value="' + esc(r.pen) + '" style="width:62px"></td>' +
+        '<td><input data-f="total" value="' + esc(r.total) + '" placeholder="22:14.742" style="width:104px"></td>' +
+        '<td data-pts style="text-align:right"></td>' +
+        '<td style="white-space:nowrap"><button type="button" data-up="' + i + '" title="Move up">↑</button><button type="button" data-dn="' + i + '" title="Move down">↓</button><button type="button" data-rm="' + i + '" title="Remove row">✕</button></td></tr>';
+    }).join("");
+    app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
+      '<div class="card"><h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
+      '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
+      '<p class="muted" style="margin:0 0 8px">Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
+      '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
+      '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
+      '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
+      '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button></div>' +
+      '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
+      '<div class="msg" id="rm"></div></div>';
+    $("#backchamp").addEventListener("click", function () { state.nav = { view: "champ" }; renderCurrent(); });
+    app.querySelectorAll("tr[data-ri] input, tr[data-ri] select, #rdbl").forEach(function (el) {
+      el.addEventListener("input", refreshGrid);
+      el.addEventListener("change", function () { if (el.dataset.f === "status") { syncRows(); drawRace(); } else refreshGrid(); });
+    });
+    function move(i, d) { syncRows(); var rows = state.rr.rows, j = i + d; if (j < 0 || j >= rows.length) return; var t = rows[i]; rows[i] = rows[j]; rows[j] = t; drawRace(); }
+    app.querySelectorAll("[data-up]").forEach(function (b) { b.addEventListener("click", function () { move(Number(b.dataset.up), -1); }); });
+    app.querySelectorAll("[data-dn]").forEach(function (b) { b.addEventListener("click", function () { move(Number(b.dataset.dn), 1); }); });
+    app.querySelectorAll("[data-rm]").forEach(function (b) { b.addEventListener("click", function () { syncRows(); state.rr.rows.splice(Number(b.dataset.rm), 1); drawRace(); }); });
+    $("#radd").addEventListener("click", function () { syncRows(); state.rr.rows.push(blankRow()); drawRace(); });
+    $("#rarr").addEventListener("click", arrangeGrid);
+    $("#rsave").addEventListener("click", saveRace);
+    refreshGrid();
+  }
+  function arrangeGrid() {
+    syncRows();
+    var rr = state.rr, old = rr.rows.filter(function (r) { return r.driver.trim(); });
+    var entries = old.map(function (r, i) { var b = parseMs(r.best); return { driver: String(i), position: i + 1, status: r.status, bestLapMs: b != null && isFinite(b) ? b : null }; });
+    var out = ENG.arrangeRace(entries, { dnfRank: !!(rr.sys && rr.sys.dnfRank) });
+    rr.rows = out.map(function (o) { var r = old[Number(o.driver)]; r.status = o.status || "finished"; r.ranked = o.status === "dnf" && o.position != null; return r; });
+    drawRace(); msg($("#rm"), "Grid arranged. Check it, then save.", "ok");
+  }
+  function saveRace() {
+    syncRows();
+    var rr = state.rr, m = $("#rm"), rows = rr.rows.filter(function (r) { return r.driver.trim(); });
+    if (!rows.length) { msg(m, "Enter at least one driver first.", "err"); return; }
+    var seen = {}, parsed = [], err = null;
+    rows.forEach(function (r, i) {
+      var key = r.driver.trim().toLowerCase(), d = driverByName(r.driver);
+      if (d) key = d.id;
+      if (seen[key]) err = r.driver.trim() + " appears twice."; seen[key] = true;
+      var best = parseMs(r.best), rt = parseMs(r.raceT), tot = parseMs(r.total), pen = r.pen.trim() === "" ? null : Number(r.pen);
+      if ([best, rt, tot].some(function (v) { return v !== null && !isFinite(v); }) || (pen !== null && (!isFinite(pen) || pen < 0))) err = "Row " + (i + 1) + " (" + r.driver.trim() + "): a time is not in a readable format. Use 22:14.742.";
+      parsed.push({ best: best, rt: rt, tot: tot, pen: pen });
+    });
+    if (err) { msg(m, err, "err"); return; }
+    var origRows = rr.rows; rr.rows = rows; var grid = gridResults(); rr.rows = origRows;
+    var fresh = [], names = {};
+    rows.forEach(function (r) { var n = r.driver.trim(); if (!driverByName(n) && !names[n.toLowerCase()]) { names[n.toLowerCase()] = true; fresh.push(n); } });
+    var $s = $("#rsave"); $s.disabled = true; msg(m, "Saving…");
+    var fail = function (e) { $s.disabled = false; msg(m, dbError(e), "err"); };
+    (fresh.length ? sb.from("drivers").insert(fresh.map(function (n) { return { league_id: state.league.id, display_name: n, aliases: [] }; })).select("id,display_name,aliases") : Promise.resolve({ data: [] })).then(function (dr) {
+      if (dr.error) { fail(dr.error); return; }
+      (dr.data || []).forEach(function (d) { state.drivers.push(d); });
+      var now = new Date().toISOString();
+      var out = rows.map(function (r, i) {
+        var d = driverByName(r.driver), g = grid[i], p = parsed[i];
+        return { race_id: rr.race.id, driver_id: d.id, position: g.position, status: r.status, best_lap_ms: p.best, race_time_ms: p.rt, penalty_ms: p.pen == null ? null : Math.round(p.pen * 1000),
+          total_time_ms: p.tot, fastest_lap: !!g.res.fastestLap, points_awarded: g.points, scored_with_system_id: rr.sys ? rr.sys.id : null, scored_at: rr.sys ? now : null };
+      });
+      sb.from("results").delete().eq("race_id", rr.race.id).then(function (x) {
+        if (x.error) { fail(x.error); return; }
+        sb.from("results").insert(out).then(function (y) {
+          if (y.error) { fail(y.error); return; }
+          sb.from("races").update({ double_points: rr.dbl }).eq("id", rr.race.id).then(function (z) {
+            if (z.error) { fail(z.error); return; }
+            openChamp(state.sel.champ.id, { view: "race", rid: rr.race.id });
+            setTimeout(function () { msg($("#rm"), "Saved " + out.length + " results" + (fresh.length ? ". New drivers added: " + fresh.join(", ") : "") + ".", "ok"); }, 600);
+          });
+        });
+      });
+    });
+  }
+
+  function renderStandings() {
+    var S = state.sel, box = $("#stand"); if (!box) return;
+    var ids = S.races.map(function (r) { return r.id; });
+    if (!ids.length) { box.innerHTML = '<p class="muted">No races yet.</p>'; return; }
+    loadDrivers(function () {
+      sb.from("results").select("*").in("race_id", ids).then(function (rr) {
+        if (rr.error) { box.innerHTML = '<span class="err">' + esc(dbError(rr.error)) + "</span>"; return; }
+        var results = rr.data || [], sysIds = [];
+        S.races.forEach(function (r) { var id = raceSystemId(r); if (id && sysIds.indexOf(id) < 0) sysIds.push(id); });
+        Promise.all(sysIds.map(loadSystem)).then(function (systems) {
+          var byId = {}; systems.forEach(function (s) { if (s) byId[s.id] = s; });
+          var empty = { table: {}, status: {}, fastestLap: null }, noSys = false;
+          var evs = S.events.slice().sort(function (a, b) { return String(a.starts_at || "~").localeCompare(String(b.starts_at || "~")) || (a.round_number || 0) - (b.round_number || 0); });
+          var rounds = evs.map(function (e) {
+            var races = S.races.filter(function (r) { return r.event_id === e.id && results.some(function (x) { return x.race_id === r.id; }); }).sort(function (a, b) { return a.sort_order - b.sort_order; }).map(function (r) {
+              var sys = byId[raceSystemId(r)]; if (!sys) noSys = true;
+              return { id: r.id, name: r.name || "Race", double: !!r.double_points, system: sys || empty,
+                results: results.filter(function (x) { return x.race_id === r.id; }).map(function (x) { return { driver: driverName(x.driver_id), position: x.position, status: x.status === "finished" ? null : x.status, fastestLap: !!x.fastest_lap }; }) };
+            });
+            return { id: e.id, name: e.round_number ? "R" + e.round_number : (e.name || "Round"), races: races };
+          }).filter(function (r) { return r.races.length; });
+          if (!rounds.length) { box.innerHTML = '<p class="muted">No results entered yet. Enter them on the Results tab.</p>'; return; }
+          var st = ENG.standings(empty, rounds);
+          box.innerHTML = (noSys ? '<p class="err">Some races have no points system, so they score 0.</p>' : "") + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>#</th><th style="text-align:left">Driver</th><th>Points</th>' +
+            st.raceColumns.map(function (c) { return '<th title="' + esc(c.round + " " + c.race) + '">' + esc(c.round + " " + c.race) + "</th>"; }).join("") + "<th>Wins</th><th>Podiums</th><th>Fastest laps</th></tr></thead><tbody>" +
+            st.rows.map(function (r) {
+              return '<tr><td style="text-align:center">' + r.rank + "</td><td>" + esc(r.driver) + '</td><td style="text-align:center"><b>' + r.total + "</b></td>" +
+                st.raceColumns.map(function (c) { return '<td style="text-align:center">' + (r.perRace[c.key] == null ? "–" : r.perRace[c.key]) + "</td>"; }).join("") +
+                '<td style="text-align:center">' + r.wins + '</td><td style="text-align:center">' + r.podiums + '</td><td style="text-align:center">' + r.fastestLaps + "</td></tr>";
+            }).join("") + "</tbody></table></div>";
+        }, function (e) { box.innerHTML = '<span class="err">' + esc(dbError(e)) + "</span>"; });
+      });
     });
   }
 
