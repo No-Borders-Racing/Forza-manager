@@ -840,6 +840,7 @@
       '<div class="field"><span class="lbl">Distance</span><div style="padding:7px 0" class="muted" data-rd>' + esc(raceDistance(r, eid)) + "</div></div>" +
       '<button type="button" data-rrm>Remove</button></div>';
   }
+  function trackLabel(e) { var t = trackById(e.track_layout_id); return t ? venueName(t) + " · " + t.name : ""; }
   function layoutLen(eid) { var sel = document.getElementById("etk-" + eid), t = trackById(sel ? sel.value : (state.sel.events.filter(function (e) { return e.id === eid; })[0] || {}).track_layout_id); return t && Number(t.length_km) ? Number(t.length_km) : 0; }
   function raceDistance(r, eid) {
     var len = layoutLen(eid); if (!len || !r.laps) return "";
@@ -856,14 +857,13 @@
   function eventFields(k, e) {
     var loc = e.starts_at && e.timezone ? TZ.localText(Date.parse(e.starts_at), e.timezone) : { date: "", time: "" };
     var lob = e.lobby_opens_at && e.timezone ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone) : { date: "", time: "" };
-    return '<div class="row"><div class="field grow"><label for="en-' + k + '">Name</label><input id="en-' + k + '" value="' + esc(e.name || "") + '"></div>' +
-      '<div class="field"><label for="er-' + k + '">Round</label><input id="er-' + k + '" type="number" min="1" style="width:80px" value="' + esc(e.round_number == null ? "" : e.round_number) + '"></div></div>' +
-      '<div class="row" style="margin-top:8px"><div class="field"><label for="ed-' + k + '">Date</label><input id="ed-' + k + '" type="date" value="' + esc(loc.date) + '"></div>' +
+    return trackFields(k, e) +
+      '<div class="row" style="margin-top:8px"><div class="field"><label for="er-' + k + '">Round</label><input id="er-' + k + '" type="number" min="1" style="width:80px" value="' + esc(e.round_number == null ? "" : e.round_number) + '"></div>' +
+      '<div class="field"><label for="ed-' + k + '">Date</label><input id="ed-' + k + '" type="date" value="' + esc(loc.date) + '"></div>' +
       '<div class="field"><label for="el-' + k + '">Lobby opens (optional)</label><input id="el-' + k + '" type="time" value="' + esc(lob.time) + '"></div>' +
       '<div class="field"><label for="et-' + k + '">Race start</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
       '<div class="field grow"><span class="lbl">Time zone</span><div id="ez-' + k + '" style="padding:7px 0">' + esc(e.timezone || champZone() || "Set the league time zone first") + (e.timezone && champZone() && e.timezone !== champZone() ? ' <span class="muted">(differs from the league zone)</span>' : "") + "</div></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
-      trackFields(k, e) +
       '<div class="row" style="margin-top:8px"><div class="field"><label for="eb-' + k + '">Bonus round</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="eb-' + k + '" type="checkbox"' + (e.is_bonus ? " checked" : "") + "> Counts as a bonus round</label></div></div>" +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
   }
@@ -874,14 +874,14 @@
       var lb = e.lobby_opens_at ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone).time : "";
       when = a.date + " " + (lb ? "lobby " + lb + ", race " : "") + a.time + " " + e.timezone + (viewerTz !== e.timezone ? " (your time: " + b.date + " " + b.time + ")" : "");
     }
-    return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(e.name || "Unnamed round") + (e.is_bonus ? ' <span class="pill">bonus</span>' : "") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
+    return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(trackLabel(e) || e.name || "Round") + (e.is_bonus ? ' <span class="pill">bonus</span>' : "") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
       '<div style="margin-top:10px">' + eventFields(e.id, e) + racesBlock(e) +
       '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save round</button><button class="danger" data-ed="' + e.id + '" type="button">Delete round</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
   }
   function readEvent(k, m) {
     var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
     var z = (ev && ev.timezone) || champZone() || "";
-    var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value), track_layout_id: nul($("#etk-" + k).value), is_bonus: $("#eb-" + k).checked };
+    var out = { round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value), track_layout_id: nul($("#etk-" + k).value), is_bonus: $("#eb-" + k).checked };
     var rl = parseLap($("#erl-" + k).value);
     if (rl !== null && !isFinite(rl)) { msg(m, "The reference lap should look like 1:25.876.", "err"); return null; }
     if (rl !== null || (ev && ev.reference_lap_ms != null)) out.reference_lap_ms = rl;
@@ -1056,7 +1056,7 @@
     });
   }
   function raceSystemId(race) { return race.points_system_id || state.sel.champ.points_system_id || null; }
-  function roundLabel(e) { return (e.round_number ? "Round " + e.round_number : "") + (e.round_number && e.name ? " · " : "") + (e.name || (e.round_number ? "" : "Round")); }
+  function roundLabel(e) { var n = trackLabel(e) || e.name; return (e.round_number ? "Round " + e.round_number : "") + (e.round_number && n ? " · " : "") + (n || (e.round_number ? "" : "Round")); }
 
   function resultsTabHtml() {
     var S = state.sel, h = '<div class="card"><h2>Results</h2><p class="muted" style="margin:0 0 6px">Pick a race to enter or correct its results.</p>', any = false;
