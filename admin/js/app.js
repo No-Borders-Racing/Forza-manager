@@ -441,9 +441,9 @@
   }
   function pointsCardHtml() {
     var S = state.sel;
-    return '<div class="card"><h2>Championship points system</h2><p class="muted" style="margin:0 0 8px">Chosen once here. Every race uses it, unless you set a different one for a particular race in the race format or on a round.</p>' +
-      '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div><div class="msg" id="cptsm"></div></div>' +
-      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship can use. Add one from the library or build your own.</p><div class="list">' +
+    return '<div class="card"><h2>Points system in use</h2><p class="muted" style="margin:0 0 8px">Every race uses this one, unless you set a different one for a particular race in the race format or on a round.</p>' +
+      (S.points.length ? '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div>' : '<p class="muted" style="margin:0">None to choose from yet. Add a points system below, then pick it here.</p>') + '<div class="msg" id="cptsm"></div></div>' +
+      '<div class="card"><h2>Add a points system</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Copy one from your league or the master list, or build your own.</p><div class="list">' +
       (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.copied_from ? "copied" + (x.source_series ? " from " + x.source_series : "") : "custom") + (updAvail(x) ? ' <span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
       '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + fromOpts(S.leaguePts, S.library) + "</select></div>" +
       '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +

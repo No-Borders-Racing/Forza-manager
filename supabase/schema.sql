@@ -1006,7 +1006,7 @@ create policy results_audit_admin_read on public.results_audit for select to aut
 
 drop policy if exists points_systems_admin_all on public.points_systems;
 create policy points_systems_admin_all on public.points_systems for all to authenticated
-  using (public.can_admin_points_system(id)
+  using ((championship_id is not null and public.can_admin_champ(championship_id))
          or (championship_id is null and league_id is not null and public.can_admin_league(league_id))
          or (championship_id is null and league_id is null and public.is_owner()))
   with check ((championship_id is not null and public.can_admin_champ(championship_id))
