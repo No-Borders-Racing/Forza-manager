@@ -375,7 +375,7 @@
       app.addEventListener("input", function (e) {
         var t = e.target, id = t.id || "";
         if (t.hasAttribute && t.hasAttribute("data-rl")) { var rw = t.closest(".rrow"), bx = rw && rw.parentNode; if (bx && bx.id) refreshDistances(bx.id.slice(3)); return; }
-        var m = id.match(/^(erl|ect|ecd)-(.+)$/); if (m) calcUpdate(m[2], m[1]);
+        var m = id.match(/^(erl|ecl|ect|ecd)-(.+)$/); if (m) calcUpdate(m[2], m[1] === "erl" ? "" : m[1]);
       });
       app.addEventListener("click", function (e) {
         var t = e.target.closest && e.target.closest("[data-calcapply]"); if (!t) return;
@@ -829,10 +829,12 @@
     return '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etv-' + k + '">Venue</label><select id="etv-' + k + '">' + venueOpts(e.track_layout_id) + "</select></div>" +
       '<div class="field grow"><label for="etk-' + k + '">Layout</label><select id="etk-' + k + '">' + layoutOpts(t && t.venue_id, e.track_layout_id) + "</select></div>" +
       '</div>' +
-      '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><label for="erl-' + k + '">Reference lap</label><input id="erl-' + k + '" style="width:120px" placeholder="1:25.876" autocomplete="off" value="' + esc(e.reference_lap_ms ? fmtMs(e.reference_lap_ms) : "") + '"></div>' +
-      '<div class="field"><label for="ect-' + k + '">Race time (min)</label><input id="ect-' + k + '" type="number" min="0" step="any" style="width:100px" placeholder="Eg 33"></div>' +
-      '<div class="field"><label for="ecd-' + k + '">Or distance (' + (isMetric() ? "km" : "mi") + ')</label><input id="ecd-' + k + '" type="number" min="0" step="any" style="width:110px" placeholder="Eg 100"></div>' +
-      '<button type="button" data-calcapply="' + k + '" disabled>Set laps on every race</button></div>' +
+      '<div class="row" style="margin-top:8px"><div class="field"><label for="erl-' + k + '">Reference lap</label><input id="erl-' + k + '" style="width:130px" placeholder="1:25.876" autocomplete="off" value="' + esc(e.reference_lap_ms ? fmtMs(e.reference_lap_ms) : "") + '"></div></div>' +
+      '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><span class="lbl">Race length. Fill in one, the others work themselves out</span><div class="row" style="margin-top:4px;align-items:flex-end">' +
+      '<div class="field"><label for="ecl-' + k + '">Laps</label><input id="ecl-' + k + '" type="number" min="1" step="1" style="width:90px" placeholder="Eg 23"></div>' +
+      '<div class="field"><label for="ect-' + k + '">Total race time</label><input id="ect-' + k + '" style="width:110px" placeholder="Eg 33 or 32:55" autocomplete="off"></div>' +
+      '<div class="field"><label for="ecd-' + k + '">Total distance (' + (isMetric() ? "km" : "mi") + ')</label><input id="ecd-' + k + '" type="number" min="0" step="any" style="width:130px" placeholder="Eg 71.5"></div>' +
+      '<button type="button" data-calcapply="' + k + '" disabled>Set laps on every race</button></div></div></div>' +
       '<div class="muted" id="ecr-' + k + '" style="margin-top:4px;min-height:1.2em"></div>';
   }
   function raceRow(r, eid) {
@@ -843,24 +845,26 @@
       '<button type="button" data-rrm>Remove</button></div>';
   }
   function trackLabel(e) { var t = trackById(e.track_layout_id); return t ? venueName(t) + " · " + t.name : ""; }
-  // Lap calculator: from a race time (needs the reference lap) or a distance (needs the layout) to laps, distance and time.
+  // Lap calculator. Laps, total time and total distance are one target: type one and the others fill in.
+  // Time needs the reference lap and distance needs the layout; without them that box stays blank.
+  var calcLaps = {};
+  function parseRaceTime(v) { v = (v || "").trim(); if (!v) return null; if (/^\d+(\.\d+)?$/.test(v)) return Math.round(Number(v) * 60000); var r = parseMs(v); return r == null || !isFinite(r) || r <= 0 ? NaN : r; }
   function calcUpdate(k, from) {
-    var out = document.getElementById("ecr-" + k), btn = document.querySelector('[data-calcapply="' + k + '"]'); if (!out) return;
-    var ref = parseLap(document.getElementById("erl-" + k).value), mins = numOrNull(document.getElementById("ect-" + k).value), dist = numOrNull(document.getElementById("ecd-" + k).value), len = layoutLen(k);
-    var tEl = document.getElementById("ect-" + k), dEl = document.getElementById("ecd-" + k);
-    // The box being typed in drives the other one.
-    var laps = 0, byDist = from === "ecd" || (from !== "ect" && !mins && dist);
-    if (byDist) { if (len && dist) laps = Math.max(1, Math.round((isMetric() ? dist : dist * 1.609344) / len)); }
-    else if (mins && ref && isFinite(ref)) laps = Math.max(1, Math.round(mins * 60000 / ref));
-    var msgTxt = "";
-    if (!laps) msgTxt = byDist ? (dist ? "Pick a layout first" : "") : (mins ? "Enter a reference lap first" : "");
-    else {
-      var km = laps * len, parts = [laps + (laps === 1 ? " lap" : " laps")];
-      if (len) parts.push("≈ " + (isMetric() ? km.toFixed(1) + " km" : (km / 1.609344).toFixed(1) + " mi"));
-      if (ref && isFinite(ref)) parts.push("about " + fmtMs(laps * ref).replace(/\.\d+$/, "").replace(/^0/, "") + " of racing");
-      msgTxt = parts.join(" · ");
-    }
-    out.textContent = msgTxt; out.dataset.laps = laps || ""; if (btn) btn.disabled = !laps;
+    var g = function (p) { return document.getElementById(p + "-" + k); };
+    var out = g("ecr"), btn = document.querySelector('[data-calcapply="' + k + '"]'); if (!out) return;
+    var ref = parseLap(g("erl").value); if (ref !== null && !isFinite(ref)) ref = null;
+    var len = layoutLen(k), laps = 0, hint = "";
+    if (from === "ecl") laps = Math.round(Number(g("ecl").value)) || 0;
+    else if (from === "ect") { var tm = parseRaceTime(g("ect").value); if (tm && isFinite(tm)) { if (ref) laps = Math.max(1, Math.round(tm / ref)); else hint = "Enter a reference lap first"; } }
+    else if (from === "ecd") { var d = numOrNull(g("ecd").value); if (d) { if (len) laps = Math.max(1, Math.round((isMetric() ? d : d * 1.609344) / len)); else hint = "Pick a layout first"; } }
+    else laps = calcLaps[k] || 0;   // reference lap or layout changed: keep the laps, redo the rest
+    calcLaps[k] = laps;
+    if (from !== "ecl") g("ecl").value = laps || "";
+    if (from !== "ect") g("ect").value = laps && ref ? fmtMs(Math.round(laps * ref / 1000) * 1000).replace(/\.\d+$/, "").replace(/^0(?=\d:)/, "") : "";
+    if (from !== "ecd") g("ecd").value = laps && len ? (function (km) { return isMetric() ? km.toFixed(1) : (km / 1.609344).toFixed(1); })(laps * len) : "";
+    if (!hint && laps && !ref && from !== "ect") hint = "Add a reference lap to see the total time";
+    if (!hint && laps && !len && from !== "ecd") hint = "Pick a layout to see the distance";
+    out.textContent = hint; out.dataset.laps = laps || ""; if (btn) btn.disabled = !laps;
   }
   function layoutLen(eid) { var sel = document.getElementById("etk-" + eid), t = trackById(sel ? sel.value : (state.sel.events.filter(function (e) { return e.id === eid; })[0] || {}).track_layout_id); return t && Number(t.length_km) ? Number(t.length_km) : 0; }
   function raceDistance(r, eid) {
