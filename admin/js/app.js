@@ -439,6 +439,7 @@
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
     h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single round outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
+      '<h3>Races in this round</h3><div id="rc-new-' + s.id + '">' + raceRow({}, "new-" + s.id) + '</div><div style="margin-top:8px"><button type="button" data-radd="new-' + s.id + '">Add a race</button></div>' +
       '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add round</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
     return h;
   }
@@ -490,7 +491,7 @@
   }
   // The races a new round starts with, copied from the championship's race format.
   function racesForNewRounds(events) {
-    var T = state.sel.templates, out = [];
+    var T = state.sel.templates.length ? state.sel.templates : [{ sort_order: 1, name: "Race 1", laps: null, points_system_id: null }], out = [];
     events.forEach(function (e) { T.forEach(function (t) { out.push({ event_id: e.id, sort_order: t.sort_order, name: t.name, laps: t.laps, points_system_id: t.points_system_id }); }); });
     return out;
   }
@@ -908,9 +909,11 @@
   function addEvent(sid) {
     var k = "new-" + sid, m = $("#em-" + k), v = readEvent(k, m); if (!v) return;
     v.season_id = sid;
+    var rows = readRaces(k, m); if (!rows) return;
     sb.from("events").insert(v).select("id").then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      insertRaces(r.data || []).then(function (rr) {
+      var eid = r.data && r.data[0] && r.data[0].id;
+      (eid && rows.length ? sb.from("races").insert(rows.map(function (x) { return { event_id: eid, sort_order: x.sort_order, name: x.name, laps: x.laps, points_system_id: x.points_system_id }; })) : Promise.resolve({})).then(function (rr) {
         if (rr.error) { msg(m, "The round was created, but its races could not be added: " + dbError(rr.error), "err"); return; }
         openChamp(state.sel.champ.id);
       });
@@ -920,7 +923,7 @@
     var out = [], bad = null;
     document.querySelectorAll("#rc-" + eid + " .rrow").forEach(function (r) {
       var name = r.querySelector("[data-rn]").value.trim(), laps = numOrNull(r.querySelector("[data-rl]").value);
-      if (!name) { bad = "Every race needs a name."; return; }
+      if (!name) name = "Race " + (out.length + 1);
       if (laps != null && (laps < 1 || Math.floor(laps) !== laps)) { bad = "Laps must be a whole number of 1 or more."; return; }
       out.push({ id: r.dataset.rid || null, name: name, laps: laps, points_system_id: nul(r.querySelector("[data-rp]").value), sort_order: out.length + 1 });
     });
