@@ -267,6 +267,7 @@
   }
 
   function leagueZone() { return (state.league && state.league.timezone) || browserZone() || null; }
+  state.tzTried = state.tzTried || {};
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "settings";
     var tabs = [["settings", "Settings"], ["points", "Points"], ["format", "Race format"], ["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
@@ -274,6 +275,13 @@
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div></div>";
     if (tab === "settings") {
+      // Older championships have no zone: fill it in from the league once, without a click.
+      if (!c.intended_timezone && leagueZone() && !state.tzTried[c.id]) {
+        state.tzTried[c.id] = true;
+        sb.from("championships").update({ intended_timezone: leagueZone() }).eq("id", c.id).select("*").single().then(function (r) {
+          if (!r.error && r.data && state.sel && state.sel.champ.id === c.id) { state.sel.champ = r.data; if (state.tab === "settings" || !state.tab) renderChamp(); }
+        });
+      }
       var tzNote = c.intended_timezone ? '<b>' + esc(c.intended_timezone) + '</b> · ' + esc(gmt(c.intended_timezone)) + ' <span class="muted">(the league time zone when this championship was created; viewers see times in their own zone)</span>' :
         '<span class="err">Not set.</span> <button type="button" id="cusetz">Use the league time zone (' + esc(leagueZone() || "none found") + ")</button>";
       h += '<div class="card"><div class="row"><div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
