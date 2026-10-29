@@ -240,7 +240,7 @@
       var libP = sb.from("points_systems").select("id,name,source_series,source_version").is("championship_id", null).is("league_id", null).order("name", { ascending: true });
       var lpP = sb.from("points_systems").select("id,name,updated_at").eq("league_id", state.league.id).is("championship_id", null).order("name", { ascending: true });
       var tplP = sb.from("race_templates").select("*").eq("championship_id", id).order("sort_order", { ascending: true });
-      var trkP = sb.from("track_layouts").select("id,name,length_km,is_reverse,track_venues(name)").order("name", { ascending: true });
+      var trkP = sb.from("track_layouts").select("id,venue_id,name,length_km,is_reverse,track_venues(name)").order("name", { ascending: true });
       Promise.all([evP, srP, psP, libP, tplP, trkP, lpP]).then(function (xs) {
         var evList = xs[0].data || [];
         var raceP = evList.length ? sb.from("races").select("*").in("event_id", evList.map(function (e) { return e.id; })).order("sort_order", { ascending: true }) : Promise.resolve({ data: [] });
@@ -357,6 +357,23 @@
     on("#tsave", saveTemplates);
     on("[data-radd]", function (b) { $("#rc-" + b.dataset.radd).insertAdjacentHTML("beforeend", raceRow({}, b.dataset.radd)); });
     on("[data-rrm]", function (b) { b.closest(".rrow").remove(); });
+    if (!app._trk) {
+      app._trk = true;
+      app.addEventListener("change", function (e) {
+        var t = e.target, id = t.id || "";
+        if (id.indexOf("etv-") === 0) { var k = id.slice(4), cur = document.getElementById("etk-" + k); cur.innerHTML = layoutOpts(t.value, ""); refreshDistances(k); }
+        else if (id.indexOf("etk-") === 0) refreshDistances(id.slice(4));
+      });
+      app.addEventListener("input", function (e) {
+        var t = e.target, row = t.closest && t.closest(".rrow"); if (!row) return;
+        var box = row.parentNode, eid = box && box.id ? box.id.slice(3) : "";
+        if (t.hasAttribute("data-rdist")) {
+          var len = layoutLen(eid), d = numOrNull(t.value), laps = row.querySelector("[data-rl]");
+          if (len && d) { var km = isMetric() ? d : d * 1.609344; laps.value = Math.max(1, Math.round(km / len)); }
+        }
+        if (t.hasAttribute("data-rl") || t.hasAttribute("data-rdist")) refreshDistances(eid);
+      });
+    }
     on("#psave", savePoints);
     on("#pbadd", function () { var box = $("#pbonus"); box.insertAdjacentHTML("beforeend", bonusRow({})); });
     on("[data-pbrm]", function (b) { b.closest(".brow2").remove(); });
@@ -775,25 +792,47 @@
   }
 
   /* ---------- events ---------- */
-  function trackOpts(cur) {
+  function trackById(id) { return (state.tracks || []).filter(function (t) { return t.id === id; })[0] || null; }
+  function venueName(t) { return t && t.track_venues && t.track_venues.name ? t.track_venues.name : "Unknown venue"; }
+  function isMetric() { return !!(state.league && state.league.units === "metric"); }
+  function lenText(km) { km = Number(km); if (!km) return ""; return isMetric() ? km.toFixed(2) + " km" : (km / 1.609344).toFixed(2) + " mi"; }
+  function venueOpts(cur) {
     var T = state.tracks || [];
     if (!T.length) return '<option value="">No tracks loaded yet</option>';
-    return '<option value="">Not set</option>' + T.map(function (t) {
-      var v = t.track_venues && t.track_venues.name ? t.track_venues.name : "";
-      return '<option value="' + esc(t.id) + '"' + (cur === t.id ? " selected" : "") + ">" + esc((v ? v + " · " : "") + t.name + (t.length_km ? " (" + Number(t.length_km).toFixed(2) + " km)" : "")) + "</option>";
+    var seen = {}, vs = [];
+    T.forEach(function (t) { if (t.venue_id && !seen[t.venue_id]) { seen[t.venue_id] = 1; vs.push({ id: t.venue_id, name: venueName(t) }); } });
+    vs.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var cv = trackById(cur); cv = cv && cv.venue_id;
+    return '<option value="">Not set</option>' + vs.map(function (v) { return '<option value="' + esc(v.id) + '"' + (cv === v.id ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("");
+  }
+  function layoutOpts(venueId, cur) {
+    if (!venueId) return '<option value="">Pick a venue first</option>';
+    var L = (state.tracks || []).filter(function (t) { return t.venue_id === venueId; }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    return '<option value="">Not set</option>' + L.map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (cur === t.id ? " selected" : "") + ">" + esc(t.name + (t.is_reverse && !/reverse/i.test(t.name) ? " (reverse)" : "") + (t.length_km ? " · " + lenText(t.length_km) : "")) + "</option>";
     }).join("");
   }
-  function trackById(id) { return (state.tracks || []).filter(function (t) { return t.id === id; })[0] || null; }
+  function trackFields(k, e) {
+    var t = trackById(e.track_layout_id);
+    return '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etv-' + k + '">Venue</label><select id="etv-' + k + '">' + venueOpts(e.track_layout_id) + "</select></div>" +
+      '<div class="field grow"><label for="etk-' + k + '">Layout</label><select id="etk-' + k + '">' + layoutOpts(t && t.venue_id, e.track_layout_id) + "</select></div></div>";
+  }
   function raceRow(r, eid) {
     return '<div class="row rrow" data-rid="' + esc(r.id || "") + '" style="margin-top:6px"><div class="field grow"><label>Race</label><input data-rn value="' + esc(r.name || "") + '" placeholder="For example Sprint"></div>' +
       '<div class="field"><label>Laps</label><input data-rl type="number" min="1" style="width:90px" value="' + esc(r.laps == null ? "" : r.laps) + '"></div>' +
       '<div class="field grow"><label>Points system</label><select data-rp>' + pointsOpts(r.points_system_id) + "</select></div>" +
+      '<div class="field"><label>Or set by distance (' + (isMetric() ? "km" : "mi") + ')</label><input data-rdist type="number" min="0" step="any" style="width:110px" placeholder="Eg 100"></div>' +
       '<div class="field"><span class="lbl">Distance</span><div style="padding:7px 0" class="muted" data-rd>' + esc(raceDistance(r, eid)) + "</div></div>" +
       '<button type="button" data-rrm>Remove</button></div>';
   }
+  function layoutLen(eid) { var sel = document.getElementById("etk-" + eid), t = trackById(sel ? sel.value : (state.sel.events.filter(function (e) { return e.id === eid; })[0] || {}).track_layout_id); return t && Number(t.length_km) ? Number(t.length_km) : 0; }
   function raceDistance(r, eid) {
-    var ev = state.sel.events.filter(function (e) { return e.id === eid; })[0], t = ev && trackById(ev.track_layout_id);
-    return t && r.laps && t.length_km ? "≈ " + (Number(t.length_km) * r.laps).toFixed(1) + " km" : "";
+    var len = layoutLen(eid); if (!len || !r.laps) return "";
+    var km = len * r.laps; return "≈ " + (isMetric() ? km.toFixed(1) + " km" : (km / 1.609344).toFixed(1) + " mi");
+  }
+  function refreshDistances(eid) {
+    var box = document.getElementById("rc-" + eid); if (!box) return;
+    box.querySelectorAll(".rrow").forEach(function (row) { var l = numOrNull(row.querySelector("[data-rl]").value); row.querySelector("[data-rd]").textContent = raceDistance({ laps: l }, eid); });
   }
   function racesBlock(e) {
     var rs = state.sel.races.filter(function (r) { return r.event_id === e.id; }).sort(function (a, b) { return a.sort_order - b.sort_order; });
@@ -809,8 +848,8 @@
       '<div class="field"><label for="et-' + k + '">Race start</label><input id="et-' + k + '" type="time" value="' + esc(loc.time) + '"></div>' +
       '<div class="field grow"><span class="lbl">Time zone</span><div id="ez-' + k + '" style="padding:7px 0">' + esc(e.timezone || leagueZone() || "Set the league time zone first") + (e.timezone && leagueZone() && e.timezone !== leagueZone() ? ' <span class="muted">(differs from the league zone)</span>' : "") + "</div></div></div>" +
       (e.id ? '<div class="row" style="margin-top:8px"><div class="field"><label for="eu-' + k + '">Status</label><select id="eu-' + k + '">' + opts([["scheduled", "Scheduled"], ["cancelled", "Cancelled"], ["completed", "Completed"]], e.status, "").replace('<option value=""></option>', "") + "</select></div></div>" : "") +
-      '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etk-' + k + '">Track and layout</label><select id="etk-' + k + '">' + trackOpts(e.track_layout_id) + "</select></div>" +
-      '<div class="field"><label for="eb-' + k + '">Bonus round</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="eb-' + k + '" type="checkbox"' + (e.is_bonus ? " checked" : "") + "> Counts as a bonus round</label></div></div>" +
+      trackFields(k, e) +
+      '<div class="row" style="margin-top:8px"><div class="field"><label for="eb-' + k + '">Bonus round</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="eb-' + k + '" type="checkbox"' + (e.is_bonus ? " checked" : "") + "> Counts as a bonus round</label></div></div>" +
       '<div class="field" style="margin-top:8px"><label for="eo-' + k + '">Notes for racers (tire wear, damage, weather and anything else)</label><textarea id="eo-' + k + '">' + esc(e.notes || "") + "</textarea></div>";
   }
   function eventHtml(e) {
