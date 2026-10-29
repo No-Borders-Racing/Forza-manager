@@ -270,7 +270,7 @@
   state.tzTried = state.tzTried || {};
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "settings";
-    var tabs = [["settings", "Settings"], ["points", "Points"], ["format", "Race format"], ["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
+    var tabs = [["settings", "Settings"], ["points", "Points"], ["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
     var h = '<p><button type="button" id="back">← All championships</button></p>' +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div></div>";
@@ -449,7 +449,7 @@
   }
   function pointsCardHtml() {
     var S = state.sel;
-    return '<div class="card"><h2>Points system in use</h2><p class="muted" style="margin:0 0 8px">Every race uses this one, unless you set a different one for a particular race in the race format or on a round.</p>' +
+    return '<div class="card"><h2>Points system in use</h2><p class="muted" style="margin:0 0 8px">Every race uses this one, unless you set a different one for a particular race on a round.</p>' +
       (S.points.length ? '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div>' : '<p class="muted" style="margin:0">None to choose from yet. Add a points system below, then pick it here.</p>') + '<div class="msg" id="cptsm"></div></div>' +
       '<div class="card"><h2>Add a points system</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Copy one from your league or the master list, or build your own.</p><div class="list">' +
       (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.copied_from ? "copied" + (x.source_series ? " from " + x.source_series : "") : "custom") + (updAvail(x) ? ' <span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
