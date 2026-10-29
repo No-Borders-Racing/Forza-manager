@@ -1306,3 +1306,6 @@ alter table public.results add column if not exists penalty_ms integer check (pe
 alter table public.results add column if not exists fastest_lap boolean not null default false;
 alter table public.drivers add column if not exists aliases text[] not null default '{}';
 create unique index if not exists drivers_league_name_uq on public.drivers (league_id, lower(display_name));
+
+-- Reference lap for timed races (migration 011)
+alter table public.events add column if not exists reference_lap_ms integer check (reference_lap_ms is null or reference_lap_ms > 0);

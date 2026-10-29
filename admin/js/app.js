@@ -371,7 +371,12 @@
           var len = layoutLen(eid), d = numOrNull(t.value), laps = row.querySelector("[data-rl]");
           if (len && d) { var km = isMetric() ? d : d * 1.609344; laps.value = Math.max(1, Math.round(km / len)); }
         }
-        if (t.hasAttribute("data-rl") || t.hasAttribute("data-rdist")) refreshDistances(eid);
+        if (t.hasAttribute("data-rtime")) {
+          var rlEl = document.getElementById("erl-" + eid), ref = rlEl ? parseLap(rlEl.value) : null, mins = numOrNull(t.value), lp = row.querySelector("[data-rl]");
+          if (mins && ref && isFinite(ref)) lp.value = Math.max(1, Math.round(mins * 60000 / ref));
+          else if (mins) { row.querySelector("[data-rd]").textContent = "Enter a reference lap first"; return; }
+        }
+        if (t.hasAttribute("data-rl") || t.hasAttribute("data-rdist") || t.hasAttribute("data-rtime")) refreshDistances(eid);
       });
     }
     on("#psave", savePoints);
@@ -815,12 +820,14 @@
   function trackFields(k, e) {
     var t = trackById(e.track_layout_id);
     return '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etv-' + k + '">Venue</label><select id="etv-' + k + '">' + venueOpts(e.track_layout_id) + "</select></div>" +
-      '<div class="field grow"><label for="etk-' + k + '">Layout</label><select id="etk-' + k + '">' + layoutOpts(t && t.venue_id, e.track_layout_id) + "</select></div></div>";
+      '<div class="field grow"><label for="etk-' + k + '">Layout</label><select id="etk-' + k + '">' + layoutOpts(t && t.venue_id, e.track_layout_id) + "</select></div>" +
+      '<div class="field"><label for="erl-' + k + '">Reference lap</label><input id="erl-' + k + '" style="width:120px" placeholder="1:25.876" autocomplete="off" value="' + esc(e.reference_lap_ms ? fmtMs(e.reference_lap_ms) : "") + '"></div></div>';
   }
   function raceRow(r, eid) {
     return '<div class="row rrow" data-rid="' + esc(r.id || "") + '" style="margin-top:6px"><div class="field grow"><label>Race</label><input data-rn value="' + esc(r.name || "") + '" placeholder="For example Sprint"></div>' +
       '<div class="field"><label>Laps</label><input data-rl type="number" min="1" style="width:90px" value="' + esc(r.laps == null ? "" : r.laps) + '"></div>' +
       '<div class="field grow"><label>Points system</label><select data-rp>' + pointsOpts(r.points_system_id) + "</select></div>" +
+      '<div class="field"><label>Or set by time (min)</label><input data-rtime type="number" min="0" step="any" style="width:100px" placeholder="Eg 33"></div>' +
       '<div class="field"><label>Or set by distance (' + (isMetric() ? "km" : "mi") + ')</label><input data-rdist type="number" min="0" step="any" style="width:110px" placeholder="Eg 100"></div>' +
       '<div class="field"><span class="lbl">Distance</span><div style="padding:7px 0" class="muted" data-rd>' + esc(raceDistance(r, eid)) + "</div></div>" +
       '<button type="button" data-rrm>Remove</button></div>';
@@ -867,6 +874,9 @@
     var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
     var z = (ev && ev.timezone) || leagueZone() || "";
     var out = { name: nul($("#en-" + k).value), round_number: numOrNull($("#er-" + k).value), notes: nul($("#eo-" + k).value), track_layout_id: nul($("#etk-" + k).value), is_bonus: $("#eb-" + k).checked };
+    var rl = parseLap($("#erl-" + k).value);
+    if (rl !== null && !isFinite(rl)) { msg(m, "The reference lap should look like 1:25.876.", "err"); return null; }
+    if (rl !== null || (ev && ev.reference_lap_ms != null)) out.reference_lap_ms = rl;
     var lt = $("#el-" + k).value, any = d || t;
     if (lt && !t) { msg(m, "Set the race start time as well as the lobby time.", "err"); return null; }
     if (any) {
@@ -965,6 +975,13 @@
     var ms = secs * 1000, mult = 60;
     while (parts.length) { var n = Number(parts.pop()); if (!isFinite(n) || n < 0 || n % 1) return NaN; ms += n * mult * 1000; mult *= 60; }
     return Math.round(ms);
+  }
+  // A lap time as typed: "1:25.876", "01:25.876" or "01.25.876" (minutes.seconds.thousandths). Blank -> null, unreadable -> NaN.
+  function parseLap(v) {
+    v = (v || "").trim(); if (!v) return null;
+    var m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{1,3})$/);
+    if (m) { var ms = Number((m[3] + "00").slice(0, 3)); return Number(m[1]) * 60000 + Number(m[2]) * 1000 + ms; }
+    var r = parseMs(v); return r != null && r <= 0 ? NaN : r;
   }
   function loadDrivers(done) {
     sb.from("drivers").select("id,display_name,aliases").eq("league_id", state.league.id).order("display_name", { ascending: true }).then(function (r) {
