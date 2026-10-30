@@ -273,10 +273,18 @@
 
   function leagueZone() { return (state.league && state.league.timezone) || browserZone() || null; }
   state.tzTried = state.tzTried || {};
+  function scheduleCardHtml(c) {
+    return '<div class="card"><h2>Schedule</h2>' +
+        '<p class="muted" style="margin:0 0 6px">How often you race and when. Every weekend follows it. Times are in the championship time zone.</p>' +
+        '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
+        '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
+        '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="schsave" type="button">Save schedule</button><span class="muted">Time zone: ' + esc(c.intended_timezone || champZone() || "not set") + '</span></div><div class="msg" id="schm"></div></div>';
+  }
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "seasons";
     var inSet = tab === "settings" || tab === "points";
-    var tabs = [["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
+    var tabs = [["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
     var h = navHtml("c") +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
@@ -295,11 +303,8 @@
       h += '<div class="card"><div class="row"><div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
         '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
         '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
-        '<h3>Schedule pattern</h3><p class="muted" style="margin:0 0 6px">Every season and round inherits this. A season only asks for a starting date and a number of rounds. Times are in the time zone above.</p>' +
-        '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
-        '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
-        '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
         '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
+        '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
         '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button id="crename" type="button">Rename</button><button class="danger" id="cgodel" type="button">Delete championship…</button></div><div class="msg" id="cm"></div>' +
         '<div id="renamebox"></div>' +
         '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
@@ -310,10 +315,17 @@
     else if (tab === "results") h += resultsTabHtml();
     else if (tab === "standings") h += '<div class="card"><h2>Standings</h2><div id="stand" class="muted">Loading…</div></div>';
     else {
-      h += '<div class="card"><h2>Seasons</h2><div class="list">' + (S.seasons.length ? S.seasons.map(function (x) {
-        var n = S.events.filter(function (e) { return e.season_id === x.id; }).length;
-        return '<button type="button" class="item" data-open="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (x.starts_on ? esc(x.starts_on) + " → " + esc(x.ends_on || "?") : "no dates yet") + " · " + n + " round" + (n === 1 ? "" : "s") + "</span></button>";
-      }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
+      h += scheduleCardHtml(c);
+      if (!S.seasons.length) {
+        h += '<div class="card"><h2>Create the calendar</h2><p class="muted" style="margin:0 0 8px">Choose how many weekends and when the first one is. They follow the schedule above. You then set the venue and laps for each weekend.</p>' +
+          '<div class="field"><label for="sn">Season name</label><input id="sn" value="Season 1"></div><div class="msg" id="sm"></div>' + genHtml("new") +
+          '<div class="row" style="margin-top:12px"><button id="sadd" type="button">Add season without weekends</button></div></div>';
+      } else {
+        var cur = S.seasons.filter(function (x) { return x.id === state.curSeason; })[0] || S.seasons[S.seasons.length - 1];
+        if (S.seasons.length > 1) h += '<div class="card"><div class="field"><label for="curseason">Season</label><select id="curseason">' + S.seasons.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === cur.id ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>";
+        h += seasonHtml(cur);
+        h += '<div style="margin-top:12px"><button id="newseasonbtn" type="button">Start a new season</button></div>';
+      }
     }
     app.innerHTML = h;
     bindAll(); bindNav();
@@ -323,7 +335,7 @@
   }
   function renderCurrent() {
     var n = state.nav || { view: "champ" };
-    if (n.view === "race") renderRaceResults(n.rid); else if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") renderSeason(n.sid); else if (n.view === "newseason") renderNewSeason(); else renderChamp();
+    if (n.view === "race") renderRaceResults(n.rid); else if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") { state.curSeason = n.sid; state.tab = "seasons"; state.nav = { view: "champ" }; renderChamp(); } else if (n.view === "newseason") renderNewSeason(); else renderChamp();
   }
   function renderSeason(sid) {
     var s = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
@@ -344,6 +356,9 @@
     on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
     on("[data-tab]", function (b) { state.tab = b.dataset.tab; renderChamp(); });
     on("#csave", saveChamp);
+    on("#schsave", saveSchedule);
+    on("#newseasonbtn", function () { state.nav = { view: "newseason" }; renderCurrent(); });
+    var cs = $("#curseason"); if (cs) cs.addEventListener("change", function () { state.curSeason = cs.value; renderChamp(); });
     on("#crename", function () {
       $("#renamebox").innerHTML = '<div class="row" style="margin-top:8px"><div class="field grow"><label for="cn">New name</label><input id="cn" value="' + esc(state.sel.champ.name) + '"></div></div><p class="muted" style="margin:4px 0 0">Click Save to apply.</p>';
       $("#cn").focus();
@@ -426,15 +441,25 @@
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
-    var patch = { name: $("#cn") ? $("#cn").value.trim() : c.name, visibility: nul($("#cv").value), description: nul($("#cd").value), status: $("#cs").value,
-      schedule_every_weeks: numOrNull($("#cfreq").value), lobby_local_time: nul($("#clob").value), race_local_time: nul($("#crace").value) };
+    var patch = { name: $("#cn") ? $("#cn").value.trim() : c.name, visibility: nul($("#cv").value), description: nul($("#cd").value), status: $("#cs").value };
+    var rl = $("#cr"); if (rl && (nul(rl.value) !== null || c.rules != null)) patch.rules = nul(rl.value);
     if (!patch.name) { msg(m, "The name cannot be blank.", "err"); return; }
+    msg(m, "Saving…");
+    sb.from("championships").update(patch).eq("id", c.id).select("*").single().then(function (r) {
+      if (r.error) { msg(m, dbError(r.error), "err"); return; }
+      state.sel.champ = r.data; renderChamp(); msg($("#cm"), "Saved.", "ok");
+    });
+  }
+
+  function saveSchedule() {
+    var c = state.sel.champ, m = $("#schm");
+    var patch = { schedule_every_weeks: numOrNull($("#cfreq").value), lobby_local_time: nul($("#clob").value), race_local_time: nul($("#crace").value) };
     if (patch.lobby_local_time && !patch.race_local_time) { msg(m, "Set the race start as well as the lobby time.", "err"); return; }
     if (patch.lobby_local_time && patch.lobby_local_time > patch.race_local_time) { msg(m, "The lobby must open at or before the race start, on the same day.", "err"); return; }
     msg(m, "Saving…");
     sb.from("championships").update(patch).eq("id", c.id).select("*").single().then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      state.sel.champ = r.data; renderChamp(); msg($("#cm"), "Saved.", "ok");
+      state.sel.champ = r.data; renderChamp(); msg($("#schm"), "Saved.", "ok");
     });
   }
 
@@ -461,7 +486,7 @@
   }
   function pointsCardHtml() {
     var S = state.sel;
-    return '<div class="card"><h2>Points system in use</h2><p class="muted" style="margin:0 0 8px">Every race uses this one, unless you set a different one for a particular race on a round.</p>' +
+    return '<div class="card"><h2>Default points system</h2><p class="muted" style="margin:0 0 8px">Every race uses this one unless you pick another for that race on its weekend, for example one system for Sprint and another for Main.</p>' +
       (S.points.length ? '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div>' : '<p class="muted" style="margin:0">None to choose from yet. Add a points system below, then pick it here.</p>') + '<div class="msg" id="cptsm"></div></div>' +
       '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Open one to edit it, or add another below.</p><div class="list">' +
       (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (updAvail(x) ? '<span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
@@ -578,7 +603,10 @@
     msg(m, "Adding…");
     var go = sid ? copySystem(sid, { championship_id: C.id }) :
       sb.from("points_systems").insert({ championship_id: C.id, name: "New points system" }).select("id").single().then(function (r) { if (r.error) throw r.error; return r.data.id; });
-    go.then(function () { state.tab = "points"; openChamp(C.id, { view: "champ" }); setTimeout(function () { msg($("#pm"), "Added.", "ok"); }, 700); }, function (e) { msg(m, dbError(e), "err"); });
+    go.then(function (nid) {
+      // The first system added becomes the championship's default, so there is no second step.
+      return C.points_system_id ? nid : sb.from("championships").update({ points_system_id: nid }).eq("id", C.id).then(function () { return nid; });
+    }).then(function () { state.tab = "points"; openChamp(C.id, { view: "champ" }); setTimeout(function () { msg($("#pm"), "Added.", "ok"); }, 700); }, function (e) { msg(m, dbError(e), "err"); });
   }
   function loadLeaguePts(done) {
     var lid = state.league.id;
@@ -707,7 +735,7 @@
   // The schedule pattern lives on the championship; a season copies it when its rounds are first made.
   function champPattern() {
     var c = state.sel.champ, fo = { 1: "weekly", 2: "fortnightly", 3: "w3", 4: "w4" }[c.schedule_every_weeks];
-    if (!fo || !c.race_local_time || !c.intended_timezone) return { error: "Set the frequency, the race start and the time zone on the championship page first, then save." };
+    if (!fo || !c.race_local_time || !c.intended_timezone) return { error: "Set the frequency and race start in the schedule above and press Save schedule first." };
     var o = FREQ_OPTS[fo], race = String(c.race_local_time).slice(0, 5), lob = c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "";
     return { pattern: o.pattern, n: o.n, t: race, l: lob, z: c.intended_timezone, text: o.l + " · " + (lob ? "lobby " + lob + ", race " : "race ") + race + " " + c.intended_timezone };
   }

@@ -1309,3 +1309,6 @@ create unique index if not exists drivers_league_name_uq on public.drivers (leag
 
 -- Reference lap for timed races (migration 011)
 alter table public.events add column if not exists reference_lap_ms integer check (reference_lap_ms is null or reference_lap_ms > 0);
+
+-- Championship rules (migration 013)
+alter table public.championships add column if not exists rules text;
