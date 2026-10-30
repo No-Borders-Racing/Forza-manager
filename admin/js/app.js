@@ -121,42 +121,47 @@
       renderChampList();
     });
   }
-  function navHtml(active) {
-    return '<div class="row" style="margin-bottom:12px">' + [["c", "Championships"], ["d", "Drivers"], ["p", "Points systems"], ["l", "League settings"]].map(function (t) {
-      return '<button type="button" id="nav-' + t[0] + '"' + (t[0] === active ? ' class="primary"' : "") + ">" + t[1] + "</button>";
+  // Top bar: Championships on the left, League settings hard right. Inside League settings a second row holds
+  // General, Points systems, Drivers and Admins.
+  function navHtml(active, sub) {
+    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button>' +
+      '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
+    if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"]].map(function (t) {
+      return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
     }).join("") + "</div>";
+    return h;
   }
   function bindNav() {
-    var c = $("#nav-c"), p = $("#nav-p"), l = $("#nav-l"), d = $("#nav-d");
-    if (d) d.addEventListener("click", renderDrivers);
-    if (c) c.addEventListener("click", renderChampList);
-    if (p) p.addEventListener("click", renderLeaguePoints);
-    if (l) l.addEventListener("click", renderLeague);
+    var go = { "nav-c": loadChamps, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
+    Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
-  function renderLeague() { renderLeagueBody(); }
+  function renderLeague() { renderLeagueBody("g"); }
+  function renderLeagueAdmins() { renderLeagueBody("a"); }
   function renderLeaguePoints() { loadLeaguePts(renderLeaguePointsBody); }
   function renderLeaguePointsBody() {
-    app.innerHTML = navHtml("p") +
+    app.innerHTML = navHtml("l", "p") +
       '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">Saved for the whole league. Pick one for a championship and it is copied there, so changing it here never changes a running championship.</p><div class="list">' +
-      (state.lpts.length ? state.lpts.map(function (x) { return '<button type="button" class="item" data-lpp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.source_series ? "from " + x.source_series : "custom") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
-      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="lplib">Start from</label><select id="lplib">' + fromOpts([], state.master) + '</select></div><button class="primary" id="lpadd" type="button">Add points system</button></div><div class="msg" id="lpm"></div></div>';
+      (state.lpts.length ? state.lpts.map(function (x) { return '<button type="button" class="item" data-lpp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span></button>'; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="lplib">Add from</label><select id="lplib">' + fromOpts([], state.master) + '</select></div><button class="primary" id="lpadd" type="button">Add points system</button></div><div id="lprev" class="muted" style="margin-top:8px"></div><div class="msg" id="lpm"></div></div>';
     bindNav();
     $("#lpadd").addEventListener("click", addLeaguePoints);
+    $("#lplib").addEventListener("change", function () { showPointsPreview($("#lplib").value, $("#lprev")); });
     app.querySelectorAll("[data-lpp]").forEach(function (b) { b.addEventListener("click", function () { state.pscope = "league"; state.nav = { view: "points", pid: b.dataset.lpp }; renderPoints(b.dataset.lpp); }); });
   }
-  function renderLeagueBody() {
+  function renderLeagueBody(sub) {
     var lg = state.league || {}, tz = lg.timezone || browserZone() || "";
-    app.innerHTML = navHtml("l") +
+    var gen = sub !== "a";
+    app.innerHTML = navHtml("l", gen ? "g" : "a") + (gen ?
       '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
       '<div class="field" style="margin-top:8px"><label for="lz">League time zone</label><select id="lz">' + zoneOpts(tz, "Not set") + '</select></div>' +
       '<div class="field" style="margin-top:8px"><label for="lu">Units of measurement</label><select id="lu">' + opts([["imperial", "Imperial (hp, lb-ft, lbs, mi)"], ["metric", "Metric (kW, N·m, kg, km)"]], lg.units || "", "Not set") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
-      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>';
+      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>');
     bindNav();
-    $("#lsave").addEventListener("click", function () {
+    if (gen) $("#lsave").addEventListener("click", function () {
       var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value) };
       if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
       sb.from("leagues").update(row).eq("id", state.league.id).then(function (r) {
@@ -181,8 +186,8 @@
         }); });
       });
     }
-    loadAdmins();
-    $("#laadd").addEventListener("click", function () {
+    if (!gen) loadAdmins();
+    if (!gen) $("#laadd").addEventListener("click", function () {
       var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
       sb.rpc("add_league_admin", { lid: state.league.id, admin_email: e }).then(function (x) {
         if (x.error) { msg($("#lam"), dbError(x.error), "err"); return; }
@@ -227,7 +232,7 @@
   }
   function openChamp(id, nav) {
     var prev = state.sel && state.sel.champ.id === id ? state.nav : null;
-    if (!prev) state.tab = "settings";
+    if (!prev) state.tab = "seasons";
     Promise.all([
       sb.from("championships").select("*").eq("id", id).single(),
       sb.from("seasons").select("*").eq("championship_id", id).order("starts_on", { ascending: true, nullsFirst: false }),
@@ -269,17 +274,20 @@
   function leagueZone() { return (state.league && state.league.timezone) || browserZone() || null; }
   state.tzTried = state.tzTried || {};
   function renderChamp() {
-    var S = state.sel, c = S.champ, tab = state.tab || "settings";
-    var tabs = [["settings", "Settings"], ["points", "Points"], ["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
-    var h = '<p><button type="button" id="back">← All championships</button></p>' +
+    var S = state.sel, c = S.champ, tab = state.tab || "seasons";
+    var inSet = tab === "settings" || tab === "points";
+    var tabs = [["seasons", "Seasons"], ["results", "Results"], ["standings", "Standings"]];
+    var h = navHtml("c") +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
-      '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div></div>";
+      '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
+      '<button type="button" data-tab="settings" style="margin-left:auto"' + (inSet ? ' class="primary"' : "") + ">Championship settings</button></div>" +
+      (inSet ? '<div class="row" style="margin-top:8px"><button type="button" data-tab="settings"' + (tab === "settings" ? ' class="primary"' : "") + '>General</button><button type="button" data-tab="points"' + (tab === "points" ? ' class="primary"' : "") + '>Points</button></div>' : "") + "</div>";
     if (tab === "settings") {
       // Older championships have no zone: fill it in from the league once, without a click.
       if (!c.intended_timezone && leagueZone() && !state.tzTried[c.id]) {
         state.tzTried[c.id] = true;
         sb.from("championships").update({ intended_timezone: leagueZone() }).eq("id", c.id).select("*").single().then(function (r) {
-          if (!r.error && r.data && state.sel && state.sel.champ.id === c.id) { state.sel.champ = r.data; if (state.tab === "settings" || !state.tab) renderChamp(); }
+          if (!r.error && r.data && state.sel && state.sel.champ.id === c.id) { state.sel.champ = r.data; if (state.tab === "settings") renderChamp(); }
         });
       }
       var tzNote = c.intended_timezone ? '<b>' + esc(c.intended_timezone) + '</b> · ' + esc(gmt(c.intended_timezone)) + ' <span class="muted">(the league time zone when this championship was created; viewers see times in their own zone)</span>' :
@@ -308,7 +316,7 @@
       }).join("") : '<p class="muted">No seasons yet.</p>') + '</div><div style="margin-top:10px"><button class="primary" id="newseason" type="button">Add a season</button></div></div>';
     }
     app.innerHTML = h;
-    bindAll();
+    bindAll(); bindNav();
     refreshMissing();
     if (tab === "results") fillCounts();
     if (tab === "standings") renderStandings();
@@ -360,6 +368,7 @@
     on("[data-rr]", function (b) { state.nav = { view: "race", rid: b.dataset.rr }; renderCurrent(); });
     on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
+    var plib = $("#plib"); if (plib) plib.addEventListener("change", function () { showPointsPreview(plib.value, $("#pprev")); });
     on("#tadd", function () { $("#tpl").insertAdjacentHTML("beforeend", templateRow({})); });
     on("[data-trm]", function (b) { b.closest(".trow").remove(); });
     on("#tsave", saveTemplates);
@@ -454,11 +463,10 @@
     var S = state.sel;
     return '<div class="card"><h2>Points system in use</h2><p class="muted" style="margin:0 0 8px">Every race uses this one, unless you set a different one for a particular race on a round.</p>' +
       (S.points.length ? '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div>' : '<p class="muted" style="margin:0">None to choose from yet. Add a points system below, then pick it here.</p>') + '<div class="msg" id="cptsm"></div></div>' +
-      '<div class="card"><h2>Add a points system</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Copy one from your league or the master list, or build your own.</p><div class="list">' +
-      (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + esc(x.copied_from ? "copied" + (x.source_series ? " from " + x.source_series : "") : "custom") + (updAvail(x) ? ' <span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
-      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Start from</label><select id="plib">' + fromOpts(S.leaguePts, S.library) + "</select></div>" +
-      '<button class="primary" id="padd" type="button">Add points system</button></div><div class="msg" id="pm"></div>' +
-      (S.library.length ? '<p class="muted" style="margin:6px 0 0">Systems are copied into this championship and can be edited without changing the league or master list. Each one lists its source and any caveats once you open it.</p>' : "") + "</div>";
+      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Open one to edit it, or add another below.</p><div class="list">' +
+      (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (updAvail(x) ? '<span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
+      '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Add from</label><select id="plib">' + fromOpts(S.leaguePts, S.library) + "</select></div>" +
+      '<button class="primary" id="padd" type="button">Add points system</button></div><div id="pprev" class="muted" style="margin-top:8px"></div><div class="msg" id="pm"></div></div>';
   }
   /* ---------- race format template ---------- */
   function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Same as the championship"); }
@@ -545,12 +553,32 @@
     function grp(label, list) { return list.length ? '<optgroup label="' + esc(label) + '">' + list.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.name) + "</option>"; }).join("") + "</optgroup>" : ""; }
     return '<option value="">Empty custom system</option>' + grp("This league's systems", league) + grp("Master list", master);
   }
+  var ORD = function (n) { var v = n % 100; return n + (["th", "st", "nd", "rd"][(v - 20) % 10] || ["th", "st", "nd", "rd"][v] || "th"); };
+  // Shows what a points system awards, so you can see it before adding it.
+  function showPointsPreview(srcId, box) {
+    if (!box) return;
+    if (!srcId) { box.textContent = "An empty system with no points yet. You can fill it in after adding it."; return; }
+    box.textContent = "Loading…";
+    Promise.all([
+      sb.from("points_table_entries").select("position,points").eq("points_system_id", srcId).order("position", { ascending: true }),
+      sb.from("points_bonuses").select("name,kind,points").eq("points_system_id", srcId)
+    ]).then(function (rs) {
+      if (box.dataset.src !== undefined && false) return;
+      var cur = box.parentNode.querySelector("select"); if (cur && cur.value !== srcId) return;
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { box.textContent = dbError(bad.error); return; }
+      var ents = rs[0].data || [], bns = rs[1].data || [];
+      var line = ents.length ? ents.map(function (e) { return ORD(e.position) + " " + e.points; }).join(" · ") : "No positions listed.";
+      box.innerHTML = '<div><b>Points by finishing position</b></div><div style="margin:2px 0 6px">' + esc(line) + "</div>" +
+        (bns.length ? "<div><b>Bonuses</b></div><div>" + esc(bns.map(function (x) { return x.name + " " + (x.points > 0 ? "+" : "") + x.points; }).join(" · ")) + "</div>" : "");
+    });
+  }
   function addPoints() {
     var C = state.sel.champ, m = $("#pm"), sid = $("#plib").value;
     msg(m, "Adding…");
     var go = sid ? copySystem(sid, { championship_id: C.id }) :
       sb.from("points_systems").insert({ championship_id: C.id, name: "New points system" }).select("id").single().then(function (r) { if (r.error) throw r.error; return r.data.id; });
-    go.then(function (nid) { state.pscope = "champ"; openChamp(C.id, { view: "points", pid: nid }); }, function (e) { msg(m, dbError(e), "err"); });
+    go.then(function () { state.tab = "points"; openChamp(C.id, { view: "champ" }); setTimeout(function () { msg($("#pm"), "Added.", "ok"); }, 700); }, function (e) { msg(m, dbError(e), "err"); });
   }
   function loadLeaguePts(done) {
     var lid = state.league.id;
@@ -568,7 +596,7 @@
     msg(m, "Adding…");
     var go = sid ? copySystem(sid, { league_id: state.league.id }) :
       sb.from("points_systems").insert({ league_id: state.league.id, name: "New points system" }).select("id").single().then(function (r) { if (r.error) throw r.error; return r.data.id; });
-    go.then(function (nid) { state.pscope = "league"; state.nav = { view: "points", pid: nid }; renderPoints(nid); }, function (e) { msg(m, dbError(e), "err"); });
+    go.then(function () { renderLeaguePoints(); setTimeout(function () { msg($("#lpm"), "Added.", "ok"); }, 500); }, function (e) { msg(m, dbError(e), "err"); });
   }
   function updateFromLeague(pid, srcId, btn) {
     if (armed !== "upd" + pid) { armed = "upd" + pid; btn.textContent = "This replaces this system with the league's version, losing any edits you made here. Click again to confirm"; return; }
@@ -1039,7 +1067,7 @@
 
   function renderDrivers() { loadDrivers(renderDriversBody); }
   function renderDriversBody() {
-    app.innerHTML = navHtml("d") + '<div class="card"><h2>Drivers</h2><p class="muted" style="margin:0 0 8px">The league\'s drivers. Use the name exactly as the game shows it. Other names are spellings the screenshot scan or you might use for the same person; results entry matches on either.</p>' +
+    app.innerHTML = navHtml("l", "d") + '<div class="card"><h2>Drivers</h2><p class="muted" style="margin:0 0 8px">The league\'s drivers. Use the name exactly as the game shows it. Other names are spellings the screenshot scan or you might use for the same person; results entry matches on either.</p>' +
       (state.drivers.length ? state.drivers.map(function (d) {
         return '<div class="row" data-did="' + esc(d.id) + '" style="align-items:flex-end;margin:6px 0"><div class="field grow"><label>Name in the game</label><input data-dn value="' + esc(d.display_name) + '"></div>' +
           '<div class="field grow"><label>Other names (comma separated)</label><input data-da value="' + esc((d.aliases || []).join(", ")) + '"></div>' +
