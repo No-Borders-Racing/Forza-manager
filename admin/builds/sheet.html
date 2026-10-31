@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build sheet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: two build sheets side by side, each a spec card with a four-axis performance graph; one column on phones. */
+:root {
+  --bg: #f1f3f5; --panel: #ffffff; --ink: #14202b; --muted: #5d6b78; --line: #d3dae0; --row: #f6f8fa;
+  --accent: #0b5cad; --accent-ink: #ffffff; --ref: #8794a1; --warn: #a15c00; --bad: #b3261e;
+  --display: "Barlow Semi Condensed", "Arial Narrow", sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f161c; --panel: #17202a; --ink: #e8eef3; --muted: #9aa8b5; --line: #2a3744; --row: #1c2733; --accent: #6aa9f0; --accent-ink: #0a1a2b; --ref: #7d8b99; --warn: #f0b35a; --bad: #f2877f; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f161c; --panel: #17202a; --ink: #e8eef3; --muted: #9aa8b5; --line: #2a3744; --row: #1c2733; --accent: #6aa9f0; --accent-ink: #0a1a2b; --ref: #7d8b99; --warn: #f0b35a; --bad: #f2877f; color-scheme: dark; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+h1 { font: 700 26px/1.1 var(--display); margin: 0; }
+h2 { font: 700 22px/1.15 var(--display); margin: 0; }
+h3 { font: 600 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+.top { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; justify-content: space-between; }
+.tag { font: 600 12px var(--display); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; color: var(--muted); }
+.note { color: var(--muted); margin: 0; max-width: 72ch; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; min-width: 0; }
+.head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.sub { color: var(--muted); font-size: 13px; }
+.cls { font: 700 30px/1 var(--display); border: 2px solid var(--ink); border-radius: 4px; padding: 4px 10px; white-space: nowrap; }
+.field { display: grid; gap: 3px; min-width: 0; }
+label, .lbl { font-size: 12px; color: var(--muted); }
+input[type=text], input[type=number], select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; min-width: 0; width: 100%; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.graph { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 12px; align-items: center; }
+@media (max-width: 520px) { .graph { grid-template-columns: minmax(0, 1fr); } }
+svg { width: 100%; height: auto; display: block; max-width: 260px; margin: 0 auto; }
+.ax { stroke: var(--line); fill: none; } .ring { stroke: var(--line); fill: none; stroke-width: 1; }
+.poly { fill: var(--accent); fill-opacity: .22; stroke: var(--accent); stroke-width: 2; }
+.refp { fill: none; stroke: var(--ref); stroke-width: 1.5; stroke-dasharray: 4 3; }
+svg text { fill: var(--muted); font: 600 11px var(--display); letter-spacing: .04em; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; margin-top: 4px; justify-content: center; }
+.sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: 5px; }
+.sw.d { border-top: 2px dashed var(--ref); }
+.part { display: grid; grid-template-columns: minmax(110px, 1.1fr) 110px minmax(0, 1.2fr) auto; gap: 6px; align-items: center; margin: 4px 0; }
+.part .n { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.ic, .part .n .ic, .lbl .ic { width: 22px; height: 22px; max-width: none; margin: 0; flex: none; color: var(--muted); }
+.part .n { justify-content: flex-start; text-align: left; }
+.lbl .ic { display: inline-block; vertical-align: -6px; margin-right: 6px; }
+button.x { font: 600 15px var(--body); background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); cursor: pointer; height: 30px; }
+.calc { font-variant-numeric: tabular-nums; font-weight: 600; padding: 5px 0; }
+.warn { color: var(--warn); font-size: 12px; }
+.row2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+button.btn { font: 600 14px var(--body); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 7px 12px; cursor: pointer; }
+button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 18px; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.kv .val { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.tag.done { color: var(--accent); border-color: var(--accent); }
+details.grp { border-top: 1px solid var(--line); padding: 6px 0; }
+details.grp > summary { display: flex; gap: 10px; align-items: center; cursor: pointer; flex-wrap: wrap; }
+details.grp > summary .gn { font-weight: 600; min-width: 150px; }
+details.grp > summary select { margin-left: auto; width: auto; }
+details.grp .part { padding-left: 14px; }
+button.btn.danger { color: var(--bad); border-color: var(--bad); }
+.bad { color: var(--bad); }
+.addpart { display: flex; gap: 8px; padding: 6px 0 2px 14px; }
+.addpart input { max-width: 260px; }
+.part.c { grid-template-columns: minmax(110px, 1.1fr) 110px minmax(0, 1.2fr) 28px; }
+.seg { display: inline-flex; } .segb { border-radius: 0; } .segb:first-child { border-radius: 4px 0 0 4px; } .segb:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+.segb[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+body { padding-block: 8px; }
+.bar { display: flex; gap: 8px 10px; align-items: flex-end; flex-wrap: wrap; }
+.bar .field { flex: 1 1 260px; }
+.msgline { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+.msgline.dirty { color: var(--warn); }
+.msgline.ok { color: var(--accent); }
+</style></head><body>
+<div class="wrap">
+  <div class="card"><div class="bar"><div class="field"><label for="bname">Build name</label><input type="text" id="bname" maxlength="80" autocomplete="off" placeholder="For example Daytona Sport spec"></div>
+    <button class="btn primary" type="button" id="bsave">Save build</button><button class="btn" type="button" id="bcopy">Save as a copy</button></div>
+    <div class="msgline" id="bmsg" role="status"></div></div>
+  <div class="row2" style="margin-top:0"><span class="lbl">Units</span><div class="seg" role="group" aria-label="Units"><button type="button" class="btn segb" data-units="imp" aria-pressed="true">Imperial · hp, lb-ft, lbs</button><button type="button" class="btn segb" data-units="met" aria-pressed="false">Metric · kW, N·m, kg</button></div><span class="sub">Engine size stays in litres either way.</span></div>
+  <div class="cards" id="cards"></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var PARTS = {
+    "Fuel and Air": ["Fuel System", "Ignition", "Exhaust", "Air Filter", "Restrictor Plate", "Intake Manifold and Throttle Body"],
+    "Engine": ["Camshaft", "Valves", "Displacement", "Pistons and Compression", "Flywheel", "Oil and Cooling"],
+    "Platform and Handling": ["Brakes", "Spring and Dampers", "Front Anti-roll Bars", "Rear Anti-roll Bars", "Weight Reduction", "Chassis Reinforcement and Roll Cage", "Ballast"],
+    "Tires": ["Tire Compound", "Front Tire Width", "Rear Tire Width"],
+    "Drivetrain": ["Clutch", "Transmission", "Driveline", "Differential"],
+    "Aero and Appearance": ["Rear Wing", "Front Bumper", "Rear Bumper", "Hood"],
+    "Conversion": ["Engine Swap", "Drivetrain Swap", "Aspiration Conversion"] };
+// 24x24 line icons, stroke only. Keys are part names.
+var ICONS = {
+ "Fuel System": '<path d="M6 7h8l3 3v10H6z"/><path d="M6 7V4h5v3"/><path d="M12 12c1.4 1.8 2.3 2.8 2.3 3.9a2.3 2.3 0 0 1-4.6 0c0-1.1.9-2.1 2.3-3.9z"/>',
+ "Ignition": '<rect x="10" y="2.5" width="4" height="3.5" rx=".6"/><rect x="8" y="6" width="8" height="5" rx=".8"/><path d="M10 11v6h4v-6M10 13h4M10 15h4"/><path d="M12 17v2.5l-1.8 1.5"/>',
+ "Exhaust": '<path d="M2.5 11h10M2.5 16h10"/><path d="M12.5 9.5 17 8v10l-4.5-1.5z"/><path d="M19.5 9.5c1.3-.9 2.3.2 2 1.2M19.5 13.5c1.3-.9 2.3.2 2 1.2"/>',
+ "Air Filter": '<rect x="3.5" y="6.5" width="17" height="11" rx="1.2"/><path d="M7.5 6.5v11M10.5 6.5v11M13.5 6.5v11M16.5 6.5v11"/>',
+ "Restrictor Plate": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="5.8" r=".6"/><circle cx="12" cy="18.2" r=".6"/><circle cx="5.8" cy="12" r=".6"/><circle cx="18.2" cy="12" r=".6"/>',
+ "Intake Manifold and Throttle Body": '<circle cx="5" cy="12" r="3"/><path d="M3 10l4 4M8 12h4M12 5.5v13M12 5.5h8M12 12h8M12 18.5h8"/>',
+ "Turbo": '<circle cx="11" cy="13" r="6.5"/><circle cx="11" cy="13" r="1.8"/><path d="M11 11.2V8M12.8 13H16M11 14.8V18M9.2 13H6"/><path d="M14.5 8.5 19 4.5h2.5v4h-3.2"/>',
+ "Supercharger": '<rect x="4.5" y="8" width="12" height="9" rx="1.6"/><path d="M7 12.5h7"/><circle cx="19" cy="12.5" r="2.2"/><path d="M16.5 10.8h1.4M16.5 14.2h1.4M7 5.5V8M14 5.5V8"/>',
+ "Intercooler": '<rect x="6" y="5" width="12" height="14" rx="1"/><path d="M6 8.5h12M6 12h12M6 15.5h12"/><path d="M2.5 12h2.2m-1 -1.4 1.4 1.4-1.4 1.4M19.3 12h2.2m-1 -1.4 1.4 1.4-1.4 1.4"/>',
+ "Camshaft": '<path d="M2.5 12h19"/><path d="M6 12c0-3.5 2.5-5 3.4-5 1.6 0 2 1.8 2 3.6 0 .5 0 1.4-.2 1.4M13.5 12c0-3.5 2.5-5 3.4-5 1.6 0 2 1.8 2 3.6 0 .5 0 1.4-.2 1.4"/>',
+ "Valves": '<path d="M12 3v10"/><path d="M5 17.5c1-2.5 3.5-4.5 7-4.5s6 2 7 4.5z"/><path d="M6 20.5h12"/>',
+ "Displacement": '<circle cx="12" cy="12" r="8.5"/><path d="M6.5 12h11M9 9.5 6.5 12 9 14.5M15 9.5l2.5 2.5-2.5 2.5"/>',
+ "Pistons and Compression": '<rect x="6.5" y="3" width="11" height="18" rx="1"/><rect x="8" y="9" width="8" height="5.5" rx=".8"/><path d="M8 11h8M12 14.5V19"/><path d="M12 4.8v2.6m-1.3-1.3L12 7.4l1.3-1.3"/>',
+ "Flywheel": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5.2"/><circle cx="12" cy="12" r="1.4"/><path d="M12 2v1.4M12 20.6V22M2 12h1.4M20.6 12H22M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/>',
+ "Oil and Cooling": '<path d="M8 5c2.2 2.8 3.8 4.5 3.8 6.4a3.8 3.8 0 0 1-7.6 0C4.2 9.5 5.8 7.8 8 5z"/><path d="M16 5.5a1.6 1.6 0 0 1 3.2 0v8.3a3.2 3.2 0 1 1-3.2 0z"/><path d="M17.6 9v6.2"/><path d="M3.5 19.5c1.5-1.2 3-1.2 4.5 0s3 1.2 4.500 0" />',
+ "Brakes": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="6.8" r=".7"/><circle cx="17" cy="12" r=".7"/><circle cx="12" cy="17.2" r=".7"/><circle cx="7" cy="12" r=".7"/><path d="M16.5 5.5c2.6 1.4 4 3.7 4 6.5v.5" stroke-width="2.8" opacity=".35"/>',
+ "Spring and Dampers": '<path d="M12 2.5v3"/><path d="M7.5 6.5c3-1.2 6-1.2 9 0M7.5 10c3-1.2 6-1.2 9 0M7.5 13.5c3-1.2 6-1.2 9 0M7.5 17c3-1.2 6-1.2 9 0"/><path d="M12 18v3.5"/><path d="M8 21.5h8"/>',
+ "Front Anti-roll Bars": '<path d="M4 9h3v8h10V9h3"/><path d="M4 9l1.5-2.5M20 9l-1.5-2.5"/><path d="M12 3.5v2.8m-1.4-1.4L12 6.3l1.4-1.4"/>',
+ "Rear Anti-roll Bars": '<path d="M4 15h3V7h10v8h3"/><path d="M4 15l1.5 2.5M20 15l-1.5 2.5"/><path d="M12 20.5v-2.8m-1.4 1.4L12 17.7l1.4 1.4"/>',
+ "Weight Reduction": '<path d="M5 5c6 0 11 3 14 12M5 5c3 2.5 7 5.5 12 7M5 5c0 6 2.5 10 8 12"/><path d="M5 5 3 3M19 17l2.5 3"/>',
+ "Chassis Reinforcement and Roll Cage": '<path d="M3.5 19h17M5.5 19 8 8h8l2.5 11"/><path d="M8 8l8 11M16 8l-8 11"/><path d="M6 13.5h12"/>',
+ "Ballast": '<path d="M8 8.5 6 20h12L16 8.5z"/><path d="M9.5 8.5a2.5 2.5 0 0 1 5 0"/><text x="12" y="17" font-size="5.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="700">KG</text>',
+ "Tire Compound": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6"/><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>',
+ "Front Tire Width": '<rect x="8" y="4" width="8" height="14" rx="2"/><path d="M8 8h8M8 12h8M8 15h8" opacity=".5"/><path d="M3.5 21h17m-15.5 -1.4L3.5 21l1.5 1.4M19 19.6l1.5 1.4-1.5 1.4"/>',
+ "Rear Tire Width": '<rect x="6.5" y="4" width="11" height="14" rx="2"/><path d="M6.5 8h11M6.5 12h11M6.5 15h11" opacity=".5"/><path d="M3.5 21h17m-15.5 -1.4L3.5 21l1.5 1.4M19 19.6l1.5 1.4-1.5 1.4"/>',
+ "Clutch": '<circle cx="9" cy="12" r="6.5"/><circle cx="9" cy="12" r="2"/><path d="M15.5 6v12M18 7.5v9M20.5 9v6"/>',
+ "Transmission": '<path d="M7 4v16M17 4v16M7 12h10"/><circle cx="7" cy="4" r="1.6"/><circle cx="17" cy="4" r="1.6"/><circle cx="7" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/>',
+ "Driveline": '<path d="M2.5 9.5h4l2 5h7l2-5h4"/><circle cx="8.5" cy="14.5" r="1.4"/><circle cx="15.5" cy="14.5" r="1.4"/><path d="M8.5 14.5h7"/>',
+ "Differential": '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.8"/><path d="M12 6v-3M12 18v3M2.5 12H6M18 12h3.5"/><path d="M8.5 8.5l2 2M15.5 8.5l-2 2M8.5 15.5l2-2M15.5 15.5l-2-2"/>',
+ "Rear Wing": '<path d="M2.5 8.5 21.5 6v4.5L2.5 11.5z"/><path d="M8 11v8M16 10.5v8.5M5 19h14"/>',
+ "Front Bumper": '<path d="M3 14.5V12c0-2 1-3.5 3-4l3-1h6l3 1c2 .5 3 2 3 4v2.5z"/><path d="M3 14.5h18v3H3z"/><path d="M7 11h10"/><circle cx="6.2" cy="12.2" r=".9"/><circle cx="17.8" cy="12.2" r=".9"/>',
+ "Rear Bumper": '<path d="M3 14.5V12c0-2 1-3.5 3-4l3-1h6l3 1c2 .5 3 2 3 4v2.5z"/><path d="M3 14.5h18v3H3z"/><path d="M5 10h3.5v2H5zM15.5 10H19v2h-3.5z"/><path d="M10 16h4" />',
+ "Hood": '<path d="M4 19 7.5 7h9L20 19z"/><path d="M12 7v12M9.5 7 8.3 19M14.5 7l1.2 12"/><path d="M10.8 16.5h2.4"/>',
+ "Engine Swap": '<path d="M6 4.5h9l2 2h2v5h-2l-2 2H6z"/><path d="M9 4.5v-2h4v2M4 7v3"/><path d="M3.5 17.5h8m-2-2-2 2 2 2M20.5 20.5h-8m2-2 2 2-2 2"/>',
+ "Drivetrain Swap": '<path d="M2.5 9.5h3.5l1.5-2h6l1.5 2h2.5l1 1.5h2"/><path d="M6 9.5v4h10v-4"/><circle cx="11" cy="11.5" r="1"/><path d="M3.5 17.5h8m-2-2-2 2 2 2M20.5 20.5h-8m2-2 2 2-2 2"/>',
+ "Aspiration Conversion": '<circle cx="9.5" cy="12.5" r="5.5"/><circle cx="9.5" cy="12.5" r="1.6"/><path d="M13 8.3 17.5 4.5h3v3.5h-3"/><path d="M20 14v6M17 17h6"/>',
+ "_custom": '<path d="M14.5 5.5a4 4 0 0 0-5.2 5L3.5 16.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5-5.2l-2.4 2.4-2.1-.6-.6-2.1z"/>'
+};
+function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+(ICONS[name]||ICONS._custom)+'</svg>';}
+
+  var TIERS = ["", "Stock", "Street", "Sport", "Race"];
+  var EXTRA_TIERS = { "Tire Compound": ["Drag"], "Spring and Dampers": ["Drag"] };
+  var WHEEL_GROUPS = ["A", "B–G", "H–K", "L–Q", "R", "S–V", "W–Z"];
+  var ORDER = ["Fuel and Air", "Engine", "Platform and Handling", "Tires", "Wheels", "Drivetrain", "Aero and Appearance", "Conversion"];
+  var NO_ADD = ["Engine", "Platform and Handling", "Tires", "Drivetrain"]; // categories with no "Add part" box
+  var ADD_HINT = { "Fuel and Air": "Eg Turbo", "Conversion": "Eg Bodykit" };
+  var ONLY_TIERS = { "Front Tire Width": ["Stock", "Upgraded"], "Rear Tire Width": ["Stock", "Upgraded"] };
+  var WEIGHTS = ["Extra light", "Light", "Medium", "Heavy", "Extra heavy"];
+  function isBallast(p) { return p.group === "Platform and Handling" && p.name === "Ballast"; }
+  // Tiers each part can take: Ballast is Stock/Installed, tire widths and Conversion parts are Stock/Upgraded.
+  function allowed(p) {
+    if (isBallast(p)) return ["Stock", "Installed"];
+    if (ONLY_TIERS[p.name]) return ONLY_TIERS[p.name];
+    if (p.group === "Conversion") return ["Stock", "Upgraded"];
+    return TIERS.concat(EXTRA_TIERS[p.name] || []);
+  }
+  // Detail is kept only where the game gives us something to record: Ballast weight, an upgraded width, Aero, added parts.
+  function detailKind(p) {
+    if (isBallast(p)) return p.tier === "Installed" ? "weight" : "";
+    if (ONLY_TIERS[p.name]) return p.tier === "Upgraded" ? "width" : "";
+    if (p.group === "Conversion") return "";
+    return p.group === "Aero and Appearance" || p.custom ? "text" : "";
+  }
+  function detailOf(p) { return detailKind(p) ? p.detail : ""; }
+  function detailCell(p, i) {
+    var k = detailKind(p), a = ' aria-label="' + esc(p.name) + ' detail" data-i="' + i + '" data-k="detail"';
+    if (k === "weight") return '<select' + a + '><option value="">Weight</option>' + WEIGHTS.map(function (w) { return '<option value="' + w + '"' + (w === p.detail ? " selected" : "") + ">" + w + "</option>"; }).join("") + "</select>";
+    if (k) return '<input type="text"' + a + ' value="' + esc(p.detail) + '" placeholder="' + (k === "width" ? "Width" : "Detail") + '">';
+    return "<span></span>";
+  }
+  // Quick build / "Set all to" use the normal tiers; a width only follows when the choice is Stock.
+  function applyTier(p, v) { if (allowed(p).indexOf(v) < 0) return; p.tier = v; p.detail = ""; }
+  // Older sheets (and the samples) may hold a width with no tier: Upgraded when a size was typed, otherwise Stock.
+  // Wheels are Stock or Upgraded. Older sheets become Upgraded when a group, style or note was filled in.
+  function fixWheels(b) {
+    if (b.wheelState === "Stock" || b.wheelState === "Upgraded") return;
+    var st = String(b.wheelStyle || "").trim().toLowerCase();
+    b.wheelState = b.wheelGroup || b.wheelNote || (st && st !== "stock") ? "Upgraded" : "Stock";
+  }
+  // Parts always list in the game's order: the standard parts first, then Turbo/Supercharger and Intercooler,
+  // then anything the user added, in the order added. Fixes sheets saved with another order.
+  function fixOrder(b) {
+    var extra = { "Turbo": 1, "Supercharger": 1, "Intercooler": 2 };
+    function rank(p, i) {
+      var k = PARTS[p.group] ? PARTS[p.group].indexOf(p.name) : -1;
+      if (k >= 0) return k;
+      if (p.group === "Fuel and Air" && extra[p.name] && !p.custom) return 100 + extra[p.name];
+      return 1000 + i;
+    }
+    b.parts = b.parts.map(function (p, i) { return { p: p, r: rank(p, i), i: i }; }).sort(function (x, y) { return x.r - y.r || x.i - y.i; }).map(function (x) { return x.p; });
+  }
+  function fixWidths(b) {
+    b.parts.forEach(function (p) {
+      var a = allowed(p);
+      if (a.indexOf("") >= 0 || a.indexOf(p.tier) >= 0) return;
+      if (isBallast(p)) { var hv = WEIGHTS.indexOf(p.detail) >= 0; p.tier = hv || (p.tier && p.tier !== "Stock") ? "Installed" : "Stock"; if (!hv) p.detail = ""; }
+      else p.tier = (p.tier && p.tier !== "Stock") || (p.detail && p.group !== "Conversion") ? "Upgraded" : "Stock";
+    });
+  }
+  var AXES = [["Speed", "speed"], ["Braking", "braking"], ["Handling", "handling"], ["Accel", "accel"]];
+  function P(g, n, t, d) { return { group: g, name: n, tier: t || "", detail: d || "" }; }
+  var builds = [];
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function poly(vals, cx, cy, R) {
+    return AXES.map(function (a, i) {
+      var v = Math.max(0, Math.min(10, Number(vals[a[1]]) || 0)), ang = -Math.PI / 2 + i * 2 * Math.PI / AXES.length;
+      return (cx + Math.cos(ang) * R * v / 10).toFixed(1) + "," + (cy + Math.sin(ang) * R * v / 10).toFixed(1);
+    }).join(" ");
+  }
+  function radar(b) {
+    var cx = 130, cy = 120, R = 80, s = '<svg viewBox="0 0 260 240" role="img" aria-label="Performance graph">';
+    [2, 4, 6, 8, 10].forEach(function (k) { s += '<polygon class="ring" points="' + poly({ speed: k, braking: k, handling: k, accel: k }, cx, cy, R) + '"/>'; });
+    AXES.forEach(function (a, i) {
+      var ang = -Math.PI / 2 + i * 2 * Math.PI / AXES.length, x = cx + Math.cos(ang) * R, y = cy + Math.sin(ang) * R;
+      s += '<line class="ax" x1="' + cx + '" y1="' + cy + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) + '"/>';
+      var lx = cx + Math.cos(ang) * (R + 14), ly = cy + Math.sin(ang) * (R + 14) + 4, anc = Math.abs(Math.cos(ang)) < .2 ? "middle" : (Math.cos(ang) > 0 ? "start" : "end");
+      s += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anc + '">' + a[0] + " " + (Number(b.built[a[1]]) || 0) + "</text>";
+    });
+    s += '<polygon class="refp" points="' + poly(b.stock, cx, cy, R) + '"/><polygon class="poly" points="' + poly(b.built, cx, cy, R) + '"/></svg>';
+    return s;
+  }
+  var unitSys = "imp";
+  var UN = { imp: { hp: "hp", tq: "lb-ft", lb: "lbs", ratio: "hp/lb" }, met: { hp: "kW", tq: "N·m", lb: "kg", ratio: "kW/kg" } };
+  var FACT = { hp: 0.7457, tq: 1.35582, lb: 0.453592 };
+  function toDisp(k, v) { if (v === "" || v == null || !isFinite(Number(v)) || Number(v) === 0) return ""; return Math.round(unitSys === "met" ? Number(v) * FACT[k] : Number(v)); }
+  function fromDisp(k, v) { if (v === "" || !isFinite(v)) return 0; return unitSys === "met" ? v / FACT[k] : v; }
+  function ratioTxt(b) { if (!(b.hp > 0 && b.lb > 0)) return ""; return unitSys === "met" ? (b.hp * FACT.hp / (b.lb * FACT.lb)).toFixed(3) + " kW/kg" : (b.hp / b.lb).toFixed(3) + " hp/lb"; }
+  function toDispC(v, k) { return toDisp(k, v) || "—"; }
+  function subText(b) { return b.cat ? "Catalogue stock: PI " + b.cat.pi + " · " + toDispC(b.cat.hp, "hp") + " " + UN[unitSys].hp + " · " + toDispC(b.cat.tq, "tq") + " " + UN[unitSys].tq + " · " + toDispC(b.cat.lb, "lb") + " " + UN[unitSys].lb + " · " + b.cat.dsp + "L" : b.sub; }
+  function num(v, u) { return v === "" || v == null || v === 0 ? "—" : v + u; }
+  // Weight distribution is kept as "45/55" (front/rear) and shown as 45F/55R.
+  function distNorm(raw, deleting) {
+    var d = String(raw || "").replace(/\D/g, "").slice(0, 4);
+    if (d.length > 2) return d.slice(0, 2) + "/" + d.slice(2);
+    return d.length === 2 && !deleting ? d + "/" : d;
+  }
+  function distOk(d) { return /^\d\d\/\d\d$/.test(d || ""); }
+  function distTxt(d) { return distOk(d) ? d.slice(0, 2) + "F/" + d.slice(3) + "R" : (d || ""); }
+  function distWarn(d) {
+    if (!d) return "";
+    if (!distOk(d)) return "Enter front and rear, like 45/55.";
+    var t = Number(d.slice(0, 2)) + Number(d.slice(3));
+    return t === 100 ? "" : "Front and rear should add up to 100 (this adds up to " + t + ").";
+  }
+  function partVal(p) { return [p.tier, detailOf(p)].filter(Boolean).join(" · ") || "—"; }
+  function badge(b) { return ((b.cls || "") + " " + (b.pi || "")).trim(); }
+  function render(b, bi) {
+    var c = document.createElement("section"); c.className = "card";
+    var groups = ORDER;
+    var open = {};
+    function tierOpts(cur, blank, list) { return (blank ? '<option value="">' + blank + "</option>" : "") + (list || TIERS).filter(Boolean).map(function (t) { return '<option value="' + t + '"' + (t === cur ? " selected" : "") + ">" + t + "</option>"; }).join(""); }
+    function builtPart(p) { return (p.tier && p.tier !== "Stock") || !!detailOf(p); }
+    function convFitted() { return b.parts.some(function (p) { return p.group === "Conversion" && builtPart(p); }); }
+    // Plain text of the built parts only (Stock parts are left out), Conversion first when fitted.
+    function exportText() {
+      var order = groups.slice(), L = [b.title.toUpperCase(), ""];
+      if (convFitted()) order = ["Conversion"].concat(order.filter(function (g) { return g !== "Conversion"; }));
+      order.forEach(function (g) {
+        var lines = [];
+        if (g === "Wheels") {
+          var built = function (v) { v = String(v || "").trim(); return v && v.toLowerCase() !== "stock"; };
+          if (b.wheelState === "Upgraded") lines.push("Wheels: Upgraded");
+          if (b.wheelState === "Upgraded" && b.wheelGroup) lines.push("Wheel group: " + b.wheelGroup);
+          if (b.wheelState === "Upgraded") {
+            if (built(b.wheelStyle)) lines.push("Wheel style: " + b.wheelStyle);
+            if (b.wheelNote) lines.push("Wheel note: " + b.wheelNote);
+            if (built(b.rimF)) lines.push("Front rim size: " + b.rimF);
+            if (built(b.rimR)) lines.push("Rear rim size: " + b.rimR);
+          }
+        } else b.parts.filter(function (p) { return p.group === g && builtPart(p); }).forEach(function (p) { lines.push(p.name + ": " + partVal(p)); });
+        if (!lines.length) return;
+        L.push(g.toUpperCase() + (g === "Conversion" && convFitted() ? " (DO THIS FIRST)" : "")); L = L.concat(lines); L.push("");
+      });
+      if (L.length === 2) L.push("No upgrades fitted (all stock).");
+      return L.join("\n").replace(/\n+$/, "");
+    }
+    function groupState(g) {
+      var ps = b.parts.filter(function (p) { return p.group === g; }), t = ps[0] && ps[0].tier;
+      var uniform = ps.every(function (p) { return p.tier === t && !detailOf(p); });
+      return { ps: ps, uniform: uniform, tier: uniform ? t : "" };
+    }
+    function partsHtml() {
+      return groups.map(function (g) {
+        if (g === "Wheels") return '<details class="grp" data-g="Wheels"' + (open.Wheels ? " open" : "") + '><summary><span class="gn">Wheels</span><span class="sub">' + (b.wheelState === "Upgraded" ? esc([b.wheelGroup, b.wheelStyle].filter(Boolean).join(" · ") || "Upgraded") : "Stock") + '</span></summary><div style="padding:6px 0 4px 14px"><div class="field" style="max-width:200px;margin-bottom:8px"><label for="wst' + bi + '">Wheels</label><select id="wst' + bi + '" data-f="wheelState"><option value="Stock"' + (b.wheelState === "Upgraded" ? "" : " selected") + '>Stock</option><option value="Upgraded"' + (b.wheelState === "Upgraded" ? " selected" : "") + '>Upgraded</option></select></div>' + (b.wheelState !== "Upgraded" ? "</div></details>" : '<div class="two">' +
+          '<div class="field"><label for="wg' + bi + '">Wheel group (first letter)</label><select id="wg' + bi + '" data-f="wheelGroup"><option value="">Not set</option>' + WHEEL_GROUPS.map(function (w) { return '<option value="' + w + '"' + (w === b.wheelGroup ? " selected" : "") + ">" + w + "</option>"; }).join("") + "</select></div>" +
+          '<div class="field"><label for="ws' + bi + '">Wheel style</label><input type="text" id="ws' + bi + '" data-f="wheelStyle" value="' + esc(b.wheelStyle) + '"></div>' +
+          '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">' +
+          '<div class="field"><label for="rf' + bi + '">Front rim size</label><input type="text" id="rf' + bi + '" data-f="rimF" value="' + esc(b.rimF) + '"></div>' +
+          '<div class="field"><label for="rr' + bi + '">Rear rim size</label><input type="text" id="rr' + bi + '" data-f="rimR" value="' + esc(b.rimR) + '"></div></div>' +
+          '<div class="field" style="margin-top:8px"><label for="wn' + bi + '">Wheel note</label><input type="text" id="wn' + bi + '" data-f="wheelNote" placeholder="Eg 3rd from the right" value="' + esc(b.wheelNote) + '"></div></div></details>');
+        var st = groupState(g);
+        return '<details class="grp" data-g="' + esc(g) + '"' + (open[g] ? " open" : "") + '><summary><span class="gn">' + esc(g) + '</span><span class="sub">' + (st.uniform ? "All " + esc(st.tier || "—") : "Mixed") + '</span>' +
+          '<select aria-label="Set every ' + esc(g) + ' part" data-gset="' + esc(g) + '"><option value="">Set all to…</option>' + tierOpts("", "", g === "Conversion" ? ["Stock", "Upgraded"] : null) + "</select></summary>" +
+          st.ps.map(function (p) {
+            var i = b.parts.indexOf(p);
+            return '<div class="part' + (p.custom ? " c" : "") + '"><span class="n">' + icon(p.custom ? "_custom" : p.name) + "<span>" + esc(p.name) + "</span>" + (p.custom ? ' <span class="sub">added</span>' : "") + '</span><select aria-label="' + esc(p.name) + ' tier" data-i="' + i + '" data-k="tier">' + allowed(p).map(function (t) { return '<option value="' + t + '"' + (t === p.tier ? " selected" : "") + ">" + (t || "—") + "</option>"; }).join("") + '</select>' +
+              detailCell(p, i) + (p.custom ? '<button class="x" type="button" data-rm="' + i + '" aria-label="Remove ' + esc(p.name) + '">×</button>' : "") + "</div>";
+          }).join("") +
+          (NO_ADD.indexOf(g) >= 0 ? "" : '<div class="addpart"><input type="text" aria-label="Add a part to ' + esc(g) + '" data-addname="' + esc(g) + '" placeholder="' + esc(ADD_HINT[g] || "Add a part") + '" maxlength="60"><button class="btn" type="button" data-addpart="' + esc(g) + '">Add part</button></div>') + "</details>";
+      }).join("");
+    }
+    function editHtml() {
+      return '<div class="head"><div><h2>' + esc(b.title) + '</h2><div class="sub">' + esc(subText(b)) + '</div></div><div class="cls" data-cls></div></div>' +
+      '<h3>Classing</h3><div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="width:84px"><label for="cl' + bi + '">Class</label><input type="text" id="cl' + bi + '" data-f="cls" maxlength="1" placeholder="E–X" autocomplete="off" style="text-align:center;text-transform:uppercase" value="' + esc(b.cls) + '"></div>' +
+      '<div class="field" style="width:96px"><label for="pi' + bi + '">PI</label><input type="number" id="pi' + bi + '" data-f="pi" min="100" max="999" inputmode="numeric" placeholder="999" style="text-align:center" value="' + esc(b.pi) + '"></div></div>' +
+      '<h3>Performance graph</h3><div class="graph"><div data-radar></div><div class="two">' + AXES.map(function (a) { return '<div class="field"><label for="g' + bi + a[1] + '">' + a[0] + '</label><input type="number" min="0" max="10" step="0.1" inputmode="decimal" autocomplete="off" placeholder="0.0" id="g' + bi + a[1] + '" data-g="' + a[1] + '" value="' + (b.built[a[1]] === 0 || b.built[a[1]] === "" ? "" : b.built[a[1]]) + '"></div>'; }).join("") + '</div></div>' +
+      '<div class="legend"><span><span class="sw"></span>Built (typed)</span><span><span class="sw d"></span>Stock (catalogue)</span></div>' +
+      '<h3>Final specs</h3><div class="two">' +
+      '<div class="field"><label for="en' + bi + '">Engine</label><input type="text" id="en' + bi + '" data-f="engine" value="' + esc(b.engine) + '"></div>' +
+      '<div class="field"><label for="hp' + bi + '">Power (' + UN[unitSys].hp + ')</label><input type="number" id="hp' + bi + '" data-f="hp" value="' + esc(toDisp("hp", b.hp)) + '"></div>' +
+      '<div class="field"><label for="tq' + bi + '">Torque (' + UN[unitSys].tq + ')</label><input type="number" id="tq' + bi + '" data-f="tq" value="' + esc(toDisp("tq", b.tq)) + '"></div>' +
+      '<div class="field"><label for="lb' + bi + '">Weight (' + UN[unitSys].lb + ')</label><input type="number" id="lb' + bi + '" data-f="lb" value="' + esc(toDisp("lb", b.lb)) + '"></div>' +
+      '<div class="field"><span class="lbl">Ratio (' + UN[unitSys].ratio + ', calculated)</span><div class="calc" data-ratio></div></div>' +
+      '<div class="field"><label for="ds' + bi + '">Distribution</label><input type="text" id="ds' + bi + '" data-f="dist" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="xx/xx" value="' + esc(b.dist) + '"><div class="sub bad" data-distwarn>' + esc(distWarn(b.dist)) + '</div></div></div>' +
+      '<h3>Parts</h3><div class="two"><div class="field"><label for="qb' + bi + '">Quick build</label><select id="qb' + bi + '" data-qb><option value="">Set every part to…</option>' + tierOpts("") + '</select></div></div>' +
+      '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
+      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Draft. Racers cannot see it until it is complete.</span></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+    }
+    function viewHtml() {
+      var byG = {}; b.parts.forEach(function (p) { (byG[p.group] = byG[p.group] || []).push(p); });
+      var order = groups.filter(function (g) { return g === "Wheels" || byG[g]; });
+      var convFirst = convFitted();
+      if (convFirst) order = ["Conversion"].concat(order.filter(function (g) { return g !== "Conversion"; }));
+      var spec = function (k, v) { return '<div class="kv"><span class="lbl">' + k + '</span><span class="val">' + esc(v) + "</span></div>"; };
+      return '<div class="head"><div><h2>' + esc(b.title) + '</h2><div class="sub"><span class="tag done">Completed build sheet</span></div></div><div class="cls">' + esc(badge(b)) + '</div></div>' +
+        '<h3>Performance graph</h3><div class="graph"><div>' + radar(b) + '</div><div>' + AXES.map(function (a) { return spec(a[0], b.built[a[1]]); }).join("") + '</div></div>' +
+        '<div class="legend"><span><span class="sw"></span>Built</span><span><span class="sw d"></span>Stock</span></div>' +
+        '<h3>Final specs</h3><div class="specs">' + spec("Class", b.cls || "—") + spec("PI", b.pi || "—") + spec("Engine", b.engine || "—") + spec("Power", num(toDisp("hp", b.hp), " " + UN[unitSys].hp)) + spec("Torque", num(toDisp("tq", b.tq), " " + UN[unitSys].tq)) + spec("Weight", num(toDisp("lb", b.lb), " " + UN[unitSys].lb)) + spec("Ratio", ratioTxt(b) || "—") + spec("Distribution", distTxt(b.dist) || "—") + "</div>" +
+        order.map(function (g) { if (g === "Wheels") return '<h3>Wheels</h3><div class="specs">' + (b.wheelState !== "Upgraded" ? spec("Wheels", "Stock") : spec("Wheels", "Upgraded") + spec("Wheel group", b.wheelGroup || "—") + spec("Wheel style", b.wheelStyle || "—") + (b.wheelNote ? spec("Wheel note", b.wheelNote) : "") + spec("Front rim size", b.rimF || "—") + spec("Rear rim size", b.rimR || "—")) + "</div>"; var st = groupState(g); return "<h3>" + esc(g) + (g === "Conversion" && convFirst ? ' <span class="tag done">Do this first</span>' : "") + '</h3>' + (g === "Conversion" && convFirst ? '<p class="sub" style="margin:0 0 6px">Fit these before any other upgrade. The game can reset parts to stock when a conversion is fitted.</p>' : "") + '<div class="specs">' + (st.uniform ? spec("All parts", st.tier || "—") : st.ps.map(function (p) { return spec(icon(p.custom ? "_custom" : p.name) + " " + esc(p.name), partVal(p)); }).join("")) + "</div>"; }).join("") +
+        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Admin only. Racers see this read-only version.</span></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+    }
+    function addPart(g) {
+      var inp = c.querySelector('[data-addname="' + g + '"]'), n = inp.value.trim();
+      if (!n) { inp.focus(); return; }
+      if (b.parts.some(function (p) { return p.group === g && p.name.toLowerCase() === n.toLowerCase(); })) { inp.value = ""; inp.placeholder = "Already in this category"; return; }
+      saveOpen(); var np = P(g, n, "Stock"); np.custom = true; b.parts.push(np); open[g] = true;
+      c.querySelector("[data-parts]").innerHTML = partsHtml(); c.querySelector('[data-addname="' + g + '"]').focus();
+    }
+    c.addEventListener("keydown", function (e) {
+      var tg = e.target;
+      if (tg.dataset && tg.dataset.g && e.key.length === 1 && !e.ctrlKey && !e.metaKey && (!/[0-9.]/.test(e.key) || (e.key === "." && tg.value.indexOf(".") >= 0))) { e.preventDefault(); return; } if (e.key === "Enter" && e.target.dataset.addname) { e.preventDefault(); addPart(e.target.dataset.addname); } });
+    function saveOpen() { c.querySelectorAll("details.grp").forEach(function (d) { open[d.dataset.g] = d.open; }); }
+    function upd() {
+      var r = c.querySelector("[data-radar]"); if (r) r.innerHTML = radar(b);
+      var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
+      var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
+    }
+    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); }
+    c.addEventListener("input", function (e) {
+      var t = e.target;
+      if (t.dataset.g) {
+        // numbers and one dot only, one decimal place, never above 10
+        // (a number box reads "" while a half-typed value like "5." is showing, so an empty value is left alone)
+        var gv = t.value, dot = gv.indexOf(".");
+        if (gv !== "") {
+          if (dot >= 0 && gv.length > dot + 2) gv = gv.slice(0, dot + 2);
+          if (Number(gv) > 10) gv = "10";
+          if (t.value !== gv) t.value = gv;
+        }
+        b.built[t.dataset.g] = gv === "" || !isFinite(Number(gv)) ? 0 : Number(gv); upd();
+      }
+      else if (t.dataset.f === "dist") { var nv = distNorm(t.value, e.inputType && e.inputType.indexOf("delete") === 0); if (t.value !== nv) t.value = nv; b.dist = nv; var w = c.querySelector("[data-distwarn]"); if (w) w.textContent = distOk(nv) ? distWarn(nv) : ""; }
+      else if (t.dataset.f === "cls") { var cv = t.value.toUpperCase().replace(/[^EDCBASRPX]/g, "").slice(0, 1); if (t.value !== cv) t.value = cv; b.cls = cv; upd(); }
+      else if (t.dataset.f === "pi") { var pv = t.value.replace(/\D/g, "").slice(0, 3); if (t.value !== pv && pv !== "") t.value = pv; b.pi = pv === "" ? "" : Number(pv); upd(); }
+      else if (t.dataset.f) { var kf = t.dataset.f; b[kf] = (kf === "hp" || kf === "tq" || kf === "lb") ? fromDisp(kf, t.value === "" ? "" : Number(t.value)) : t.type === "number" ? Number(t.value) : (kf === "cls" ? t.value.toUpperCase() : t.value); upd(); }
+      else if (t.dataset.i) { b.parts[t.dataset.i][t.dataset.k] = t.value; }
+    });
+    c.addEventListener("focusout", function (e) { var t = e.target; if (t.dataset && t.dataset.f === "dist") { var w = c.querySelector("[data-distwarn]"); if (w) w.textContent = distWarn(b.dist); } });
+    c.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t.dataset.f === "wheelState") {
+        saveOpen(); open.Wheels = true; b.wheelState = t.value;
+        if (t.value === "Upgraded") ["wheelStyle", "rimF", "rimR"].forEach(function (k) { if (String(b[k] || "").trim().toLowerCase() === "stock") b[k] = ""; });
+        c.querySelector("[data-parts]").innerHTML = partsHtml(); return;
+      }
+      if (t.dataset.i) { var pp = b.parts[t.dataset.i]; pp[t.dataset.k] = t.value; if (t.dataset.k === "tier") { if (!detailKind(pp)) pp.detail = ""; saveOpen(); c.querySelector("[data-parts]").innerHTML = partsHtml(); } }
+      if (t.dataset.gset && t.value) { saveOpen(); b.parts.forEach(function (p) { if (p.group === t.dataset.gset) applyTier(p, t.value); }); open[t.dataset.gset] = true; c.querySelector("[data-parts]").innerHTML = partsHtml(); }
+      if (t.hasAttribute("data-qb") && t.value) { saveOpen(); b.parts.forEach(function (p) { applyTier(p, t.value); }); c.querySelector("[data-parts]").innerHTML = partsHtml(); t.value = ""; }
+    });
+    c.addEventListener("click", function (e) {
+      var rm = e.target.closest("[data-rm]"); if (rm) { saveOpen(); b.parts.splice(Number(rm.dataset.rm), 1); c.querySelector("[data-parts]").innerHTML = partsHtml(); return; }
+      var ad = e.target.closest("[data-addpart]"); if (ad) { addPart(ad.dataset.addpart); return; }
+      if (e.target.closest("[data-del]")) { c.querySelector("[data-delbar]").innerHTML = '<span class="bad">Delete "' + esc(b.title) + '" permanently?</span><button class="btn danger" type="button" data-delyes>Delete</button><button class="btn" type="button" data-delno>Cancel</button>'; return; }
+      if (e.target.closest("[data-delno]")) { c.querySelector("[data-delbar]").innerHTML = '<button class="btn danger" type="button" data-del>Delete build sheet…</button>'; return; }
+      if (e.target.closest("[data-delyes]")) { send({ fcm: "delete" }); return; }
+      if (e.target.closest("[data-export]")) {
+        var box = c.querySelector("[data-exportbox]");
+        if (!box) { box = document.createElement("div"); box.setAttribute("data-exportbox", ""); box.style.marginTop = "12px"; c.appendChild(box); }
+        box.innerHTML = '<textarea readonly rows="14" style="width:100%;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace" aria-label="Exported build" data-extext></textarea><div class="row2" style="margin-top:6px"><button class="btn" type="button" data-copy>Copy</button><button class="btn" type="button" data-exclose>Close</button><span class="sub" data-exmsg></span></div>';
+        var ta = box.querySelector("[data-extext]"); ta.value = exportText(); ta.focus(); ta.select(); return;
+      }
+      if (e.target.closest("[data-exclose]")) { var bx = c.querySelector("[data-exportbox]"); if (bx) bx.remove(); return; }
+      if (e.target.closest("[data-copy]")) {
+        var ta2 = c.querySelector("[data-extext]"), mg = c.querySelector("[data-exmsg]"); ta2.select();
+        var done = function (ok) { mg.textContent = ok ? "Copied." : "Press Ctrl+C to copy."; };
+        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta2.value).then(function () { done(true); }, function () { done(document.execCommand("copy")); }); else done(document.execCommand("copy")); } catch (err) { done(false); }
+        return;
+      }
+      if (e.target.closest("[data-done]")) { b.done = true; draw(); }
+      if (e.target.closest("[data-reopen]")) { b.done = false; draw(); }
+    });
+    c._redraw = function () { saveOpen(); draw(); };
+    c._b = b; fixWidths(b); fixWheels(b); fixOrder(b);
+    draw(); return c;
+  }
+  var PI_CLASSES = [["E", 100, 300], ["D", 301, 400], ["C", 401, 500], ["B", 501, 600], ["A", 601, 700], ["S", 701, 800], ["R", 801, 900], ["P", 901, 998], ["X", 999, 999]];
+  function classFor(pi) { for (var i = 0; i < PI_CLASSES.length; i++) if (pi >= PI_CLASSES[i][1] && pi <= PI_CLASSES[i][2]) return PI_CLASSES[i][0]; return ""; }
+
+  function send(m) { try { parent.postMessage(m, "*"); } catch (e) {} }
+  var host = document.getElementById("cards"), seq = 0, cur = null, dirty = false, bname = document.getElementById("bname"), bmsg = document.getElementById("bmsg");
+  function status(t, cls) { bmsg.textContent = t; bmsg.className = "msgline" + (cls ? " " + cls : ""); }
+  function markDirty() { if (!dirty) { dirty = true; status("Unsaved changes", "dirty"); send({ fcm: "dirty" }); } }
+  function store(fn) { try { return fn(window.localStorage); } catch (e) { return null; } }
+  function setUnits(u) { unitSys = u; document.querySelectorAll("[data-units]").forEach(function (x) { x.setAttribute("aria-pressed", x.dataset.units === u ? "true" : "false"); }); }
+  setUnits(store(function (ls) { return ls.getItem("fcm.units"); }) === "met" ? "met" : "imp");
+  function show(b) {
+    fixWidths(b); fixWheels(b); fixOrder(b);
+    host.innerHTML = ""; cur = render(b, seq++); host.appendChild(cur);
+  }
+  // A catalogue car (a row of the cars table) becomes a fresh draft: stock PI, class, engine, power, torque and weight filled in.
+  function carToBuild(c) {
+    var num = function (v) { return v == null || v === "" ? 0 : Number(v); };
+    var st = { speed: num(c.speed), braking: num(c.braking), handling: num(c.handling), accel: num(c.acceleration) };
+    var all = []; Object.keys(PARTS).forEach(function (g) { PARTS[g].forEach(function (n) { all.push(P(g, n, "Stock")); }); });
+    var forced = c.induction === "T" || c.induction === "TT" ? "Turbo" : (c.induction === "PDS" || c.induction === "CS" ? "Supercharger" : "");
+    if (forced) {
+      var at = -1; all.forEach(function (p, i) { if (p.group === "Fuel and Air" && p.name === "Intake Manifold and Throttle Body") at = i; });
+      all.splice(at + 1, 0, P("Fuel and Air", forced, "Stock"), P("Fuel and Air", "Intercooler", "Stock"));
+    }
+    var dsp = c.displacement_l == null ? "" : String(Number(c.displacement_l));
+    return { title: c.year + " " + c.make + " " + c.model, sub: "", cat: { pi: num(c.pi), hp: num(c.power_hp), tq: num(c.torque_ftlb), lb: num(c.mass_lb), dsp: dsp },
+      cls: classFor(num(c.pi)), pi: num(c.pi), engine: dsp ? dsp + "L" : "", hp: num(c.power_hp), tq: num(c.torque_ftlb), lb: num(c.mass_lb), dist: "",
+      stock: st, built: JSON.parse(JSON.stringify(st)), wheelStyle: "Stock", rimF: "Stock", rimR: "Stock", parts: all, done: false };
+  }
+  document.querySelectorAll("[data-units]").forEach(function (u) { u.addEventListener("click", function () {
+    setUnits(u.dataset.units); store(function (ls) { ls.setItem("fcm.units", u.dataset.units); });
+    if (cur) cur._redraw();
+  }); });
+  ["input", "change", "click"].forEach(function (ev) { host.addEventListener(ev, function (e) { if (ev !== "click" || (e.target.closest && e.target.closest("button, summary"))) markDirty(); }); });
+  bname.addEventListener("input", markDirty);
+  function doSave(copy) {
+    if (!cur) return;
+    var n = bname.value.trim(); if (!n) { status("Give the build a name first", "dirty"); bname.focus(); return; }
+    status("Saving…"); send({ fcm: "save", name: n, data: cur._b, copy: !!copy });
+  }
+  document.getElementById("bsave").addEventListener("click", function () { doSave(false); });
+  document.getElementById("bcopy").addEventListener("click", function () { doSave(true); });
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var m = e.data; if (!m || typeof m !== "object") return;
+    if (m.fcm === "new" && m.car) { var b = carToBuild(m.car); show(b); bname.value = m.name || b.title; dirty = false; status("New build. Not saved yet.", "dirty"); }
+    else if (m.fcm === "load" && m.data) { show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
+    else if (m.fcm === "saved") { dirty = false; if (m.name) bname.value = m.name; status("Saved.", "ok"); }
+    else if (m.fcm === "error") { status(m.message || "Could not save.", "dirty"); }
+  });
+  var lastH = 0;
+  function reportHeight() { var h = Math.ceil(document.documentElement.getBoundingClientRect().height); if (h !== lastH) { lastH = h; send({ fcm: "height", h: h }); } }
+  if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(document.body);
+  window.addEventListener("load", reportHeight);
+  send({ fcm: "ready" });
+})();
+</script></body></html>

@@ -124,7 +124,7 @@
   // Top bar: Championships on the left, League settings hard right. Inside League settings a second row holds
   // General, Points systems, Drivers and Admins.
   function navHtml(active, sub) {
-    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button>' +
+    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button>' +
       '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
     if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"]].map(function (t) {
       return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
@@ -132,7 +132,7 @@
     return h;
   }
   function bindNav() {
-    var go = { "nav-c": loadChamps, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
+    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
   function renderLeague() { renderLeagueBody("g"); }
@@ -284,7 +284,7 @@
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "seasons";
     var inSet = tab === "settings" || tab === "points";
-    var tabs = [["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
+    var tabs = [["seasons", "Calendar"], ["cars", "Cars"], ["results", "Results"], ["standings", "Standings"]];
     var h = navHtml("c") +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
@@ -312,6 +312,7 @@
         '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
     } else if (tab === "points") h += pointsCardHtml();
     else if (tab === "format") h += templateCardHtml();
+    else if (tab === "cars") h += champCarsHtml();
     else if (tab === "results") h += resultsTabHtml();
     else if (tab === "standings") h += '<div class="card"><h2>Standings</h2><div id="stand" class="muted">Loading…</div></div>';
     else {
@@ -330,6 +331,7 @@
     app.innerHTML = h;
     bindAll(); bindNav();
     refreshMissing();
+    if (tab === "cars") fillChampCars();
     if (tab === "results") fillCounts();
     if (tab === "standings") renderStandings();
   }
@@ -1091,6 +1093,264 @@
     return state.drivers.filter(function (d) { return d.display_name.toLowerCase() === n || (d.aliases || []).some(function (a) { return a.toLowerCase() === n; }); })[0] || null;
   }
   function driverName(id) { var d = state.drivers.filter(function (x) { return x.id === id; })[0]; return d ? d.display_name : "?"; }
+
+  /* ---------- cars: catalogue, saved builds, favourites ---------- */
+  var PI_CLASSES = [["E", 100, 300], ["D", 301, 400], ["C", 401, 500], ["B", 501, 600], ["A", 601, 700], ["S", 701, 800], ["R", 801, 900], ["P", 901, 998], ["X", 999, 999]];
+  function classOf(pi) { pi = Number(pi); for (var i = 0; i < PI_CLASSES.length; i++) if (pi >= PI_CLASSES[i][1] && pi <= PI_CLASSES[i][2]) return PI_CLASSES[i][0]; return ""; }
+  var COUNTRY_TOP = ["USA", "GER", "JPN", "GBR", "ITA"];
+  var COUNTRY_NAME = { USA: "United States", GER: "Germany", JPN: "Japan", GBR: "United Kingdom", ITA: "Italy", FRA: "France", AUS: "Australia", KOR: "South Korea", SWE: "Sweden", CHN: "China", AUT: "Austria", CRO: "Croatia", NED: "Netherlands", ESP: "Spain", MEX: "Mexico", DEN: "Denmark" };
+  var CAR_COLS = "id,make,model,year,nickname,division,country,pi,drivetrain";
+  var CARS_SHOWN = 100;
+  state.cf = { q: "", cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, sort: "make", dir: "asc", shown: CARS_SHOWN };
+  state.bf = { q: "", cls: "", fav: false, sort: "name", dir: "asc" };
+  state.ctab = "stock";
+  function carName(c) { return c.nickname || (c.year + " " + c.make + " " + c.model); }
+  function carFull(c) { return c.year + " " + c.make + " " + c.model; }
+  function favSet(kind) { var o = {}; (state.favs || []).forEach(function (f) { var k = kind === "car" ? f.car_id : f.build_id; if (k) o[k] = f.id; }); return o; }
+  function loadCarsData(done) {
+    var lid = state.league.id;
+    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : sb.from("cars").select(CAR_COLS).order("make", { ascending: true }).limit(2000);
+    Promise.all([catP,
+      sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid),
+      sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id,updated_at").eq("league_id", lid).order("name", { ascending: true })
+    ]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { app.innerHTML = navHtml("k") + '<div class="card err">' + esc(dbError(bad.error)) + " Has migration 014 been run?</div>"; bindNav(); return; }
+      state.carsAll = rs[0].data || []; state.favs = rs[1].data || []; state.builds = rs[2].data || []; done();
+    });
+  }
+  function selOpts(list, cur, blank) { return '<option value="">' + esc(blank) + "</option>" + list.map(function (o) { var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>"; }).join(""); }
+  function uniq(arr) { var o = {}; arr.forEach(function (x) { if (x) o[x] = 1; }); return Object.keys(o); }
+  function countryList() {
+    var all = uniq(state.carsAll.map(function (c) { return c.country; })), top = COUNTRY_TOP.filter(function (c) { return all.indexOf(c) >= 0; });
+    var rest = all.filter(function (c) { return top.indexOf(c) < 0; }).sort(function (a, b) { return (COUNTRY_NAME[a] || a).localeCompare(COUNTRY_NAME[b] || b); });
+    return top.concat(rest).map(function (c) { return [c, COUNTRY_NAME[c] || c]; });
+  }
+  function filterCars() {
+    var f = state.cf, q = f.q.trim().toLowerCase(), fav = favSet("car");
+    var out = state.carsAll.filter(function (c) {
+      if (q && (carFull(c) + " " + (c.nickname || "")).toLowerCase().indexOf(q) < 0) return false;
+      if (f.cls && classOf(c.pi) !== f.cls) return false;
+      if (f.div && c.division !== f.div) return false;
+      if (f.make && c.make !== f.make) return false;
+      if (f.yf && c.year < Number(f.yf)) return false;
+      if (f.yt && c.year > Number(f.yt)) return false;
+      if (f.country && c.country !== f.country) return false;
+      if (f.drive && c.drivetrain !== f.drive) return false;
+      if (f.fav && !fav[c.id]) return false;
+      return true;
+    });
+    var key = { name: function (c) { return carName(c).toLowerCase(); }, year: function (c) { return c.year; }, make: function (c) { return c.make.toLowerCase(); }, model: function (c) { return c.model.toLowerCase(); } }[f.sort] || function (c) { return c.make.toLowerCase(); };
+    var d = f.dir === "desc" ? -1 : 1;
+    out.sort(function (a, b) {
+      var x = key(a), y = key(b); if (x < y) return -d; if (x > y) return d;
+      return carFull(a).localeCompare(carFull(b));
+    });
+    return out;
+  }
+  function starBtn(kind, id, on) { return '<button type="button" class="star' + (on ? " on" : "") + '" data-star="' + kind + ":" + esc(id) + '" aria-label="' + (on ? "Remove from favourites" : "Add to favourites") + '" aria-pressed="' + (on ? "true" : "false") + '" style="min-width:34px;font-size:18px;line-height:1;padding:4px 8px">' + (on ? "★" : "☆") + "</button>"; }
+  function stockListHtml() {
+    var rows = filterCars(), fav = favSet("car"), f = state.cf, shown = rows.slice(0, f.shown);
+    return '<div class="muted" style="margin:6px 0">' + rows.length + " car" + (rows.length === 1 ? "" : "s") + (rows.length > shown.length ? ", showing the first " + shown.length : "") + "</div>" +
+      (shown.length ? shown.map(function (c) {
+        return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("car", c.id, !!fav[c.id]) +
+          '<div class="grow" style="min-width:200px"><b>' + esc(carName(c)) + '</b><div class="muted">' + esc(carFull(c)) + "</div></div>" +
+          '<div class="muted" style="min-width:150px">' + esc(classOf(c.pi)) + " " + esc(c.pi) + " · " + esc(c.drivetrain || "") + '</div><div class="muted" style="min-width:180px">' + esc(c.division) + " · " + esc(COUNTRY_NAME[c.country] || c.country || "") + "</div>" +
+          '<button type="button" data-buildcar="' + esc(c.id) + '">Build this car</button></div>';
+      }).join("") : '<p class="muted">No cars match these filters.</p>') +
+      (rows.length > shown.length ? '<div style="margin-top:8px"><button type="button" id="cmore">Show 100 more</button></div>' : "");
+  }
+  function filterBuilds() {
+    var f = state.bf, q = f.q.trim().toLowerCase(), fav = favSet("build"), byId = {};
+    state.carsAll.forEach(function (c) { byId[c.id] = c; });
+    var out = state.builds.filter(function (b) {
+      var c = byId[b.car_id];
+      if (q && (b.name + " " + (c ? carFull(c) + " " + (c.nickname || "") : "")).toLowerCase().indexOf(q) < 0) return false;
+      if (f.cls && b.class_letter !== f.cls) return false;
+      if (f.fav && !fav[b.id]) return false;
+      return true;
+    });
+    var d = f.dir === "desc" ? -1 : 1;
+    out.sort(function (a, b) {
+      var x = f.sort === "pi" ? (a.pi || 0) : f.sort === "updated" ? a.updated_at : a.name.toLowerCase(), y = f.sort === "pi" ? (b.pi || 0) : f.sort === "updated" ? b.updated_at : b.name.toLowerCase();
+      return x < y ? -d : x > y ? d : 0;
+    });
+    return { rows: out, byId: byId };
+  }
+  function buildListHtml() {
+    var r = filterBuilds(), fav = favSet("build");
+    return '<div class="muted" style="margin:6px 0">' + r.rows.length + " build" + (r.rows.length === 1 ? "" : "s") + "</div>" +
+      (r.rows.length ? r.rows.map(function (b) {
+        var c = r.byId[b.car_id];
+        return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) +
+          '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc(c ? carFull(c) : "Car no longer in the catalogue") + "</div></div>" +
+          '<div class="muted" style="min-width:110px">' + esc((b.class_letter || "") + " " + (b.pi || "")).trim() + '</div><span class="pill">' + esc(b.status) + "</span>" +
+          '<button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
+      }).join("") : '<p class="muted">No saved builds yet. Open the Stock cars tab, find a car and press Build this car.</p>');
+  }
+  function renderCars() { loadCarsData(renderCarsBody); }
+  function renderCarsBody() {
+    var f = state.cf, b = state.bf, stock = state.ctab !== "custom";
+    var clsList = PI_CLASSES.map(function (c) { return [c[0], c[0]]; });
+    var h = navHtml("k") + '<div class="card"><div class="row"><button type="button" data-ctab="stock"' + (stock ? ' class="primary"' : "") + '>Stock cars</button><button type="button" data-ctab="custom"' + (!stock ? ' class="primary"' : "") + ">Custom builds (" + state.builds.length + ")</button></div>";
+    if (stock) {
+      h += '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field grow"><label for="fq">Search</label><input id="fq" value="' + esc(f.q) + '" placeholder="Make, model or nickname" autocomplete="off"></div>' +
+        '<div class="field"><label for="fc">Class</label><select id="fc">' + selOpts(clsList, f.cls, "Any") + "</select></div>" +
+        '<div class="field"><label for="fd">Drivetrain</label><select id="fd">' + selOpts(["RWD", "AWD", "FWD"], f.drive, "Any") + "</select></div>" +
+        '<div class="field"><label for="ffav">Favourites</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="ffav" type="checkbox"' + (f.fav ? " checked" : "") + "> Only favourites</label></div></div>" +
+        '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field grow"><label for="fdiv">Division</label><select id="fdiv">' + selOpts(uniq(state.carsAll.map(function (c) { return c.division; })).sort(), f.div, "Any") + "</select></div>" +
+        '<div class="field"><label for="fmk">Make</label><select id="fmk">' + selOpts(uniq(state.carsAll.map(function (c) { return c.make; })).sort(), f.make, "Any") + "</select></div>" +
+        '<div class="field"><label for="fco">Country</label><select id="fco">' + selOpts(countryList(), f.country, "Any") + "</select></div>" +
+        '<div class="field"><label for="fyf">Year from</label><input id="fyf" type="number" min="1900" max="2100" style="width:90px" value="' + esc(f.yf) + '"></div>' +
+        '<div class="field"><label for="fyt">to</label><input id="fyt" type="number" min="1900" max="2100" style="width:90px" value="' + esc(f.yt) + '"></div>' +
+        '<div class="field"><label for="fsort">Sort by</label><select id="fsort">' + [["make", "Make"], ["model", "Model"], ["name", "Name"], ["year", "Year"]].map(function (o) { return '<option value="' + o[0] + '"' + (f.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
+        '<button type="button" id="fdir" aria-label="Sort direction">' + (f.dir === "desc" ? "Z to A ↓" : "A to Z ↑") + '</button><button type="button" id="freset">Clear filters</button></div>' +
+        '<div id="clist">' + stockListHtml() + "</div></div>";
+    } else {
+      h += '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field grow"><label for="bq">Search</label><input id="bq" value="' + esc(b.q) + '" placeholder="Build name or car" autocomplete="off"></div>' +
+        '<div class="field"><label for="bc">Class</label><select id="bc">' + selOpts(clsList, b.cls, "Any") + "</select></div>" +
+        '<div class="field"><label for="bsort">Sort by</label><select id="bsort">' + [["name", "Name"], ["pi", "PI"], ["updated", "Last changed"]].map(function (o) { return '<option value="' + o[0] + '"' + (b.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
+        '<button type="button" id="bdir">' + (b.dir === "desc" ? "Z to A ↓" : "A to Z ↑") + '</button>' +
+        '<div class="field"><label for="bfav">Favourites</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="bfav" type="checkbox"' + (b.fav ? " checked" : "") + "> Only favourites</label></div></div>" +
+        '<div id="clist">' + buildListHtml() + '</div><div class="msg" id="cmsg"></div></div>';
+    }
+    app.innerHTML = h; bindNav(); bindCars();
+  }
+  function bindCars() {
+    var f = state.cf, b = state.bf;
+    function relist() { var box = $("#clist"); if (!box) return; box.innerHTML = state.ctab === "custom" ? buildListHtml() : stockListHtml(); bindCarList(); }
+    function wire(id, obj, key, kind) {
+      var el = document.getElementById(id); if (!el) return;
+      el.addEventListener(kind || "input", function () { obj[key] = el.type === "checkbox" ? el.checked : el.value; if (obj === f) f.shown = CARS_SHOWN; relist(); });
+    }
+    app.querySelectorAll("[data-ctab]").forEach(function (x) { x.addEventListener("click", function () { state.ctab = x.dataset.ctab; renderCarsBody(); }); });
+    wire("fq", f, "q"); wire("fc", f, "cls", "change"); wire("fd", f, "drive", "change"); wire("ffav", f, "fav", "change"); wire("fdiv", f, "div", "change"); wire("fmk", f, "make", "change");
+    wire("fco", f, "country", "change"); wire("fyf", f, "yf"); wire("fyt", f, "yt"); wire("fsort", f, "sort", "change");
+    wire("bq", b, "q"); wire("bc", b, "cls", "change"); wire("bsort", b, "sort", "change"); wire("bfav", b, "fav", "change");
+    var fd = $("#fdir"); if (fd) fd.addEventListener("click", function () { f.dir = f.dir === "desc" ? "asc" : "desc"; fd.textContent = f.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; relist(); });
+    var bd = $("#bdir"); if (bd) bd.addEventListener("click", function () { b.dir = b.dir === "desc" ? "asc" : "desc"; bd.textContent = b.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; relist(); });
+    var fr = $("#freset"); if (fr) fr.addEventListener("click", function () { state.cf = { q: "", cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, sort: "make", dir: "asc", shown: CARS_SHOWN }; renderCarsBody(); });
+    bindCarList();
+  }
+  function bindCarList() {
+    app.querySelectorAll("[data-star]").forEach(function (x) { x.addEventListener("click", function () { toggleFav(x.dataset.star); }); });
+    app.querySelectorAll("[data-buildcar]").forEach(function (x) { x.addEventListener("click", function () { startBuild(x.dataset.buildcar); }); });
+    app.querySelectorAll("[data-openbuild]").forEach(function (x) { x.addEventListener("click", function () { openBuild(x.dataset.openbuild); }); });
+    app.querySelectorAll("[data-delbuild]").forEach(function (x) { x.addEventListener("click", function () { deleteBuildFromList(x); }); });
+    var m = $("#cmore"); if (m) m.addEventListener("click", function () { state.cf.shown += CARS_SHOWN; var box = $("#clist"); box.innerHTML = stockListHtml(); bindCarList(); });
+  }
+  function toggleFav(key) {
+    var kind = key.split(":")[0], id = key.slice(kind.length + 1), cur = favSet(kind)[id];
+    var q = cur ? sb.from("league_favourites").delete().eq("id", cur) : sb.from("league_favourites").insert(kind === "car" ? { league_id: state.league.id, car_id: id } : { league_id: state.league.id, build_id: id }).select("id,car_id,build_id").single();
+    q.then(function (r) {
+      if (r.error) { msg($("#cmsg"), dbError(r.error), "err"); return; }
+      if (cur) state.favs = state.favs.filter(function (x) { return x.id !== cur; }); else state.favs.push(r.data);
+      if (state.ctab === "custom" ? state.bf.fav : state.cf.fav) { var box = $("#clist"); if (box) { box.innerHTML = state.ctab === "custom" ? buildListHtml() : stockListHtml(); bindCarList(); } return; }
+      var btn = app.querySelector('[data-star="' + key + '"]');
+      if (btn) { var on = !cur; btn.textContent = on ? "★" : "☆"; btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on ? "true" : "false"); btn.setAttribute("aria-label", on ? "Remove from favourites" : "Add to favourites"); }
+    });
+  }
+  function deleteBuildFromList(btn) {
+    var id = btn.dataset.delbuild;
+    if (armed !== "bd" + id) { armed = "bd" + id; btn.textContent = "Click again to delete"; return; }
+    armed = null; btn.disabled = true;
+    sb.from("build_sheets").delete().eq("id", id).then(function (r) {
+      if (r.error) { msg($("#cmsg"), dbError(r.error), "err"); btn.disabled = false; return; }
+      state.builds = state.builds.filter(function (b) { return b.id !== id; }); state.favs = state.favs.filter(function (x) { return x.build_id !== id; });
+      renderCarsBody();
+    });
+  }
+  /* The build sheet runs in a frame (builds/sheet.html) and talks to this page with messages. */
+  function startBuild(carId) {
+    sb.from("cars").select("*").eq("id", carId).single().then(function (r) {
+      if (r.error) { msg($("#cmsg") || $("#clist"), dbError(r.error), "err"); return; }
+      state.editor = { buildId: null, carId: carId, car: r.data, name: "", dirty: false }; renderBuildEditor();
+    });
+  }
+  function openBuild(id) {
+    sb.from("build_sheets").select("*").eq("id", id).single().then(function (r) {
+      if (r.error) { msg($("#cmsg"), dbError(r.error), "err"); return; }
+      state.editor = { buildId: id, carId: r.data.car_id, data: r.data.data, name: r.data.name, dirty: false }; renderBuildEditor();
+    });
+  }
+  function renderBuildEditor() {
+    var E = state.editor;
+    app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" title="Build sheet" src="builds/sheet.html" style="width:100%;height:700px;border:0;background:transparent"></iframe>';
+    bindNav();
+    $("#bback").addEventListener("click", function () {
+      if (E.dirty && !window.confirm("This build has unsaved changes. Leave without saving?")) return;
+      state.editor = null; state.ctab = "custom"; renderCars();
+    });
+  }
+  window.addEventListener("message", function (e) {
+    var fr = document.getElementById("bsframe"), E = state.editor;
+    if (!fr || !E || e.source !== fr.contentWindow) return;
+    var m = e.data; if (!m || typeof m !== "object") return;
+    function post(x) { try { fr.contentWindow.postMessage(x, "*"); } catch (er) {} }
+    if (m.fcm === "ready") post(E.car ? { fcm: "new", car: E.car, name: E.name || "" } : { fcm: "load", data: E.data, name: E.name });
+    else if (m.fcm === "height" && m.h) fr.style.height = Math.max(400, Math.min(m.h + 24, 20000)) + "px";
+    else if (m.fcm === "dirty") E.dirty = true;
+    else if (m.fcm === "save") saveBuild(m, post);
+    else if (m.fcm === "delete") {
+      if (!E.buildId) { state.editor = null; state.ctab = "custom"; renderCars(); return; }
+      sb.from("build_sheets").delete().eq("id", E.buildId).then(function (r) {
+        if (r.error) { post({ fcm: "error", message: dbError(r.error) }); return; }
+        state.editor = null; state.ctab = "custom"; renderCars();
+      });
+    }
+  });
+  function saveBuild(m, post) {
+    var E = state.editor, d = m.data || {}, name = String(m.name || "").trim();
+    if (!name) { post({ fcm: "error", message: "Give the build a name first." }); return; }
+    var row = { name: name, status: d.done ? "completed" : "draft", class_letter: /^[A-Z]$/.test(d.cls || "") ? d.cls : null, pi: d.pi ? Math.max(0, Math.min(999, Math.round(Number(d.pi)))) : null, data: d };
+    var q = (m.copy || !E.buildId) ? sb.from("build_sheets").insert(Object.assign({ league_id: state.league.id, car_id: E.carId }, row)).select("id").single()
+      : sb.from("build_sheets").update(row).eq("id", E.buildId).select("id").single();
+    q.then(function (r) {
+      if (r.error) { post({ fcm: "error", message: r.error.code === "23505" ? "Another build in this league already has that name. Pick a different name." : dbError(r.error) }); return; }
+      E.buildId = r.data.id; E.name = name; E.car = null; E.data = d; E.dirty = false; post({ fcm: "saved", name: name });
+    });
+  }
+  /* A championship's cars: stock (catalogue) and custom (saved builds) */
+  function champCarsHtml() { return '<div class="card"><h2>Cars</h2><p class="muted" style="margin:0 0 8px">The cars racers can use in this championship. Stock cars are unmodified. Custom builds come from the league\'s Cars page.</p><div id="cc" class="muted">Loading…</div></div>'; }
+  function fillChampCars() {
+    var cid = state.sel.champ.id, lid = state.league.id, box = $("#cc"); if (!box) return;
+    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : sb.from("cars").select(CAR_COLS).order("make", { ascending: true }).limit(2000);
+    Promise.all([catP, sb.from("championship_cars").select("id,car_id,build_id").eq("championship_id", cid), sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id").eq("league_id", lid).order("name", { ascending: true }),
+      sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid)]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { box.className = "err"; box.textContent = dbError(bad.error) + " Has migration 014 been run?"; return; }
+      state.carsAll = rs[0].data || []; state.cc = rs[1].data || []; state.builds = rs[2].data || []; state.favs = rs[3].data || [];
+      drawChampCars();
+    });
+  }
+  function drawChampCars() {
+    var box = $("#cc"); if (!box) return;
+    var byCar = {}, byBuild = {}; state.carsAll.forEach(function (c) { byCar[c.id] = c; }); state.builds.forEach(function (b) { byBuild[b.id] = b; });
+    var stock = state.cc.filter(function (x) { return x.car_id; }), custom = state.cc.filter(function (x) { return x.build_id; });
+    var usedBuild = {}; custom.forEach(function (x) { usedBuild[x.build_id] = 1; });
+    var avail = state.builds.filter(function (b) { return !usedBuild[b.id]; });
+    var favB = favSet("build");
+    avail.sort(function (a, b) { return (favB[b.id] ? 1 : 0) - (favB[a.id] ? 1 : 0) || a.name.localeCompare(b.name); });
+    box.className = "";
+    box.innerHTML = '<h3 style="margin-top:0">Stock unmodified (' + stock.length + ")</h3>" +
+      (stock.length ? stock.map(function (x) { var c = byCar[x.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(c ? carName(c) : "Unknown car") + '</b> <span class="muted">' + esc(c ? carFull(c) + " · " + classOf(c.pi) + " " + c.pi : "") + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") : '<p class="muted">None yet.</p>') +
+      '<div class="field" style="margin-top:8px"><label for="ccq">Add a stock car</label><input id="ccq" placeholder="Search make, model or nickname" autocomplete="off"></div><div id="ccres"></div>' +
+      '<h3>Custom built (' + custom.length + ")</h3>" +
+      (custom.length ? custom.map(function (x) { var b = byBuild[x.build_id], c = b && byCar[b.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(b ? b.name : "Unknown build") + '</b> <span class="muted">' + esc((c ? carFull(c) : "") + (b && b.pi ? " · " + (b.class_letter || "") + " " + b.pi : "")) + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") : '<p class="muted">None yet.</p>') +
+      '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field grow"><label for="ccb">Add a custom build</label><select id="ccb">' + (avail.length ? selOpts(avail.map(function (b) { return [b.id, (favB[b.id] ? "★ " : "") + b.name]; }), "", "Choose a build") : '<option value="">No more builds to add</option>') + '</select></div><button type="button" id="ccbadd">Add</button></div><div class="msg" id="ccm"></div>';
+    function add(row) { msg($("#ccm"), "Adding…"); sb.from("championship_cars").insert(Object.assign({ championship_id: state.sel.champ.id }, row)).select("id,car_id,build_id").single().then(function (r) { if (r.error) { msg($("#ccm"), r.error.code === "23505" ? "That car is already in this championship." : dbError(r.error), "err"); return; } state.cc.push(r.data); drawChampCars(); }); }
+    box.querySelectorAll("[data-ccrm]").forEach(function (x) { x.addEventListener("click", function () { sb.from("championship_cars").delete().eq("id", x.dataset.ccrm).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } state.cc = state.cc.filter(function (y) { return y.id !== x.dataset.ccrm; }); drawChampCars(); }); }); });
+    $("#ccbadd").addEventListener("click", function () { var v = $("#ccb").value; if (v) add({ build_id: v }); });
+    var q = $("#ccq"), favC = favSet("car"), inStock = {}; stock.forEach(function (x) { inStock[x.car_id] = 1; });
+    q.addEventListener("input", function () {
+      var t = q.value.trim().toLowerCase(), res = $("#ccres");
+      if (t.length < 2) { res.innerHTML = ""; return; }
+      var hits = state.carsAll.filter(function (c) { return !inStock[c.id] && (carFull(c) + " " + (c.nickname || "")).toLowerCase().indexOf(t) >= 0; });
+      hits.sort(function (a, b) { return (favC[b.id] ? 1 : 0) - (favC[a.id] ? 1 : 0) || carFull(a).localeCompare(carFull(b)); });
+      res.innerHTML = hits.slice(0, 12).map(function (c) { return '<div class="row" style="align-items:center;margin:2px 0"><div class="grow">' + (favC[c.id] ? "★ " : "") + esc(carName(c)) + ' <span class="muted">' + esc(carFull(c) + " · " + classOf(c.pi) + " " + c.pi) + '</span></div><button type="button" data-ccadd="' + esc(c.id) + '">Add</button></div>'; }).join("") + (hits.length > 12 ? '<p class="muted">' + (hits.length - 12) + " more. Keep typing to narrow it down.</p>" : "") + (hits.length ? "" : '<p class="muted">No match.</p>');
+      res.querySelectorAll("[data-ccadd]").forEach(function (x) { x.addEventListener("click", function () { add({ car_id: x.dataset.ccadd }); }); });
+    });
+  }
 
   function renderDrivers() { loadDrivers(renderDriversBody); }
   function renderDriversBody() {

@@ -63,3 +63,5 @@ Deliberately left out: any attempt to list or control Forza's lobby settings. Ra
 2. Run `supabase/schema.sql` in the SQL editor.
 3. Create your admin user under Authentication, then add them to `public.admins` (the exact statement is at the top of the schema file).
 4. Put only the project URL and the public anon key in the site's config. Never commit the `service_role` key.
+
+**Cars and builds.** The top bar has a Cars page: the stock catalogue (filter by class, division, make, year, country and drivetrain; sort by make, model, name or year; shared league favourites) and the league's saved custom builds. A build is the build sheet (`admin/builds/sheet.html`, shown in a frame) saved under its own name, so one car can have several versions; "Save as a copy" starts a new version. Each championship has a Cars tab that lists its stock unmodified cars and custom builds. Needs `supabase/migrations/014_cars_builds.sql`.
