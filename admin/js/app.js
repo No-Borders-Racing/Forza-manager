@@ -1106,9 +1106,21 @@
   function carName(c) { return c.nickname || (c.year + " " + c.make + " " + c.model); }
   function carFull(c) { return c.year + " " + c.make + " " + c.model; }
   function favSet(kind) { var o = {}; (state.favs || []).forEach(function (f) { var k = kind === "car" ? f.car_id : f.build_id; if (k) o[k] = f.id; }); return o; }
+  // Supabase returns at most 1000 rows per request, so read the catalogue in pages until it is all here.
+  function fetchAllCars() {
+    var all = [], size = 1000;
+    function page(from) {
+      return sb.from("cars").select(CAR_COLS).order("ordinal", { ascending: true }).range(from, from + size - 1).then(function (r) {
+        if (r.error) return { error: r.error };
+        all = all.concat(r.data || []);
+        return (r.data || []).length === size ? page(from + size) : { data: all };
+      });
+    }
+    return page(0);
+  }
   function loadCarsData(done) {
     var lid = state.league.id;
-    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : sb.from("cars").select(CAR_COLS).order("make", { ascending: true }).limit(2000);
+    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : fetchAllCars();
     Promise.all([catP,
       sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid),
       sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id,updated_at").eq("league_id", lid).order("name", { ascending: true })
@@ -1347,7 +1359,7 @@
   function champCarsHtml() { return '<div class="card"><h2>Cars</h2><p class="muted" style="margin:0 0 8px">The cars racers can use in this championship. Stock cars are unmodified. Custom builds come from the league\'s Cars page.</p><div id="cc" class="muted">Loading…</div></div>'; }
   function fillChampCars() {
     var cid = state.sel.champ.id, lid = state.league.id, box = $("#cc"); if (!box) return;
-    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : sb.from("cars").select(CAR_COLS).order("make", { ascending: true }).limit(2000);
+    var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : fetchAllCars();
     Promise.all([catP, sb.from("championship_cars").select("id,car_id,build_id").eq("championship_id", cid), sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id").eq("league_id", lid).order("name", { ascending: true }),
       sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid)]).then(function (rs) {
       var bad = rs.filter(function (r) { return r.error; })[0];
