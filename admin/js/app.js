@@ -1123,11 +1123,35 @@
     var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : fetchAllCars();
     Promise.all([catP,
       sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid),
-      sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id,updated_at").eq("league_id", lid).order("name", { ascending: true })
+      sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id,updated_at").eq("league_id", lid).order("name", { ascending: true }),
+      sb.from("championships").select("id,name").eq("league_id", lid).order("name", { ascending: true })
     ]).then(function (rs) {
       var bad = rs.filter(function (r) { return r.error; })[0];
       if (bad) { app.innerHTML = navHtml("k") + '<div class="card err">' + esc(dbError(bad.error)) + " Has migration 014 been run?</div>"; bindNav(); return; }
-      state.carsAll = rs[0].data || []; state.favs = rs[1].data || []; state.builds = rs[2].data || []; done();
+      state.carsAll = rs[0].data || []; state.favs = rs[1].data || []; state.builds = rs[2].data || []; state.useChs = rs[3].data || [];
+      var ids = state.useChs.map(function (c) { return c.id; });
+      (ids.length ? sb.from("championship_cars").select("championship_id,car_id,build_id").in("championship_id", ids) : Promise.resolve({ data: [] })).then(function (r) { state.useCC = r.data || []; done(); });
+    });
+  }
+  /* "Use in championship": writes the same championship_cars rows as the championship's own Cars tab, so there is one list, not two. */
+  state.useCC = state.useCC || []; state.useChs = state.useChs || []; state.useCh = state.useCh || "";
+  function useChId() { var ok = state.useChs.some(function (c) { return c.id === state.useCh; }); if (!ok) state.useCh = state.useChs.length ? state.useChs[0].id : ""; return state.useCh; }
+  function useChName() { var c = state.useChs.filter(function (x) { return x.id === useChId(); })[0]; return c ? c.name : ""; }
+  function usedIn(kind, id) { var names = []; state.useCC.forEach(function (x) { if ((kind === "car" ? x.car_id : x.build_id) === id) { var c = state.useChs.filter(function (y) { return y.id === x.championship_id; })[0]; if (c) names.push(c.name); } }); return names; }
+  function useRowHtml() {
+    if (!state.useChs.length) return '<p class="muted" style="margin:10px 0 0">Create a championship to use cars in it.</p>';
+    useChId();
+    return '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field"><label for="cuse">Championship</label><select id="cuse">' + state.useChs.map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === state.useCh ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("") + '</select></div><button type="button" id="cusebtn">Use this car in the championship</button></div><div class="muted" id="cin" style="margin-top:4px"></div>';
+  }
+  function updateCin() { var el = $("#cin"); if (!el) return; var n = state.cpick ? usedIn("car", state.cpick) : []; el.textContent = n.length ? "Stock car in: " + n.join(", ") : ""; }
+  function useIn(kind, id) {
+    var ch = useChId(), nm = useChName(); if (!ch || !id) return;
+    var row = { championship_id: ch }; row[kind === "car" ? "car_id" : "build_id"] = id;
+    sb.from("championship_cars").insert(row).select("championship_id,car_id,build_id").single().then(function (r) {
+      if (r.error && r.error.code !== "23505") { msg($("#cmsg"), dbError(r.error), "err"); return; }
+      if (!r.error) state.useCC.push(r.data);
+      msg($("#cmsg"), r.error ? "Already in " + nm + "." : "Added to " + nm + ".", r.error ? "" : "ok");
+      updateCin(); var box = $("#clist"); if (box) { box.innerHTML = buildListHtml(); bindCarList(); }
     });
   }
   function selOpts(list, cur, blank) { return '<option value="">' + esc(blank) + "</option>" + list.map(function (o) { var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>"; }).join(""); }
@@ -1204,9 +1228,9 @@
       (r.rows.length ? r.rows.map(function (b) {
         var c = r.byId[b.car_id];
         return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) + '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-cmpbuild="' + esc(b.id) + '"' + (cmpHas("build:" + b.id) ? " checked" : "") + "> Compare</label>" +
-          '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc(c ? carFull(c) : "Car no longer in the catalogue") + "</div></div>" +
+          '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc((c ? carFull(c) : "Car no longer in the catalogue") + (usedIn("build", b.id).length ? " · In: " + usedIn("build", b.id).join(", ") : "")) + "</div></div>" +
           '<div class="muted" style="min-width:110px">' + esc((b.class_letter || "") + " " + (b.pi || "")).trim() + '</div><span class="pill">' + esc(b.status) + "</span>" +
-          '<button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
+          (state.useChs.length ? '<button type="button" data-usebuild="' + esc(b.id) + '">Use in ' + esc(useChName()) + "</button>" : "") + '<button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
       }).join("") : '<p class="muted">No saved builds yet. Open the Stock cars tab, find a car and press Build this car.</p>');
   }
   function renderCars() { loadCarsData(renderCarsBody); }
@@ -1233,7 +1257,7 @@
   }
   state.carFull = state.carFull || {};
   function showStats() {
-    var box = $("#cstats"); if (!box) return;
+    updateCin(); var box = $("#cstats"); if (!box) return;
     var id = state.cpick; if (!id) { box.innerHTML = ""; return; }
     if (state.carFull[id]) { box.innerHTML = statsHtml(state.carFull[id]); return; }
     box.innerHTML = '<div class="muted" style="margin-top:10px">Loading stats…</div>';
@@ -1279,7 +1303,7 @@
       '<div class="field grow"><label for="carsel">Car</label><select id="carsel">' + pk.html + "</select></div>" +
       '<button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">' + (fav[state.cpick] ? "★" : "☆") + '</button>' +
       '<button type="button" id="caddcmp">Compare +</button><button class="primary" type="button" id="caddbuild">Modify</button></div>' +
-      '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div><div id="cstats"></div>' +
+      '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div>' + useRowHtml() + '<div id="cstats"></div>' +
       '<div class="msg" id="cmsg"></div></div>' +
       '<div id="cmpbox" style="margin:14px 0"></div><div class="card"><h2 style="font-size:18px;margin:0 0 8px">Saved build sheets (' + state.builds.length + ")</h2>" +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="bq">Search</label><input id="bq" value="' + esc(b.q) + '" placeholder="Build name or car" autocomplete="off"></div>' +
@@ -1304,6 +1328,8 @@
     bindCarFilter(f, "f", repick, renderCarsBody);
     wire("bq", b, "q", "input", relist); wire("bc", b, "cls", "change", relist); wire("bsort", b, "sort", "change", relist); wire("bfav", b, "fav", "change", relist);
     $("#carsel").addEventListener("change", function () { state.cpick = $("#carsel").value; $("#cfavsel").textContent = favSet("car")[state.cpick] ? "★" : "☆"; showStats(); });
+    var ub = $("#cusebtn"); if (ub) ub.addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } useIn("car", state.cpick); });
+    var us = $("#cuse"); if (us) us.addEventListener("change", function () { state.useCh = us.value; relist(); });
     $("#caddcmp").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } cmpToggle("car:" + state.cpick, true); drawCmp("cars"); });
     $("#caddbuild").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } startBuild(state.cpick); });
     $("#cfavsel").addEventListener("click", function () {
@@ -1316,6 +1342,7 @@
   function bindCarList() {
     app.querySelectorAll("[data-star]").forEach(function (x) { x.addEventListener("click", function () { toggleFav(x.dataset.star); }); });
     app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.addEventListener("change", function () { cmpToggle("build:" + x.dataset.cmpbuild, x.checked); drawCmp("cars"); }); });
+    app.querySelectorAll("[data-usebuild]").forEach(function (x) { x.addEventListener("click", function () { useIn("build", x.dataset.usebuild); }); });
     app.querySelectorAll("[data-openbuild]").forEach(function (x) { x.addEventListener("click", function () { openBuild(x.dataset.openbuild); }); });
     app.querySelectorAll("[data-delbuild]").forEach(function (x) { x.addEventListener("click", function () { deleteBuildFromList(x); }); });
   }
