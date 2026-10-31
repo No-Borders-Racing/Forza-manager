@@ -1203,7 +1203,7 @@
     return '<div class="muted" style="margin:6px 0">' + r.rows.length + " build" + (r.rows.length === 1 ? "" : "s") + "</div>" +
       (r.rows.length ? r.rows.map(function (b) {
         var c = r.byId[b.car_id];
-        return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) +
+        return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) + '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-cmpbuild="' + esc(b.id) + '"' + (cmpHas("build:" + b.id) ? " checked" : "") + "> Compare</label>" +
           '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc(c ? carFull(c) : "Car no longer in the catalogue") + "</div></div>" +
           '<div class="muted" style="min-width:110px">' + esc((b.class_letter || "") + " " + (b.pi || "")).trim() + '</div><span class="pill">' + esc(b.status) + "</span>" +
           '<button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
@@ -1263,17 +1263,17 @@
       '<div class="row" style="margin-top:12px;align-items:flex-end">' +
       '<div class="field grow"><label for="carsel">Car</label><select id="carsel">' + pk.html + "</select></div>" +
       '<button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">' + (fav[state.cpick] ? "★" : "☆") + '</button>' +
-      '<button class="primary" type="button" id="caddbuild">Modify</button></div>' +
+      '<button type="button" id="caddcmp">Compare +</button><button class="primary" type="button" id="caddbuild">Modify</button></div>' +
       '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div><div id="cstats"></div>' +
       '<div class="msg" id="cmsg"></div></div>' +
-      '<div class="card"><h2 style="font-size:18px;margin:0 0 8px">Saved build sheets (' + state.builds.length + ")</h2>" +
+      '<div id="cmpbox" style="margin:14px 0"></div><div class="card"><h2 style="font-size:18px;margin:0 0 8px">Saved build sheets (' + state.builds.length + ")</h2>" +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="bq">Search</label><input id="bq" value="' + esc(b.q) + '" placeholder="Build name or car" autocomplete="off"></div>' +
       '<div class="field"><label for="bc">Class</label><select id="bc">' + selOpts(clsList, b.cls, "Any") + "</select></div>" +
       '<div class="field"><label for="bsort">Sort by</label><select id="bsort">' + [["name", "Name"], ["pi", "PI"], ["updated", "Last changed"]].map(function (o) { return '<option value="' + o[0] + '"' + (b.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<button type="button" id="bdir">' + (b.dir === "desc" ? "Z to A ↓" : "A to Z ↑") + '</button>' +
       '<div class="field"><label for="bfav">Favourites</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="bfav" type="checkbox"' + (b.fav ? " checked" : "") + "> Only favourites</label></div></div>" +
       '<div id="clist">' + buildListHtml() + "</div></div>";
-    app.innerHTML = h; bindNav(); bindCars();
+    app.innerHTML = h; bindNav(); bindCars(); drawCmp("cars");
   }
   function bindCars() {
     var f = state.cf, b = state.bf;
@@ -1291,6 +1291,7 @@
     wire("fyf", f, "yf", "input", repick); wire("fyt", f, "yt", "input", repick); wire("fsort", f, "sort", "change", repick);
     wire("bq", b, "q", "input", relist); wire("bc", b, "cls", "change", relist); wire("bsort", b, "sort", "change", relist); wire("bfav", b, "fav", "change", relist);
     $("#carsel").addEventListener("change", function () { state.cpick = $("#carsel").value; $("#cfavsel").textContent = favSet("car")[state.cpick] ? "★" : "☆"; showStats(); });
+    $("#caddcmp").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } cmpToggle("car:" + state.cpick, true); drawCmp("cars"); });
     $("#caddbuild").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } startBuild(state.cpick); });
     $("#cfavsel").addEventListener("click", function () {
       if (!state.cpick) return; var id = state.cpick;
@@ -1304,6 +1305,7 @@
   }
   function bindCarList() {
     app.querySelectorAll("[data-star]").forEach(function (x) { x.addEventListener("click", function () { toggleFav(x.dataset.star); }); });
+    app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.addEventListener("change", function () { cmpToggle("build:" + x.dataset.cmpbuild, x.checked); drawCmp("cars"); }); });
     app.querySelectorAll("[data-openbuild]").forEach(function (x) { x.addEventListener("click", function () { openBuild(x.dataset.openbuild); }); });
     app.querySelectorAll("[data-delbuild]").forEach(function (x) { x.addEventListener("click", function () { deleteBuildFromList(x); }); });
   }
@@ -1343,10 +1345,75 @@
       state.editor = { buildId: id, carId: r.data.car_id, data: r.data.data, name: r.data.name, dirty: false }; renderBuildEditor();
     });
   }
+  /* Compare: any number of stock cars and saved builds, shown two across and as many rows as needed. */
+  state.cmp = state.cmp || []; state.buildFull = state.buildFull || {}; state.cmpq = state.cmpq || "";
+  function cmpHas(k) { return state.cmp.indexOf(k) >= 0; }
+  function cmpToggle(k, on) { var i = state.cmp.indexOf(k); if (on && i < 0) state.cmp.push(k); if (!on && i >= 0) state.cmp.splice(i, 1); }
+  function cmpLoad(keys, done) {
+    var jobs = keys.filter(function (k) { var p = k.split(":"); return p[0] === "car" ? !state.carFull[p[1]] : !state.buildFull[p[1]]; }).map(function (k) {
+      var p = k.split(":"), car = p[0] === "car";
+      return sb.from(car ? "cars" : "build_sheets").select("*").eq("id", p[1]).single().then(function (r) { if (!r.error && r.data) (car ? state.carFull : state.buildFull)[p[1]] = r.data; });
+    });
+    Promise.all(jobs).then(done);
+  }
+  function cmpInfo(k) {
+    var p = k.split(":"), met = isMetric(), n = function (v) { return v == null || v === "" || !isFinite(Number(v)) || Number(v) === 0 ? "—" : String(Math.round(Number(v))); };
+    function unit(v, u) { return v === "—" ? v : v + " " + u; }
+    if (p[0] === "car") {
+      var c = state.carFull[p[1]]; if (!c) return null;
+      return { title: carName(c), sub: carFull(c) + " · Stock", badge: classOf(c.pi) + " " + c.pi, custom: false, rows: [
+        ["Power", met ? unit(n(c.power_kw), "kW") : unit(n(c.power_hp), "hp")], ["Torque", met ? unit(n(c.torque_nm), "N·m") : unit(n(c.torque_ftlb), "lb-ft")],
+        ["Weight", met ? unit(n(c.mass_kg), "kg") : unit(n(c.mass_lb), "lbs")], ["Drivetrain", c.drivetrain || "—"],
+        ["Engine", [c.displacement_l != null ? Number(c.displacement_l).toFixed(1) + "L" : "", c.cylinders ? c.cylinders + " cyl" : "", c.induction || ""].filter(Boolean).join(" ") || "—"]],
+        bars: [["Speed", c.speed], ["Braking", c.braking], ["Handling", c.handling], ["Acceleration", c.acceleration]] };
+    }
+    var row = state.buildFull[p[1]]; if (!row) return null;
+    var d = row.data || {}, car = (state.carsAll || []).filter(function (x) { return x.id === row.car_id; })[0], bl = d.built || {};
+    var hp = n(d.hp), tq = n(d.tq), lb = n(d.lb);
+    return { title: row.name, sub: (car ? carFull(car) : "Car no longer in the catalogue") + " · Custom build", badge: ((d.cls || row.class_letter || "") + " " + (d.pi || row.pi || "")).trim() || "—", custom: true, rows: [
+      ["Power", met ? unit(hp === "—" ? hp : String(Math.round(d.hp * 0.7457)), "kW") : unit(hp, "hp")], ["Torque", met ? unit(tq === "—" ? tq : String(Math.round(d.tq * 1.35582)), "N·m") : unit(tq, "lb-ft")],
+      ["Weight", met ? unit(lb === "—" ? lb : String(Math.round(d.lb * 0.453592)), "kg") : unit(lb, "lbs")], ["Drivetrain", (car && car.drivetrain) || "—"], ["Engine", d.engine || "—"]],
+      bars: [["Speed", bl.speed], ["Braking", bl.braking], ["Handling", bl.handling], ["Acceleration", bl.accel]] };
+  }
+  function cmpCard(k, locked) {
+    var i = cmpInfo(k); if (!i) return '<div class="card muted">Loading…</div>';
+    return '<div class="card" style="margin:0"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div style="min-width:0"><b style="font-size:16px">' + esc(i.title) + '</b><div class="muted">' + esc(i.sub) + '</div></div>' +
+      '<div style="font-size:20px;font-weight:700;border:2px solid currentColor;border-radius:4px;padding:2px 8px;white-space:nowrap">' + esc(i.badge) + "</div></div>" +
+      i.rows.map(function (r) { return '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line)"><span class="muted">' + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>"; }).join("") +
+      '<div class="muted" style="margin:8px 0 2px">' + (i.custom ? "Ratings from the build sheet (0 to 10)" : "Stock ratings (0 to 10)") + "</div>" +
+      i.bars.map(function (b) { var v = Number(b[1]) || 0; return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span class="muted" style="width:90px">' + esc(b[0]) + '</span><span style="flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, v * 10)) + '%;background:var(--accent)"></span></span><span style="width:28px;text-align:right">' + (v ? v : "—") + "</span></div>"; }).join("") +
+      (locked ? '<div class="muted" style="margin-top:8px">This build</div>' : '<div style="margin-top:8px"><button type="button" data-cmprm="' + esc(k) + '">Remove</button></div>') + "</div>";
+  }
+  function cmpPickerHtml(curKey) {
+    var q = state.cmpq.trim().toLowerCase(), hit = function (t) { return !q || t.toLowerCase().indexOf(q) >= 0; }, o = "";
+    var bs = (state.builds || []).filter(function (b) { return "build:" + b.id !== curKey && !cmpHas("build:" + b.id) && hit(b.name); });
+    var cs = (state.carsAll || []).filter(function (c) { return !cmpHas("car:" + c.id) && hit(carFull(c) + " " + (c.nickname || "")); }).slice(0, 100);
+    if (bs.length) o += '<optgroup label="Saved builds">' + bs.map(function (b) { return '<option value="build:' + esc(b.id) + '">' + esc(b.name) + "</option>"; }).join("") + "</optgroup>";
+    if (cs.length) o += '<optgroup label="Stock cars">' + cs.map(function (c) { return '<option value="car:' + esc(c.id) + '">' + esc(carName(c) + " · " + classOf(c.pi) + " " + c.pi) + "</option>"; }).join("") + "</optgroup>";
+    return '<div class="row" style="align-items:flex-end;margin-bottom:10px"><div class="field grow"><label for="cmpq">Find a car or build to compare</label><input id="cmpq" value="' + esc(state.cmpq) + '" placeholder="Search" autocomplete="off"></div>' +
+      '<div class="field grow"><label for="cmpsel">Add</label><select id="cmpsel">' + (o || '<option value="">Nothing matches</option>') + '</select></div><button class="primary" type="button" id="cmpadd">Add to compare</button></div>';
+  }
+  // box: "cars" (Cars page) or "editor" (build screen, where the open build is always the first card)
+  function drawCmp(mode) {
+    var box = $("#cmpbox"); if (!box) return;
+    var E = state.editor, cur = mode === "editor" && E && E.buildId ? "build:" + E.buildId : "";
+    var keys = (cur ? [cur] : []).concat(state.cmp.filter(function (k) { return k !== cur; }));
+    if (mode === "cars" && !keys.length) { box.innerHTML = ""; return; }
+    var head = '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h2 style="font-size:18px;margin:0">Compare (' + keys.length + ')</h2>' + (state.cmp.length ? '<button type="button" id="cmpclear">Clear all</button>' : "") + "</div>";
+    var hint = mode === "editor" && !cur ? '<p class="muted" style="margin:0 0 8px">Save this build to include it in the comparison.</p>' : keys.length < 2 ? '<p class="muted" style="margin:0 0 8px">Add one more car or build to compare.</p>' : "";
+    box.innerHTML = '<div class="card">' + head + (mode === "editor" ? cmpPickerHtml(cur) : "") + hint + '<div class="cmpgrid" id="cmpgrid"></div></div>';
+    function grid() { var g = $("#cmpgrid"); if (g) g.innerHTML = keys.map(function (k) { return cmpCard(k, k === cur); }).join(""); bindGrid(); }
+    function bindGrid() { app.querySelectorAll("[data-cmprm]").forEach(function (x) { x.addEventListener("click", function () { cmpToggle(x.dataset.cmprm, false); syncCmpChecks(); drawCmp(mode); }); }); }
+    cmpLoad(keys, grid); grid();
+    var cl = $("#cmpclear"); if (cl) cl.addEventListener("click", function () { state.cmp = []; syncCmpChecks(); drawCmp(mode); });
+    var q = $("#cmpq"); if (q) q.addEventListener("input", function () { state.cmpq = q.value; var sel = $("#cmpsel"); sel.innerHTML = cmpPickerHtml(cur).match(/<select id="cmpsel">([\s\S]*?)<\/select>/)[1]; });
+    var ad = $("#cmpadd"); if (ad) ad.addEventListener("click", function () { var v = $("#cmpsel").value; if (!v) return; cmpToggle(v, true); drawCmp(mode); });
+  }
+  function syncCmpChecks() { app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.checked = cmpHas("build:" + x.dataset.cmpbuild); }); }
   function renderBuildEditor() {
     var E = state.editor;
-    app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" title="Build sheet" src="builds/sheet.html" style="width:100%;height:700px;border:0;background:transparent"></iframe>';
-    bindNav();
+    app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" title="Build sheet" src="builds/sheet.html" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
+    bindNav(); drawCmp("editor");
     $("#bback").addEventListener("click", function () {
       if (E.dirty && !window.confirm("This build has unsaved changes. Leave without saving?")) return;
       state.editor = null; renderCars();
