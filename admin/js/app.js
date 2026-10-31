@@ -1101,7 +1101,7 @@
   var COUNTRY_NAME = { USA: "United States", GER: "Germany", JPN: "Japan", GBR: "United Kingdom", ITA: "Italy", FRA: "France", AUS: "Australia", KOR: "South Korea", SWE: "Sweden", CHN: "China", AUT: "Austria", CRO: "Croatia", NED: "Netherlands", ESP: "Spain", MEX: "Mexico", DEN: "Denmark" };
   var CAR_COLS = "id,make,model,year,nickname,division,country,pi,drivetrain";
   var CARS_SHOWN = 100;
-  state.cf = { q: "", cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, sort: "make", dir: "asc", shown: CARS_SHOWN };
+  state.cf = { q: "", cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, letters: "", sort: "make", dir: "asc", shown: CARS_SHOWN };
   state.bf = { q: "", cls: "", fav: false, sort: "name", dir: "asc" };
   function carName(c) { return c.nickname || (c.year + " " + c.make + " " + c.model); }
   function carFull(c) { return c.year + " " + c.make + " " + c.model; }
@@ -1149,15 +1149,36 @@
       if (f.country && c.country !== f.country) return false;
       if (f.drive && c.drivetrain !== f.drive) return false;
       if (f.fav && !fav[c.id]) return false;
+      if (f.letters && !inLetters(c, f.letters)) return false;
       return true;
     });
     var key = { name: function (c) { return carName(c).toLowerCase(); }, year: function (c) { return c.year; }, make: function (c) { return c.make.toLowerCase(); }, model: function (c) { return c.model.toLowerCase(); } }[f.sort] || function (c) { return c.make.toLowerCase(); };
     var d = f.dir === "desc" ? -1 : 1;
     out.sort(function (a, b) {
       var x = key(a), y = key(b); if (x < y) return -d; if (x > y) return d;
-      return carFull(a).localeCompare(carFull(b));
+      return (a.make + " " + a.model).localeCompare(b.make + " " + b.model) || a.year - b.year;
     });
     return out;
+  }
+  // Alphabet chips: letters of the make, grouped so each range holds a similar number of cars.
+  function letterOf(c) { var l = String(c.make || "").charAt(0).toUpperCase(); return l >= "A" && l <= "Z" ? l : "A"; }
+  function letterRanges() {
+    var cnt = {}, tot = state.carsAll.length, L = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+    state.carsAll.forEach(function (c) { var l = letterOf(c); cnt[l] = (cnt[l] || 0) + 1; });
+    var present = L.filter(function (l) { return cnt[l]; }), target = tot / 7, out = [], cur = null, n = 0;
+    present.forEach(function (l) {
+      if (!cur) { cur = { a: l, b: l }; n = 0; }
+      cur.b = l; n += cnt[l];
+      if (n >= target) { out.push(cur); cur = null; }
+    });
+    if (cur) { if (out.length && n < target / 2) out[out.length - 1].b = cur.b; else out.push(cur); }
+    return out.map(function (r) { return r.a + "-" + r.b; });
+  }
+  function inLetters(c, rng) { var l = letterOf(c), p = rng.split("-"); return l >= p[0] && l <= p[1]; }
+  function letterChipsHtml() {
+    var cur = state.cf.letters, rs = letterRanges();
+    function chip(v, label) { return '<button type="button" data-let="' + esc(v) + '" aria-pressed="' + (cur === v ? "true" : "false") + '" class="' + (cur === v ? "primary" : "") + '" style="padding:5px 10px">' + esc(label) + "</button>"; }
+    return '<div class="row" style="margin-top:8px;gap:6px" role="group" aria-label="Filter by first letter of the make">' + chip("", "All") + rs.map(function (r) { return chip(r, r.replace("-", "–")); }).join("") + "</div>";
   }
   function starBtn(kind, id, on) { return '<button type="button" class="star' + (on ? " on" : "") + '" data-star="' + kind + ":" + esc(id) + '" aria-label="' + (on ? "Remove from favourites" : "Add to favourites") + '" aria-pressed="' + (on ? "true" : "false") + '" style="min-width:34px;font-size:18px;line-height:1;padding:4px 8px">' + (on ? "★" : "☆") + "</button>"; }
   function filterBuilds() {
@@ -1226,10 +1247,7 @@
     var clsList = PI_CLASSES.map(function (c) { return [c[0], c[0]]; });
     var h = navHtml("k") + '<div class="card"><h2 style="font-size:18px;margin:0">Cars</h2><p class="muted" style="margin:4px 0 10px">Search the catalogue and pick a car to see its stats. Press Modify to start a build sheet for it. It starts as a draft with the car\'s stock class, PI, engine, power, torque and weight filled in and every part on Stock.</p>' +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="fq">Search the catalogue</label><input id="fq" value="' + esc(f.q) + '" placeholder="For example Mustang, 1991, NASCAR" autocomplete="off"></div>' +
-      '<div class="field grow"><label for="carsel">Car</label><select id="carsel">' + pk.html + "</select></div>" +
-      '<button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">' + (fav[state.cpick] ? "★" : "☆") + '</button>' +
-      '<button class="primary" type="button" id="caddbuild">Modify</button></div>' +
-      '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div><div id="cstats"></div>' +
+      '</div>' + letterChipsHtml() +
       '<details style="margin-top:8px"' + (f.cls || f.div || f.make || f.yf || f.yt || f.country || f.drive || f.fav ? " open" : "") + '><summary class="muted" style="cursor:pointer">Filters and sorting</summary>' +
       '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><label for="fc">Class</label><select id="fc">' + selOpts(clsList, f.cls, "Any") + "</select></div>" +
       '<div class="field"><label for="fd">Drivetrain</label><select id="fd">' + selOpts(["RWD", "AWD", "FWD"], f.drive, "Any") + "</select></div>" +
@@ -1238,10 +1256,16 @@
       '<div class="field"><label for="fco">Country</label><select id="fco">' + selOpts(countryList(), f.country, "Any") + "</select></div></div>" +
       '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><label for="fyf">Year from</label><input id="fyf" type="number" min="1900" max="2100" style="width:90px" value="' + esc(f.yf) + '"></div>' +
       '<div class="field"><label for="fyt">to</label><input id="fyt" type="number" min="1900" max="2100" style="width:90px" value="' + esc(f.yt) + '"></div>' +
-      '<div class="field"><label for="fsort">Sort by</label><select id="fsort">' + [["make", "Make"], ["model", "Model"], ["name", "Name"], ["year", "Year"]].map(function (o) { return '<option value="' + o[0] + '"' + (f.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
+      '<div class="field"><label for="fsort">Sort by</label><select id="fsort">' + [["make", "Alphabetical (make, model, year)"], ["model", "Model"], ["name", "Name or nickname"], ["year", "Year"]].map(function (o) { return '<option value="' + o[0] + '"' + (f.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<button type="button" id="fdir" aria-label="Sort direction">' + (f.dir === "desc" ? "Z to A ↓" : "A to Z ↑") + '</button>' +
       '<div class="field"><label for="ffav">Favourites</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="ffav" type="checkbox"' + (f.fav ? " checked" : "") + "> Only favourites</label></div>" +
-      '<button type="button" id="freset">Clear filters</button></div></details><div class="msg" id="cmsg"></div></div>' +
+      '<button type="button" id="freset">Clear filters</button></div></details>' +
+      '<div class="row" style="margin-top:12px;align-items:flex-end">' +
+      '<div class="field grow"><label for="carsel">Car</label><select id="carsel">' + pk.html + "</select></div>" +
+      '<button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">' + (fav[state.cpick] ? "★" : "☆") + '</button>' +
+      '<button class="primary" type="button" id="caddbuild">Modify</button></div>' +
+      '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div><div id="cstats"></div>' +
+      '<div class="msg" id="cmsg"></div></div>' +
       '<div class="card"><h2 style="font-size:18px;margin:0 0 8px">Saved build sheets (' + state.builds.length + ")</h2>" +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="bq">Search</label><input id="bq" value="' + esc(b.q) + '" placeholder="Build name or car" autocomplete="off"></div>' +
       '<div class="field"><label for="bc">Class</label><select id="bc">' + selOpts(clsList, b.cls, "Any") + "</select></div>" +
@@ -1272,9 +1296,10 @@
       if (!state.cpick) return; var id = state.cpick;
       toggleFav("car:" + id, function () { repick(); });
     });
+    app.querySelectorAll("[data-let]").forEach(function (x) { x.addEventListener("click", function () { f.letters = x.dataset.let; app.querySelectorAll("[data-let]").forEach(function (y) { var on = y.dataset.let === f.letters; y.setAttribute("aria-pressed", on ? "true" : "false"); y.className = on ? "primary" : ""; }); repick(); }); });
     var fd = $("#fdir"); if (fd) fd.addEventListener("click", function () { f.dir = f.dir === "desc" ? "asc" : "desc"; fd.textContent = f.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; repick(); });
     var bd = $("#bdir"); if (bd) bd.addEventListener("click", function () { b.dir = b.dir === "desc" ? "asc" : "desc"; bd.textContent = b.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; relist(); });
-    var fr = $("#freset"); if (fr) fr.addEventListener("click", function () { var keep = state.cf.q; state.cf = { q: keep, cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, sort: "make", dir: "asc", shown: CARS_SHOWN }; renderCarsBody(); });
+    var fr = $("#freset"); if (fr) fr.addEventListener("click", function () { var keep = state.cf.q; state.cf = { q: keep, cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, letters: "", sort: "make", dir: "asc", shown: CARS_SHOWN }; renderCarsBody(); });
     bindCarList(); showStats();
   }
   function bindCarList() {
