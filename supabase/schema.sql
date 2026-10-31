@@ -1399,3 +1399,6 @@ create policy championship_cars_admin_all on public.championship_cars for all to
   using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
 
 grant select, insert, update, delete on public.build_sheets, public.league_favourites, public.championship_cars to authenticated;
+
+-- 015: the car the reference lap was driven in
+alter table public.events add column if not exists reference_car text;

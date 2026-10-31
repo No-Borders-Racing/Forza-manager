@@ -230,9 +230,26 @@
       });
     });
   }
+  /* The championship's cars as plain labels, for the "Car used" choice beside a reference lap. Cheap: only the chosen cars are read. */
+  function carOptLabels(cc, cars, builds) {
+    var out = [];
+    cc.forEach(function (x) { if (x.car_id) { var c = cars[x.car_id]; if (c) out.push(carName(c)); } else if (x.build_id) { var b = builds[x.build_id]; if (b) out.push(b.name + " (custom)"); } });
+    return out.sort(function (a, b) { return a.localeCompare(b); });
+  }
+  function loadChampCarOpts(cid, done) {
+    sb.from("championship_cars").select("id,car_id,build_id").eq("championship_id", cid).then(function (r) {
+      var cc = r.data || []; state.sel.ccrows = cc; state.sel.ccopts = [];
+      if (r.error || !cc.length) { done(0); return; }
+      function chunked(table, cols, ids) {
+        var parts = []; for (var i = 0; i < ids.length; i += 100) parts.push(sb.from(table).select(cols).in("id", ids.slice(i, i + 100)));
+        return Promise.all(parts).then(function (rs) { var m = {}; rs.forEach(function (x) { (x.data || []).forEach(function (y) { m[y.id] = y; }); }); return m; });
+      }
+      var cids = cc.filter(function (x) { return x.car_id; }).map(function (x) { return x.car_id; }), bids = cc.filter(function (x) { return x.build_id; }).map(function (x) { return x.build_id; });
+      Promise.all([chunked("cars", "id,make,model,year,nickname", cids), chunked("build_sheets", "id,name", bids)]).then(function (xs) { state.sel.ccopts = carOptLabels(cc, xs[0], xs[1]); done(cc.length); });
+    });
+  }
   function openChamp(id, nav) {
     var prev = state.sel && state.sel.champ.id === id ? state.nav : null;
-    if (!prev) state.tab = "seasons";
     Promise.all([
       sb.from("championships").select("*").eq("id", id).single(),
       sb.from("seasons").select("*").eq("championship_id", id).order("starts_on", { ascending: true, nullsFirst: false }),
@@ -254,9 +271,10 @@
           if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + ' Has the latest database change (migrations/003_round_race_structure.sql) been run?</div>'; return; }
           state.sel = { champ: rs[0].data, seasons: seasons, events: evList, series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [], leaguePts: xs[6].data || [], templates: xs[4].data || [], races: rr.data || [] };
           state.tracks = xs[5].data || [];
+          if (!prev) state.tab = "seasons";
           state.nav = nav || prev || { view: "champ" };
           if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
-          renderCurrent();
+          loadChampCarOpts(id, function (n) { if (!prev && !nav && n === 0) state.tab = "cars"; renderCurrent(); });
         });
       });
     });
@@ -284,7 +302,7 @@
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "seasons";
     var inSet = tab === "settings" || tab === "points";
-    var tabs = [["seasons", "Calendar"], ["cars", "Cars"], ["results", "Results"], ["standings", "Standings"]];
+    var tabs = [["cars", "Cars"], ["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
     var h = navHtml("c") +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
@@ -885,12 +903,17 @@
       return '<option value="' + esc(t.id) + '"' + (cur === t.id ? " selected" : "") + ">" + esc(t.name + (t.is_reverse && !/reverse/i.test(t.name) ? " (reverse)" : "") + (t.length_km ? " · " + lenText(t.length_km) : "")) + "</option>";
     }).join("");
   }
+  function refCarOpts(cur) {
+    var list = (state.sel.ccopts || []).slice(); if (cur && list.indexOf(cur) < 0) list.push(cur);
+    return '<option value="">' + (list.length ? "Not recorded" : "Add cars to the championship first") + "</option>" + list.map(function (n) { return '<option value="' + esc(n) + '"' + (n === cur ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+  }
   function trackFields(k, e) {
     var t = trackById(e.track_layout_id);
     return '<div class="row" style="margin-top:8px"><div class="field grow"><label for="etv-' + k + '">Venue</label><select id="etv-' + k + '">' + venueOpts(e.track_layout_id) + "</select></div>" +
       '<div class="field grow"><label for="etk-' + k + '">Layout</label><select id="etk-' + k + '">' + layoutOpts(t && t.venue_id, e.track_layout_id) + "</select></div>" +
       '</div>' +
-      '<div class="row" style="margin-top:8px"><div class="field"><label for="erl-' + k + '">Reference lap</label><input id="erl-' + k + '" style="width:130px" placeholder="1:25.876" autocomplete="off" value="' + esc(e.reference_lap_ms ? fmtMs(e.reference_lap_ms) : "") + '"></div></div>' +
+      '<div class="row" style="margin-top:8px"><div class="field"><label for="erl-' + k + '">Reference lap</label><input id="erl-' + k + '" style="width:130px" placeholder="1:25.876" autocomplete="off" value="' + esc(e.reference_lap_ms ? fmtMs(e.reference_lap_ms) : "") + '"></div>' +
+      '<div class="field grow"><label for="erc-' + k + '">Car used for the reference lap</label><select id="erc-' + k + '">' + refCarOpts(e.reference_car) + '</select></div></div>' +
       '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><span class="lbl">Race length. Fill in one, the others work themselves out</span><div class="row" style="margin-top:4px;align-items:flex-end">' +
       '<div class="field"><label for="ecl-' + k + '">Laps</label><input id="ecl-' + k + '" type="number" min="1" step="1" style="width:90px" placeholder="Eg 23"></div>' +
       '<div class="field"><label for="ect-' + k + '">Total race time</label><input id="ect-' + k + '" style="width:150px" autocomplete="off"' + (e.reference_lap_ms ? ' placeholder="Eg 33 or 32:55"' : ' disabled placeholder="Needs a reference lap"') + '></div>' +
@@ -974,6 +997,7 @@
     var rl = parseLap($("#erl-" + k).value);
     if (rl !== null && !isFinite(rl)) { msg(m, "The reference lap should look like 1:25.876.", "err"); return null; }
     if (rl !== null || (ev && ev.reference_lap_ms != null)) out.reference_lap_ms = rl;
+    var rc = nul($("#erc-" + k).value); if (rc !== null || (ev && ev.reference_car != null)) out.reference_car = rc;
     var lt = $("#el-" + k).value, any = d || t;
     if (lt && !t) { msg(m, "Set the race start time as well as the lobby time.", "err"); return null; }
     if (any) {
@@ -1504,7 +1528,7 @@
     var stock = state.cc.filter(function (x) { return x.car_id; }), custom = state.cc.filter(function (x) { return x.build_id; });
     var usedBuild = {}, inStock = {}; custom.forEach(function (x) { usedBuild[x.build_id] = 1; }); stock.forEach(function (x) { inStock[x.car_id] = 1; });
     var avail = state.builds.filter(function (b) { return !usedBuild[b.id]; });
-    var favB = favSet("build"), f = state.ccf;
+    var favB = favSet("build"), f = state.ccf; state.sel.ccopts = carOptLabels(state.cc, byCar, byBuild);
     avail.sort(function (a, b) { return (favB[b.id] ? 1 : 0) - (favB[a.id] ? 1 : 0) || a.name.localeCompare(b.name); });
     stock.sort(function (x, y) { var a = byCar[x.car_id], b = byCar[y.car_id]; return a && b ? (a.make + " " + a.model).localeCompare(b.make + " " + b.model) || a.year - b.year : 0; });
     var divs = uniq(state.carsAll.map(function (c) { return c.division; })).sort();
