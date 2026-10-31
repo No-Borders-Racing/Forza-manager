@@ -305,7 +305,7 @@
         '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
         '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
         '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
-        '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button id="crename" type="button">Rename</button><button class="danger" id="cgodel" type="button">Delete championship…</button></div><div class="msg" id="cm"></div>' +
+        '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
         '<div id="renamebox"></div>' +
         '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
       h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
@@ -378,7 +378,6 @@
       });
     });
     on("#cdel", deleteChamp);
-    on("#cgodel", function () { var t = $("#cdn"); t.scrollIntoView({ block: "center" }); t.focus(); });
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
     on("[data-rr]", function (b) { state.nav = { view: "race", rid: b.dataset.rr }; renderCurrent(); });
     on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
