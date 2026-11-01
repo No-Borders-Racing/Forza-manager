@@ -1597,8 +1597,10 @@
   }
   function factTile(k, v) { return '<div style="flex:1 1 120px;min-width:110px;border:1px solid var(--line);border-radius:8px;padding:8px 12px"><div class="muted" style="font-size:12px">' + esc(k) + '</div><div style="font-size:18px;font-weight:600;margin-top:2px">' + esc(v || "—") + "</div></div>"; }
   function dirText(d) { return { clockwise: "Clockwise", anticlockwise: "Anticlockwise", "point-to-point": "Point to point" }[d] || d || ""; }
+  function typeText(t) { return { "purpose-built": "Purpose-built circuit", "public-road": "Public road circuit", airfield: "Former airfield", oval: "Oval / speedway" }[t] || ""; }
+  function surfaceShort(x) { return x || ""; }
   function circuitNotes(v) {
-    var rows = [["Corners counted on", v.corners_layout], ["Length", v.length_note], ["Elevation", v.elevation_note]].filter(function (r) { return r[1]; });
+    var rows = [["Type", v.type_note], ["Surface", v.surface_note], ["Corners counted on", v.corners_layout], ["Length", v.length_note], ["Elevation", v.elevation_note]].filter(function (r) { return r[1]; });
     return rows.length ? '<div style="margin-top:12px">' + rows.map(function (r) { return '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--line)"><span class="muted">' + esc(r[0]) + '</span><span style="text-align:right">' + esc(r[1]) + "</span></div>"; }).join("") + "</div>" : "";
   }
   function factsHtml(v) {
@@ -1612,7 +1614,7 @@
     var map = place ? '<a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.name + (place ? ", " + place : "")) + '" target="_blank" rel="noopener noreferrer">Open on a map</a>' : "";
     return '<div class="card" style="margin:0"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><h2 style="font-size:22px;margin:0">' + esc(v.name) + '</h2><div class="muted" style="margin-top:2px">' + esc(place) + "</div></div>" +
       (v.kind ? '<span class="pill">' + (v.kind === "real" ? "Real circuit" : "Fictional") + "</span>" : "") + "</div>" +
-      '<div class="row" style="margin-top:14px;gap:10px">' + factTile("Opened", v.kind === "fictional" ? "Fictional" : v.opened_year) + factTile("Country", COUNTRY_NAME[v.country] || v.country) + factTile("Layouts", String(lays.length)) + factTile("Longest layout", longest ? lenText(longest) : "") + factTile("Corners", v.corners ? String(v.corners) : "") + factTile("Direction", dirText(v.direction)) + "</div>" + circuitNotes(v) +
+      '<div class="row" style="margin-top:14px;gap:10px">' + factTile("Opened", v.kind === "fictional" ? "Fictional" : v.opened_year) + factTile("Country", COUNTRY_NAME[v.country] || v.country) + factTile("Layouts", String(lays.length)) + factTile("Longest layout", longest ? lenText(longest) : "") + factTile("Corners", v.corners ? String(v.corners) : "") + factTile("Direction", dirText(v.direction)) + factTile("Type", typeText(v.circuit_type)) + factTile("Surface", surfaceShort(v.surface)) + "</div>" + circuitNotes(v) +
       '<h3 style="margin:16px 0 4px">Where it is</h3><div>' + esc(place || "Location not recorded") + (map ? " · " + map : "") + "</div>" + (v.based_on ? '<div class="muted" style="margin-top:4px">' + esc((v.kind === "fictional" ? "Modelled on: " : "Also known as: ") + v.based_on) + "</div>" : "") +
       '<h3 style="margin:16px 0 4px">About</h3>' + (v.history ? '<p style="margin:0">' + esc(v.history) + "</p>" : '<p class="muted" style="margin:0">No background details yet.</p>') + (src ? '<p class="muted" style="margin:6px 0 0">' + src.slice(3) + "</p>" : "") + factsHtml(v) +
       '<h3 style="margin:16px 0 4px">Layouts</h3>' + (lays.length ? lays.map(function (l) { return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)"><span>' + esc(l.name) + (l.is_reverse ? ' <span class="pill">Reverse</span>' : "") + "</span><b>" + esc(lenText(l.length_km)) + "</b></div>"; }).join("") : '<p class="muted" style="margin:0">None.</p>') + "</div>";

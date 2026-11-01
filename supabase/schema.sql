@@ -1417,3 +1417,9 @@ alter table public.track_venues add column if not exists corners_layout text;
 alter table public.track_venues add column if not exists length_note text;
 alter table public.track_venues add column if not exists elevation_note text;
 alter table public.track_venues add column if not exists facts text[];
+
+-- 019: surface and circuit type
+alter table public.track_venues add column if not exists surface text;
+alter table public.track_venues add column if not exists surface_note text;
+alter table public.track_venues add column if not exists circuit_type text check (circuit_type is null or circuit_type in ('purpose-built', 'public-road', 'airfield', 'oval'));
+alter table public.track_venues add column if not exists type_note text;
