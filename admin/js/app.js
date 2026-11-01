@@ -124,7 +124,7 @@
   // Top bar: Championships on the left, League settings hard right. Inside League settings a second row holds
   // General, Points systems, Drivers and Admins.
   function navHtml(active, sub) {
-    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button>' +
+    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button>' +
       '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
     if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"]].map(function (t) {
       return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
@@ -132,7 +132,7 @@
     return h;
   }
   function bindNav() {
-    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
+    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
   function renderLeague() { renderLeagueBody("g"); }
@@ -1122,7 +1122,7 @@
   var PI_CLASSES = [["E", 100, 300], ["D", 301, 400], ["C", 401, 500], ["B", 501, 600], ["A", 601, 700], ["S", 701, 800], ["R", 801, 900], ["P", 901, 998], ["X", 999, 999]];
   function classOf(pi) { pi = Number(pi); for (var i = 0; i < PI_CLASSES.length; i++) if (pi >= PI_CLASSES[i][1] && pi <= PI_CLASSES[i][2]) return PI_CLASSES[i][0]; return ""; }
   var COUNTRY_TOP = ["USA", "GER", "JPN", "GBR", "ITA"];
-  var COUNTRY_NAME = { USA: "United States", GER: "Germany", JPN: "Japan", GBR: "United Kingdom", ITA: "Italy", FRA: "France", AUS: "Australia", KOR: "South Korea", SWE: "Sweden", CHN: "China", AUT: "Austria", CRO: "Croatia", NED: "Netherlands", ESP: "Spain", MEX: "Mexico", DEN: "Denmark" };
+  var COUNTRY_NAME = { USA: "United States", GER: "Germany", JPN: "Japan", GBR: "United Kingdom", ITA: "Italy", FRA: "France", AUS: "Australia", KOR: "South Korea", SWE: "Sweden", CHN: "China", AUT: "Austria", CRO: "Croatia", NED: "Netherlands", ESP: "Spain", MEX: "Mexico", DEN: "Denmark", BEL: "Belgium", RSA: "South Africa", UAE: "United Arab Emirates", CAN: "Canada", BRA: "Brazil" };
   var CAR_COLS = "id,make,model,year,nickname,division,country,pi,drivetrain";
   var CARS_SHOWN = 100;
   state.cf = { q: "", cls: "", div: "", make: "", yf: "", yt: "", country: "", drive: "", fav: false, letters: "", sort: "make", dir: "asc", shown: CARS_SHOWN };
@@ -1578,6 +1578,46 @@
     $("#ccbadd").addEventListener("click", function () { var v = $("#ccb").value; if (v) add({ build_id: v }); });
   }
 
+  /* Tracks: a read-only reference library of every venue and its layouts. */
+  state.tf = state.tf || { q: "", country: "", kind: "" };
+  function renderTracks() {
+    app.innerHTML = navHtml("t") + '<div class="card muted">Loading tracks…</div>'; bindNav();
+    Promise.all([sb.from("track_venues").select("*").order("name", { ascending: true }), sb.from("track_layouts").select("id,venue_id,name,length_km,is_reverse").order("name", { ascending: true })]).then(function (rs) {
+      var bad = rs.filter(function (r) { return r.error; })[0];
+      if (bad) { app.innerHTML = navHtml("t") + '<div class="card err">' + esc(dbError(bad.error)) + " Has migration 016 been run?</div>"; bindNav(); return; }
+      state.venues = (rs[0].data || []).map(function (v) { v.country = v.country ? String(v.country).toUpperCase() : v.country; return v; }); state.venueLayouts = rs[1].data || []; renderTracksBody();
+    });
+  }
+  function venueMatches(v) {
+    var f = state.tf, q = f.q.trim().toLowerCase();
+    if (f.country && v.country !== f.country) return false;
+    if (f.kind && v.kind !== f.kind) return false;
+    if (q) { var lay = state.venueLayouts.filter(function (l) { return l.venue_id === v.id; }).map(function (l) { return l.name; }).join(" "); if ((v.name + " " + (v.location || "") + " " + (v.based_on || "") + " " + lay).toLowerCase().indexOf(q) < 0) return false; }
+    return true;
+  }
+  function venueHtml(v) {
+    var lays = state.venueLayouts.filter(function (l) { return l.venue_id === v.id; }), place = [v.location, COUNTRY_NAME[v.country] || v.country].filter(Boolean).join(", ");
+    var kv = function (k, val) { return val ? '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line)"><span class="muted">' + esc(k) + "</span><b>" + esc(val) + "</b></div>" : ""; };
+    var src = /^https?:\/\//i.test(v.source_url || "") ? '<p style="margin:8px 0 0"><a href="' + esc(v.source_url) + '" target="_blank" rel="noopener noreferrer">Source</a></p>' : "";
+    var has = v.history || v.opened_year || v.based_on;
+    return '<details class="card" style="margin:8px 0;padding:10px 14px"><summary style="cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">' + esc(v.name) + '</b>' +
+      '<span class="muted">' + esc(place) + "</span>" + (v.kind ? '<span class="pill">' + (v.kind === "real" ? "Real circuit" : "Fictional") + "</span>" : "") + '<span class="muted" style="margin-left:auto">' + lays.length + " layout" + (lays.length === 1 ? "" : "s") + "</span></summary>" +
+      '<div style="margin-top:10px">' + kv("Opened", v.opened_year) + kv(v.kind === "fictional" ? "Modelled on" : "Also known as", v.based_on) +
+      (v.history ? '<p style="margin:10px 0 0">' + esc(v.history) + "</p>" : "") + (has ? "" : '<p class="muted" style="margin:0">No background details yet.</p>') + src +
+      '<div class="muted" style="margin:12px 0 4px">Layouts</div>' + (lays.length ? lays.map(function (l) { return '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line)"><span>' + esc(l.name) + (l.is_reverse ? ' <span class="muted">(reverse)</span>' : "") + "</span><b>" + esc(lenText(l.length_km)) + "</b></div>"; }).join("") : '<p class="muted" style="margin:0">None.</p>') + "</div></details>";
+  }
+  function renderTracksBody() {
+    var f = state.tf, countries = uniq(state.venues.map(function (v) { return v.country; })).sort(function (a, b) { return (COUNTRY_NAME[a] || a).localeCompare(COUNTRY_NAME[b] || b); });
+    app.innerHTML = navHtml("t") + '<div class="card"><h2 style="font-size:18px;margin:0">Tracks</h2><p class="muted" style="margin:4px 0 10px">Every venue and its layouts, with background where we have it. Lengths follow the league units.</p>' +
+      '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tq">Search</label><input id="tq" value="' + esc(f.q) + '" placeholder="Venue, place or layout" autocomplete="off"></div>' +
+      '<div class="field"><label for="tco">Country</label><select id="tco">' + selOpts(countries.map(function (c) { return [c, COUNTRY_NAME[c] || c]; }), f.country, "Any") + '</select></div>' +
+      '<div class="field"><label for="tkd">Type</label><select id="tkd">' + selOpts([["real", "Real circuits"], ["fictional", "Fictional"]], f.kind, "Any") + '</select></div></div>' +
+      '<div class="muted" id="tnote" style="margin-top:8px"></div></div><div id="tlist"></div>';
+    bindNav();
+    function draw() { var rows = state.venues.filter(venueMatches); $("#tnote").textContent = rows.length + " of " + state.venues.length + " venues"; $("#tlist").innerHTML = rows.map(venueHtml).join("") || '<p class="muted">No venues match.</p>'; }
+    $("#tq").addEventListener("input", function () { f.q = this.value; draw(); }); $("#tco").addEventListener("change", function () { f.country = this.value; draw(); }); $("#tkd").addEventListener("change", function () { f.kind = this.value; draw(); });
+    draw();
+  }
   function renderDrivers() { loadDrivers(renderDriversBody); }
   function renderDriversBody() {
     app.innerHTML = navHtml("l", "d") + '<div class="card"><h2>Drivers</h2><p class="muted" style="margin:0 0 8px">The league\'s drivers. Use the name exactly as the game shows it. Other names are spellings the screenshot scan or you might use for the same person; results entry matches on either.</p>' +

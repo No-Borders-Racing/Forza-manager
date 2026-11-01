@@ -1402,3 +1402,10 @@ grant select, insert, update, delete on public.build_sheets, public.league_favou
 
 -- 015: the car the reference lap was driven in
 alter table public.events add column if not exists reference_car text;
+
+-- 016: track reference information
+alter table public.track_venues add column if not exists kind text check (kind is null or kind in ('real', 'fictional'));
+alter table public.track_venues add column if not exists based_on text;
+alter table public.track_venues add column if not exists opened_year integer check (opened_year is null or (opened_year >= 1800 and opened_year <= 2100));
+alter table public.track_venues add column if not exists history text;
+alter table public.track_venues add column if not exists source_url text;
