@@ -1409,3 +1409,11 @@ alter table public.track_venues add column if not exists based_on text;
 alter table public.track_venues add column if not exists opened_year integer check (opened_year is null or (opened_year >= 1800 and opened_year <= 2100));
 alter table public.track_venues add column if not exists history text;
 alter table public.track_venues add column if not exists source_url text;
+
+-- 018: track facts
+alter table public.track_venues add column if not exists direction text;
+alter table public.track_venues add column if not exists corners integer check (corners is null or corners > 0);
+alter table public.track_venues add column if not exists corners_layout text;
+alter table public.track_venues add column if not exists length_note text;
+alter table public.track_venues add column if not exists elevation_note text;
+alter table public.track_venues add column if not exists facts text[];
