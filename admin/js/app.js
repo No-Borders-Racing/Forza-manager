@@ -157,6 +157,30 @@
     var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
+  function randomPassword() {
+    var a = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", out = "", r = new Uint32Array(12);
+    (window.crypto || window.msCrypto).getRandomValues(r); for (var i = 0; i < r.length; i++) out += a[r[i] % a.length]; return out;
+  }
+  // A second client does the sign-up so this admin stays signed in as themselves.
+  function createTestLogin() {
+    var m = $("#tlm"), email = $("#tle").value.trim(), pw = $("#tlp").value;
+    if (!email || email.indexOf("@") < 1) { msg(m, "Type an email address first.", "err"); return; }
+    if (pw.length < 8) { msg(m, "The password needs at least 8 characters.", "err"); return; }
+    var b = $("#tlgo"); b.disabled = true; msg(m, "Creating…");
+    var c2 = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    c2.auth.signUp({ email: email, password: pw }).then(function (r) {
+      if (r.error) { b.disabled = false; msg(m, /not allowed|disabled/i.test(r.error.message || "") ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up." : r.error.message, "err"); return; }
+      var u = r.data && r.data.user, existed = u && u.identities && u.identities.length === 0, needsConfirm = !(r.data && r.data.session);
+      sb.rpc("add_league_admin", { lid: state.league.id, admin_email: email }).then(function (x) {
+        b.disabled = false;
+        if (x.error) { msg(m, dbError(x.error), "err"); return; }
+        $("#tle").value = ""; $("#tlp").value = randomPassword();
+        var kind = existed || needsConfirm ? "err" : "ok", txt = (existed ? "That email already had a login, so it was only added as an admin. Its password is unchanged." : "Created " + email + " with password " + pw + ". Copy it now; it is not shown again.") +
+          (needsConfirm && !existed ? " Supabase is asking for email confirmation, so this login cannot sign in until it is confirmed. To skip that for test logins, turn off Confirm email under Authentication > Sign In / Providers > Email." : "");
+        renderLeagueAdmins(); setTimeout(function () { var mm = $("#tlm"); if (mm) msg(mm, txt, kind); }, 50);
+      });
+    });
+  }
   function renderLeague() { renderLeagueBody("g"); }
   function renderLeagueAdmins() { renderLeagueBody("a"); }
   function renderLeaguePoints() { loadLeaguePts(renderLeaguePointsBody); }
@@ -182,7 +206,12 @@
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
-      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>');
+      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
+      '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and adds it as an admin of this league in one step, so you can test as someone else. Use an address you can reach or a made-up one such as tester1@example.com.</p>' +
+      '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Email</label><input id="tle" type="email" autocomplete="off"></div>' +
+      '<div class="field"><label for="tlp">Password</label><input id="tlp" type="text" autocomplete="off" value="' + esc(randomPassword()) + '" style="width:190px"></div>' +
+      '<button type="button" id="tlnew" title="Make another password">New password</button></div>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>');
     bindNav();
     if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
     if (gen) $("#lsave").addEventListener("click", function () {
@@ -212,6 +241,8 @@
       });
     }
     if (!gen) loadAdmins();
+    if (!gen) $("#tlnew").addEventListener("click", function () { $("#tlp").value = randomPassword(); });
+    if (!gen) $("#tlgo").addEventListener("click", createTestLogin);
     if (!gen) $("#laadd").addEventListener("click", function () {
       var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
       sb.rpc("add_league_admin", { lid: state.league.id, admin_email: e }).then(function (x) {
