@@ -509,7 +509,7 @@
       '<div class="row"><div class="field grow"><label for="sn-' + s.id + '">Name</label><input id="sn-' + s.id + '" value="' + esc(s.name) + '"></div>' +
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<div class="field"><label for="se-' + s.id + '">Ends</label><input id="se-' + s.id + '" type="date" value="' + esc(s.ends_on || "") + '"></div>' +
-      '<button data-sv="' + s.id + '" type="button">Save season</button><button type="button" data-cancel="reset">Cancel</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
+      '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
       "<h3>Rounds (" + evs.length + ")</h3>";
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
@@ -893,12 +893,44 @@
       openChamp(state.sel.champ.id, { view: "season", sid: r.data.id });
     });
   }
+  function shiftDate(d, n) { var t = Date.parse(d + "T00:00:00Z"); return new Date(t + n * 86400000).toISOString().slice(0, 10); }
   function saveSeason(id) {
     var m = $("#sm-" + id), name = $("#sn-" + id).value.trim();
     if (!name) { msg(m, "The name cannot be blank.", "err"); return; }
-    sb.from("seasons").update({ name: name, starts_on: nul($("#ss-" + id).value), ends_on: nul($("#se-" + id).value) }).eq("id", id).then(function (r) {
+    var old = state.sel.seasons.filter(function (x) { return x.id === id; })[0] || {}, ns = nul($("#ss-" + id).value);
+    var delta = old.starts_on && ns && old.starts_on !== ns ? Math.round((Date.parse(ns + "T00:00:00Z") - Date.parse(old.starts_on + "T00:00:00Z")) / 86400000) : 0;
+    var moves = [];
+    if (delta) {
+      var bad = null;
+      state.sel.events.filter(function (e) { return e.season_id === id; }).forEach(function (e) {
+        var upd = {};
+        if (e.starts_at && e.timezone) {
+          var a = TZ.localText(Date.parse(e.starts_at), e.timezone), r = TZ.zonedToInstant(shiftDate(a.date, delta), a.time, e.timezone);
+          if (r.error) { bad = bad || (roundLabel(e) + " (" + shiftDate(a.date, delta) + " " + a.time + ")"); return; }
+          upd.starts_at = r.instant;
+          if (e.original_starts_at && !e.is_override) upd.original_starts_at = r.instant;
+          if (e.lobby_opens_at) {
+            var lb = TZ.localText(Date.parse(e.lobby_opens_at), e.timezone), lr = TZ.zonedToInstant(shiftDate(lb.date, delta), lb.time, e.timezone);
+            if (lr.error) { bad = bad || (roundLabel(e) + " lobby"); return; }
+            upd.lobby_opens_at = lr.instant;
+          }
+        }
+        if (e.occurrence_date) upd.occurrence_date = shiftDate(e.occurrence_date, delta);
+        if (Object.keys(upd).length) moves.push({ id: e.id, upd: upd });
+      });
+      if (bad) { msg(m, "Nothing was changed. " + bad + " would land on a time that does not exist or happens twice because the clocks change. Move that round by hand first, or pick a different start date.", "err"); return; }
+    }
+    sb.from("seasons").update({ name: name, starts_on: ns, ends_on: nul($("#se-" + id).value) }).eq("id", id).then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
-      openChamp(state.sel.champ.id);
+      Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); })).then(function (rs) {
+        var e2 = rs.filter(function (x) { return x.error; })[0];
+        openChamp(state.sel.champ.id);
+        setTimeout(function () {
+          var mm = $("#sm-" + id); if (!mm) return;
+          if (e2) msg(mm, "The season was saved, but some rounds could not be moved: " + dbError(e2.error), "err");
+          else if (moves.length) msg(mm, "Saved. " + moves.length + " round" + (moves.length === 1 ? "" : "s") + " moved " + Math.abs(delta) + " day" + (Math.abs(delta) === 1 ? "" : "s") + (delta < 0 ? " earlier" : " later") + ".", "ok");
+        }, 600);
+      });
     });
   }
 
