@@ -34,13 +34,19 @@ h1 span.sep { color:var(--muted); font-weight:500; }
 .sub { color:var(--muted); font-size:13px; margin:8px 0 0; }
 .round { background:var(--card); border:1px solid var(--line); border-top:2px solid var(--accent); border-radius:6px; padding:14px 16px; margin:12px 0; }
 .round.off { opacity:.7; border-top-color:var(--line); }
-.when { font:700 22px/1.2 var(--display); letter-spacing:.03em; text-transform:uppercase; }
-.when small { display:block; font:500 13px/1.3 system-ui, sans-serif; color:var(--muted); text-transform:none; letter-spacing:0; margin-top:3px; }
+.sum { position:relative; display:block; list-style:none; cursor:pointer; padding-right:28px; }
+.sum::-webkit-details-marker { display:none; }
+.big { font:700 22px/1.2 var(--display); letter-spacing:.03em; text-transform:uppercase; }
+.big + .big { margin-top:4px; }
+.big.tbc { color:var(--muted); font-style:italic; }
+.chev { position:absolute; right:2px; top:50%; width:9px; height:9px; margin-top:-7px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted); transform:rotate(45deg); transition:transform .15s; }
+details[open] > .sum .chev { transform:rotate(-135deg); margin-top:-3px; }
+details.round:hover { border-color:var(--accent); }
 .rnd { font:600 12px/1 var(--display); letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin-bottom:6px; display:flex; gap:8px; align-items:center; }
 .pill { border:1px solid var(--line); border-radius:99px; padding:2px 9px; color:var(--muted); }
 .pill.bad { color:var(--err); border-color:var(--err); }
-.track { margin-top:10px; font-weight:600; font-size:16px; }
-.track small { font-weight:400; color:var(--muted); }
+.more { margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); }
+.line { margin:4px 0; } .line .k { color:var(--muted); display:inline-block; min-width:104px; }
 .races { list-style:none; margin:8px 0 0; padding:0; }
 .races li { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-top:1px dashed var(--line); }
 .races li:first-child { border-top:0; }
@@ -62,6 +68,6 @@ h1 span.sep { color:var(--muted); font-weight:500; }
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../admin/js/config.js?v=20261026a"></script>
-<script src="calendar.js?v=20261103c"></script>
+<script src="calendar.js?v=20261103d"></script>
 </body>
 </html>
