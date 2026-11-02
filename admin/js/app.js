@@ -2,6 +2,20 @@
   "use strict";
   var TZ = window.FCM_TZ, SCH = window.FCM_SCHEDULE, cfg = window.FCM_CONFIG;
   var app = document.getElementById("app");
+  var PALETTES = [["", "Amber (default)"], ["rwb", "Red, white and blue"], ["rosso", "Rosso red"], ["gulf", "Gulf blue and orange"], ["brg", "British racing green"], ["papaya", "Papaya orange"], ["mono", "Silver and black"]];
+  function applyPalette(k) { if (k) document.documentElement.setAttribute("data-palette", k); else document.documentElement.removeAttribute("data-palette"); try { localStorage.setItem("fcm.palette", k || ""); } catch (e) {} }
+  try { applyPalette(localStorage.getItem("fcm.palette") || ""); } catch (e) {}
+  // Cancel buttons next to every Save: "reset" redraws the screen from saved data, "back" returns to the previous page.
+  app.addEventListener("click", function (ev) {
+    var b = ev.target.closest && ev.target.closest("[data-cancel]");
+    if (!b) return;
+    var k = b.dataset.cancel;
+    if (k === "reset" && document.getElementById("lsave")) applyPalette((state.league || {}).palette || "");
+    if (k === "drivers") { renderDriversBody(); return; }
+    if (k === "back") { var lb = document.getElementById("lpback"); if (lb) { renderLeaguePoints(); return; } state.nav = { view: "champ" }; renderCurrent(); return; }
+    if (document.getElementById("lsave")) { renderLeague(); return; }
+    renderCurrent();
+  });
   var sb = window.supabase.createClient(cfg.url, cfg.key);
   var zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf("timeZone") : []).slice();
   if (zones.indexOf("UTC") < 0) zones.unshift("UTC");
@@ -88,12 +102,12 @@
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   // Each league is its own folder: the admin works inside one league at a time.
   function loadLeagues(pick) {
-    sb.from("leagues").select("id,name,slug,timezone,units").order("name", { ascending: true }).then(function (r) {
+    sb.from("leagues").select("*").order("name", { ascending: true }).then(function (r) {
       if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + " Has migration 008 (leagues) been run?</div>"; return; }
       state.leagues = r.data || [];
       var want = pick || lsGet("fcm.league"), cur = state.leagues.filter(function (l) { return l.id === want; })[0] || (state.leagues.length === 1 ? state.leagues[0] : null);
       if (!cur) { renderLeaguePicker(); return; }
-      state.league = cur; lsSet("fcm.league", cur.id); loadChamps();
+      state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id); loadChamps();
     });
   }
   function renderLeaguePicker() {
@@ -155,19 +169,22 @@
       '<div class="card"><h2>League settings</h2><div class="field"><label for="ln">League name</label><input id="ln" value="' + esc(lg.name || "") + '"></div>' +
       '<div class="field" style="margin-top:8px"><label for="lz">League time zone</label><select id="lz">' + zoneOpts(tz, "Not set") + '</select></div>' +
       '<div class="field" style="margin-top:8px"><label for="lu">Units of measurement</label><select id="lu">' + opts([["imperial", "Imperial (hp, lb-ft, lbs, mi)"], ["metric", "Metric (kW, N·m, kg, km)"]], lg.units || "", "Not set") + '</select></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lpal">Colour palette</label><select id="lpal">' + PALETTES.map(function (o) { return '<option value="' + o[0] + '"' + ((lg.palette || "") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button></div><div class="msg" id="lm"></div></div>' :
+      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
       '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>');
     bindNav();
+    if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
     if (gen) $("#lsave").addEventListener("click", function () {
-      var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value) };
+      var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value), palette: nul($("#lpal").value) };
       if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
       sb.from("leagues").update(row).eq("id", state.league.id).then(function (r) {
         if (r.error) { msg($("#lm"), dbError(r.error), "err"); return; }
         state.league = Object.assign({}, state.league, row);
         state.leagues = state.leagues.map(function (l) { return l.id === state.league.id ? state.league : l; });
+        applyPalette(row.palette || "");
         msg($("#lm"), "Saved.", "ok");
       });
     });
@@ -297,7 +314,7 @@
         '<div class="row"><div class="field"><label for="cfreq">Frequency</label><select id="cfreq">' + opts([["1", "Weekly"], ["2", "Fortnightly"], ["3", "Every 3 weeks"], ["4", "Every 4 weeks"]], c.schedule_every_weeks == null ? "" : String(c.schedule_every_weeks), "Not set") + "</select></div>" +
         '<div class="field"><label for="clob">Lobby opens (optional)</label><input id="clob" type="time" value="' + esc(c.lobby_local_time ? String(c.lobby_local_time).slice(0, 5) : "") + '"></div>' +
         '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="schsave" type="button">Save schedule</button><span class="muted">Time zone: ' + esc(c.intended_timezone || champZone() || "not set") + '</span></div><div class="msg" id="schm"></div></div>';
+      '<div class="row" style="margin-top:8px"><button class="primary" id="schsave" type="button">Save schedule</button><button type="button" data-cancel="reset">Cancel</button><span class="muted">Time zone: ' + esc(c.intended_timezone || champZone() || "not set") + '</span></div><div class="msg" id="schm"></div></div>';
   }
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "seasons";
@@ -323,7 +340,7 @@
         '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
         '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
         '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
-        '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
+        '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
         '<div id="renamebox"></div>' +
         '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
       h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
@@ -489,7 +506,7 @@
       '<div class="row"><div class="field grow"><label for="sn-' + s.id + '">Name</label><input id="sn-' + s.id + '" value="' + esc(s.name) + '"></div>' +
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<div class="field"><label for="se-' + s.id + '">Ends</label><input id="se-' + s.id + '" type="date" value="' + esc(s.ends_on || "") + '"></div>' +
-      '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
+      '<button data-sv="' + s.id + '" type="button">Save season</button><button type="button" data-cancel="reset">Cancel</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
       "<h3>Rounds (" + evs.length + ")</h3>";
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
@@ -524,7 +541,7 @@
     var S = state.sel;
     return '<div class="card"><h2>Race format</h2><p class="muted" style="margin:0 0 8px">The races every new round starts with. You can change or remove them on any one round. Rounds that already exist are not changed when you edit this.</p>' +
       '<div id="tpl">' + S.templates.map(templateRow).join("") + '</div>' +
-      '<div class="row" style="margin-top:10px"><button type="button" id="tadd">Add a race</button><button class="primary" type="button" id="tsave">Save race format</button></div><div class="msg" id="tm"></div></div>';
+      '<div class="row" style="margin-top:10px"><button type="button" id="tadd">Add a race</button><button class="primary" type="button" id="tsave">Save race format</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="tm"></div></div>';
   }
   function saveTemplates() {
     var m = $("#tm"), rows = [], bad = null;
@@ -695,7 +712,7 @@
         '<p class="muted" style="margin:0 0 6px">With that ticked, a DNF with no recorded lap counts as DNS (0 points). Otherwise a DNF scores 0 unless you change it here. Leave a box blank to leave it unset.</p><div class="row">' +
         ["dnf", "dns", "dsq", "other"].map(function (k) { return '<div class="field"><label for="ps-' + k + '">' + k.toUpperCase() + '</label><input id="ps-' + k + '" type="number" step="any" style="width:90px" value="' + esc(st[k] == null ? "" : st[k]) + '"></div>'; }).join("") + "</div>" +
         '<h3>Bonuses and penalties</h3><div id="pbonus">' + (rs[3].data || []).map(bonusRow).join("") + '</div><div style="margin-top:8px"><button type="button" id="pbadd">Add bonus or penalty</button></div>' +
-        '<div class="row" style="margin-top:14px"><button class="primary" id="psave" type="button">Save</button><button class="danger" data-pd="' + esc(pid) + '" type="button">Delete this points system</button></div><div class="msg" id="pm2"></div></div>';
+        '<div class="row" style="margin-top:14px"><button class="primary" id="psave" type="button">Save</button><button type="button" data-cancel="back">Cancel</button><button class="danger" data-pd="' + esc(pid) + '" type="button">Delete this points system</button></div><div class="msg" id="pm2"></div></div>';
       bindAll();
     });
   }
@@ -988,7 +1005,7 @@
     }
     return '<details class="ev"><summary><span><b>' + (e.round_number ? "Round " + esc(e.round_number) + " · " : "") + esc(trackLabel(e) || e.name || "Round") + (e.is_bonus ? ' <span class="pill">bonus</span>' : "") + '</b> <span class="pill">' + esc(e.status) + '</span></span><span class="muted">' + esc(when) + "</span></summary>" +
       '<div style="margin-top:10px">' + eventFields(e.id, e) + racesBlock(e) +
-      '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save round</button><button class="danger" data-ed="' + e.id + '" type="button">Delete round</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
+      '<div class="row" style="margin-top:8px"><button class="primary" data-es="' + e.id + '" type="button">Save round</button><button type="button" data-cancel="reset">Cancel</button><button class="danger" data-ed="' + e.id + '" type="button">Delete round</button></div><div class="msg" id="em-' + e.id + '"></div></div></details>';
   }
   function readEvent(k, m) {
     var d = $("#ed-" + k).value, t = $("#et-" + k).value, ev = state.sel.events.filter(function (x) { return x.id === k; })[0];
@@ -1595,7 +1612,7 @@
     if (q) { var lay = state.venueLayouts.filter(function (l) { return l.venue_id === v.id; }).map(function (l) { return l.name; }).join(" "); if ((v.name + " " + (v.location || "") + " " + (v.based_on || "") + " " + lay).toLowerCase().indexOf(q) < 0) return false; }
     return true;
   }
-  function factTile(k, v) { return '<div style="flex:1 1 120px;min-width:110px;border:1px solid var(--line);border-radius:8px;padding:8px 12px"><div class="muted" style="font-size:12px">' + esc(k) + '</div><div style="font-size:18px;font-weight:600;margin-top:2px">' + esc(v || "—") + "</div></div>"; }
+  function factTile(k, v) { return v ? '<div class="tile"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + "</div></div>" : ""; }
   function dirText(d) { return { clockwise: "Clockwise", anticlockwise: "Anticlockwise", "point-to-point": "Point to point" }[d] || d || ""; }
   function typeText(t) { return { "purpose-built": "Purpose-built circuit", "public-road": "Public road circuit", airfield: "Former airfield", oval: "Oval / speedway" }[t] || ""; }
   function surfaceShort(x) { return x || ""; }
@@ -1614,7 +1631,7 @@
     var map = place ? '<a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.name + (place ? ", " + place : "")) + '" target="_blank" rel="noopener noreferrer">Open on a map</a>' : "";
     return '<div class="card" style="margin:0"><div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><div><h2 style="font-size:22px;margin:0">' + esc(v.name) + '</h2><div class="muted" style="margin-top:2px">' + esc(place) + "</div></div>" +
       (v.kind ? '<span class="pill">' + (v.kind === "real" ? "Real circuit" : "Fictional") + "</span>" : "") + "</div>" +
-      '<div class="row" style="margin-top:14px;gap:10px">' + factTile("Opened", v.kind === "fictional" ? "Fictional" : v.opened_year) + factTile("Country", COUNTRY_NAME[v.country] || v.country) + factTile("Layouts", String(lays.length)) + factTile("Longest layout", longest ? lenText(longest) : "") + factTile("Corners", v.corners ? String(v.corners) : "") + factTile("Direction", dirText(v.direction)) + factTile("Type", typeText(v.circuit_type)) + factTile("Surface", surfaceShort(v.surface)) + "</div>" + circuitNotes(v) +
+      '<div class="row" style="margin-top:14px;gap:10px">' + factTile("Opened", v.kind === "fictional" ? "Fictional" : v.opened_year) + factTile("Country", COUNTRY_NAME[v.country] || v.country) + factTile("Layouts", String(lays.length)) + factTile("Longest layout", longest ? lenText(longest) : "") + factTile("Corners", v.corners ? String(v.corners) : "") + factTile("Direction", dirText(v.direction)) + factTile("Type", typeText(v.circuit_type).replace(" circuit", "")) + factTile("Surface", surfaceShort(v.surface)) + "</div>" + circuitNotes(v) +
       '<h3 style="margin:16px 0 4px">Where it is</h3><div>' + esc(place || "Location not recorded") + (map ? " · " + map : "") + "</div>" + (v.based_on ? '<div class="muted" style="margin-top:4px">' + esc((v.kind === "fictional" ? "Modelled on: " : "Also known as: ") + v.based_on) + "</div>" : "") +
       '<h3 style="margin:16px 0 4px">About</h3>' + (v.history ? '<p style="margin:0">' + esc(v.history) + "</p>" : '<p class="muted" style="margin:0">No background details yet.</p>') + (src ? '<p class="muted" style="margin:6px 0 0">' + src.slice(3) + "</p>" : "") + factsHtml(v) +
       '<h3 style="margin:16px 0 4px">Layouts</h3>' + (lays.length ? lays.map(function (l) { return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)"><span>' + esc(l.name) + (l.is_reverse ? ' <span class="pill">Reverse</span>' : "") + "</span><b>" + esc(lenText(l.length_km)) + "</b></div>"; }).join("") : '<p class="muted" style="margin:0">None.</p>') + "</div>";
@@ -1646,7 +1663,7 @@
       (state.drivers.length ? state.drivers.map(function (d) {
         return '<div class="row" data-did="' + esc(d.id) + '" style="align-items:flex-end;margin:6px 0"><div class="field grow"><label>Name in the game</label><input data-dn value="' + esc(d.display_name) + '"></div>' +
           '<div class="field grow"><label>Other names (comma separated)</label><input data-da value="' + esc((d.aliases || []).join(", ")) + '"></div>' +
-          '<button type="button" data-dsave>Save</button><button type="button" class="danger" data-ddel>Delete</button></div>';
+          '<button type="button" data-dsave>Save</button><button type="button" data-cancel="drivers">Cancel</button><button type="button" class="danger" data-ddel>Delete</button></div>';
       }).join("") : '<p class="muted">No drivers yet. They are also added automatically when you type a new name in results entry.</p>') + '<div class="msg" id="dm"></div></div>' +
       '<div class="card"><h3 style="margin-top:0">Add a driver</h3><div class="row"><div class="field grow"><label for="dnew">Name in the game</label><input id="dnew"></div><button class="primary" id="dadd" type="button">Add</button></div><div class="msg" id="dam"></div></div>';
     bindNav();
@@ -1791,7 +1808,7 @@
     var rr = state.rr, race = rr.race, ev = state.sel.events.filter(function (e) { return e.id === race.event_id; })[0];
     var rowsH = rr.rows.map(function (r, i) {
       return '<tr data-ri="' + i + '"><td data-pos style="text-align:center"></td>' +
-        '<td><input data-f="driver" list="dl" value="' + esc(r.driver) + '" placeholder="Type or pick" autocomplete="off" style="min-width:160px"><select data-pick aria-label="Pick a driver" title="Pick a driver" style="width:30px;margin-left:2px"><option value="">▾</option>' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">' + esc(d.display_name) + "</option>"; }).join("") + '</select><span class="pill" data-new style="margin-left:4px"></span></td>' +
+        '<td><div style="display:flex;align-items:center;gap:3px;flex-wrap:nowrap"><input data-f="driver" list="dl" value="' + esc(r.driver) + '" placeholder="Type or pick" autocomplete="off" style="min-width:150px;flex:1 1 auto"><select data-pick aria-label="Pick a driver" title="Pick a driver" style="width:34px;flex:0 0 34px"><option value="">▾</option>' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">' + esc(d.display_name) + "</option>"; }).join("") + '</select><span class="pill" data-new style="margin-left:4px"></span></div></td>' +
         '<td><select data-f="status">' + STATUSES.map(function (s) { return '<option value="' + s[0] + '"' + (r.status === s[0] ? " selected" : "") + ">" + s[1] + "</option>"; }).join("") + "</select>" + (r.ranked ? ' <span class="pill">ranked</span>' : "") + "</td>" +
         '<td><input data-f="best" value="' + esc(r.best) + '" placeholder="00:39.328" style="width:92px"></td>' +
         '<td><input data-f="raceT" value="' + esc(r.raceT) + '" placeholder="22:14.742" style="width:104px"></td>' +
@@ -1807,7 +1824,7 @@
       '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
       '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
       '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
-      '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button></div>' +
+      '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" data-cancel="back">Cancel</button></div>' +
       '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
       '<div class="msg" id="rm"></div></div>';
     $("#backchamp").addEventListener("click", function () { state.nav = { view: "champ" }; renderCurrent(); });

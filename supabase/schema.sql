@@ -839,6 +839,7 @@ create table if not exists public.leagues (
   slug text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
   timezone text check (timezone is null or public.is_valid_timezone(timezone)),
   units text check (units is null or units in ('imperial', 'metric')),
+  palette text check (palette is null or palette in ('rwb','rosso','gulf','brg','papaya','mono')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
