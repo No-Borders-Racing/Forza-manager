@@ -5,6 +5,14 @@
   var PALETTES = [["", "Amber (default)"], ["rwb", "Red, white and blue"], ["rosso", "Rosso red"], ["gulf", "Gulf blue and orange"], ["brg", "British racing green"], ["papaya", "Papaya orange"], ["mono", "Silver and black"]];
   function applyPalette(k) { if (k) document.documentElement.setAttribute("data-palette", k); else document.documentElement.removeAttribute("data-palette"); try { localStorage.setItem("fcm.palette", k || ""); } catch (e) {} }
   try { applyPalette(localStorage.getItem("fcm.palette") || ""); } catch (e) {}
+  // Footer: where you are, kept current without touching every screen.
+  setInterval(function () {
+    var el = document.getElementById("ftloc"); if (!el) return;
+    var lg = state.league && state.league.name, ch = state.sel && state.sel.champ && state.sel.champ.name;
+    if (ch && !document.querySelector("#app [data-tab]")) ch = null;
+    var t = lg ? (ch ? lg + " · " + ch : lg) : "";
+    if (el.dataset.t !== t) { el.dataset.t = t; el.innerHTML = t ? "<b>" + esc(lg) + "</b>" + (ch ? " · " + esc(ch) : "") : ""; }
+  }, 400);
   // Cancel buttons next to every Save: "reset" redraws the screen from saved data, "back" returns to the previous page.
   app.addEventListener("click", function (ev) {
     var b = ev.target.closest && ev.target.closest("[data-cancel]");

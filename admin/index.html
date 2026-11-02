@@ -28,6 +28,13 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 header.top { position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto 18px; padding:14px 0 12px; color:var(--ink); }
 header.top::after { content:""; position:absolute; left:0; right:0; bottom:-8px; height:8px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/8px 8px; opacity:.9; }
 header.top .muted { color:var(--muted); }
+footer.bot { position:fixed; left:0; right:0; bottom:0; z-index:5; background:var(--bg); border-top:1px solid var(--line); }
+footer.bot .in { box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto; height:34px; display:flex; align-items:center; justify-content:space-between; gap:12px; font:600 12px/1 var(--display); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+footer.bot .in span { overflow:hidden; text-overflow:ellipsis; }
+footer.bot .in b { color:var(--ink); font-weight:600; }
+footer.bot::before { content:""; position:absolute; left:max(16px, calc(50% - 474px)); right:max(16px, calc(50% - 474px)); top:-6px; height:5px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/5px 5px; opacity:.6; }
+main { padding-bottom:64px; }
+@media (max-width:600px) { footer.bot .in .tag { display:none; } }
 h1, h2, h3 { font-family:var(--display); text-transform:uppercase; letter-spacing:.05em; }
 h1 { padding-left:4px; font-size:20px; font-weight:700; margin:0; display:flex; align-items:center; gap:10px; } h1::before { content:""; width:7px; height:24px; background:var(--accent); transform:skewX(-18deg); }
 h2 { font-size:19px; font-weight:700; margin:0 0 10px; } h3 { font-size:14px; font-weight:600; color:var(--muted); margin:14px 0 8px; }
@@ -69,11 +76,12 @@ body { font-variant-numeric: tabular-nums; }
 <body>
 <header class="top"><h1>Forza Championship Manager · Admin</h1><div id="who" class="muted"></div></header>
 <main id="app"><p class="muted">Loading…</p></main>
+<footer class="bot"><div class="in"><span id="ftloc"></span><span class="tag">Forza Championship Manager</span></div></footer>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="js/config.js?v=20261026a"></script>
 <script src="js/tz.js?v=20261026a"></script>
 <script src="js/schedule.js?v=20261026a"></script>
-<script src="../results/engine.js?v=20261102n"></script>
-<script src="js/app.js?v=20261102n"></script>
+<script src="../results/engine.js?v=20261102p"></script>
+<script src="js/app.js?v=20261102p"></script>
 </body>
 </html>
