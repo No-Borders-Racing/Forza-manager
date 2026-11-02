@@ -22,6 +22,8 @@
     var body = "";
     if (d && r.lobby_opens_at) body += '<div class="line"><span class="k">Lobby opens</span> ' + esc(timeText(new Date(r.lobby_opens_at))) + "</div>";
     if (r.track && r.track.length_km) body += '<div class="line"><span class="k">Lap length</span> ' + esc(r.track.length_km) + " km</div>";
+    var tl = races.reduce(function (n, x) { return n + (x.laps > 0 ? x.laps : 0); }, 0);
+    if (r.track && r.track.length_km && tl > 0) { var km = Number(r.track.length_km) * tl; body += '<div class="line"><span class="k">Total distance</span> <b>' + esc(km.toFixed(1)) + " km</b> (" + esc((km / 1.609344).toFixed(1)) + " mi) over " + esc(lapsText(tl)) + "</div>"; }
     if (races.length === 1 && raceLen(races[0])) body += '<div class="line"><span class="k">Race length</span> ' + esc(raceLen(races[0])) + "</div>";
     if (races.length > 1) body += '<ul class="races">' + races.map(function (x, i) {
       return "<li><span>" + esc(x.name || "Race " + (i + 1)) + (x.type ? ' <span class="pill">' + esc(x.type) + "</span>" : "") + '</span><span class="l">' + esc(raceLen(x)) + "</span></li>";
