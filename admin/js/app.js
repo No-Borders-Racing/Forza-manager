@@ -1677,9 +1677,26 @@
       var row = b.closest("[data-did]"), key = "dd" + row.dataset.did;
       if (armed !== key) { armed = key; b.textContent = "Click again to delete"; return; }
       armed = null;
-      sb.from("drivers").delete().eq("id", row.dataset.did).then(function (r) {
-        if (r.error) { msg($("#dm"), /foreign key|violates/i.test(r.error.message || "") ? "This driver has results, so they cannot be deleted." : dbError(r.error), "err"); b.textContent = "Delete"; return; }
-        renderDrivers();
+      var did = row.dataset.did;
+      if (b.dataset.force) {
+        sb.from("results").delete().eq("driver_id", did).then(function (r0) {
+          if (r0.error) { msg($("#dm"), dbError(r0.error), "err"); return; }
+          sb.from("drivers").delete().eq("id", did).then(function (r) {
+            if (r.error) { msg($("#dm"), dbError(r.error), "err"); return; }
+            renderDrivers();
+          });
+        });
+        return;
+      }
+      sb.from("drivers").delete().eq("id", did).then(function (r) {
+        if (!r.error) { renderDrivers(); return; }
+        if (!/foreign key|violates/i.test(r.error.message || "")) { msg($("#dm"), dbError(r.error), "err"); b.textContent = "Delete"; return; }
+        sb.from("results").select("id", { count: "exact", head: true }).eq("driver_id", did).then(function (c) {
+          var n = c.count == null ? "their" : c.count;
+          b.dataset.force = "1"; armed = key;
+          b.textContent = "Delete driver and " + n + (n === 1 ? " result" : " results") + "? Click again";
+          msg($("#dm"), "This driver has results. Deleting them removes those results from every race and changes the standings. This cannot be undone.", "err");
+        });
       });
     }); });
     $("#dadd").addEventListener("click", function () {
