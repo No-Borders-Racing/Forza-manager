@@ -195,11 +195,14 @@
     c2.auth.signUp({ email: email, password: pw, options: { data: { must_change_password: $("#tlchg").checked } } }).then(function (r) {
       if (r.error) { b.disabled = false; msg(m, /not allowed|disabled/i.test(r.error.message || "") ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up." : r.error.message, "err"); return; }
       var u = r.data && r.data.user, existed = u && u.identities && u.identities.length === 0, needsConfirm = !(r.data && r.data.session);
-      sb.rpc("add_league_admin", { lid: state.league.id, admin_email: email }).then(function (x) {
+      var own = (document.querySelector("input[name=tlw]:checked") || {}).value === "own", base = email.replace(/@example\.com$/, "").replace(/@.*$/, "");
+      (own ? sb.rpc("create_league_for", { league_name: base + " league", league_slug: null, admin_email: email })
+           : sb.rpc("add_league_admin", { lid: state.league.id, admin_email: email })).then(function (x) {
         b.disabled = false;
-        if (x.error) { msg(m, dbError(x.error), "err"); return; }
+        if (x.error) { msg(m, dbError(x.error) + (own && /does not exist|schema cache/i.test(x.error.message || "") ? " (has migration 021 been run?)" : ""), "err"); return; }
+        if (own) sb.from("leagues").select("*").order("name", { ascending: true }).then(function (lr) { if (!lr.error) state.leagues = lr.data || state.leagues; });
         $("#tle").value = ""; $("#tlp").value = randomPassword();
-        var kind = existed || needsConfirm ? "err" : "ok", txt = (existed ? "That email already had a login, so it was only added as an admin. Its password is unchanged." : "Created " + email + " (sign in with " + (email.slice(-12) === "@example.com" ? email.slice(0, -12) : email) + ") with password " + pw + ". Copy it now; it is not shown again.") +
+        var kind = existed || needsConfirm ? "err" : "ok", txt = (existed ? "That email already had a login, so it was only added as an admin. Its password is unchanged." : (own ? "Their own league \"" + base + " league\" was created. " : "") + "Created " + email + " (sign in with " + (email.slice(-12) === "@example.com" ? email.slice(0, -12) : email) + ") with password " + pw + ". Copy it now; it is not shown again.") +
           (needsConfirm && !existed ? " Supabase is asking for email confirmation, so this login cannot sign in until it is confirmed. To skip that for test logins, turn off Confirm email under Authentication > Sign In / Providers > Email." : "");
         renderLeagueAdmins(); setTimeout(function () { var mm = $("#tlm"); if (mm) msg(mm, txt, kind); }, 50);
       });
@@ -231,12 +234,15 @@
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
       '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
-      '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and adds it as an admin of this league in one step, so you can test as someone else. Just type a name such as tester1. Behind the scenes it becomes tester1@example.com, which is only used to sign in and never receives mail. You can type a full email instead.</p>' +
+      (state.owner ? '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and gives it a league to work in, in one step, so someone else can test. Just type a name such as tester1. Behind the scenes it becomes tester1@example.com, which is only used to sign in and never receives mail. You can type a full email instead.</p>' +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Username</label><input id="tle" type="text" autocomplete="off" placeholder="tester1"></div>' +
       '<div class="field"><label for="tlp">Password</label><input id="tlp" type="text" autocomplete="off" value="' + esc(randomPassword()) + '" style="width:190px"></div>' +
       '<button type="button" id="tlnew" title="Make another password">New password</button></div>' +
-      '<label style="display:flex;align-items:center;gap:6px;margin-top:8px"><input type="checkbox" id="tlchg" checked> They must choose their own password the first time they sign in</label>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>');
+      '<div style="margin-top:10px"><span class="lbl">Where should they work?</span>' +
+      '<label style="display:flex;align-items:center;gap:6px;margin-top:4px"><input type="radio" name="tlw" value="here" checked> In this league (' + esc(lg.name || "") + '), alongside you</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;margin-top:4px"><input type="radio" name="tlw" value="own"> In a new empty league of their own, which no one else can see</label></div>' +
+      '<label style="display:flex;align-items:center;gap:6px;margin-top:10px"><input type="checkbox" id="tlchg" checked> They must choose their own password the first time they sign in</label>' +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>' : "") + '');
     bindNav();
     if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
     if (gen) $("#lsave").addEventListener("click", function () {
@@ -266,8 +272,8 @@
       });
     }
     if (!gen) loadAdmins();
-    if (!gen) $("#tlnew").addEventListener("click", function () { $("#tlp").value = randomPassword(); });
-    if (!gen) $("#tlgo").addEventListener("click", createTestLogin);
+    if (!gen && $("#tlnew")) $("#tlnew").addEventListener("click", function () { $("#tlp").value = randomPassword(); });
+    if (!gen && $("#tlgo")) $("#tlgo").addEventListener("click", createTestLogin);
     if (!gen) $("#laadd").addEventListener("click", function () {
       var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
       sb.rpc("add_league_admin", { lid: state.league.id, admin_email: e }).then(function (x) {
