@@ -74,12 +74,12 @@
   function showLogin(note) {
     $("#who").textContent = "";
     app.innerHTML = '<div class="card" style="max-width:380px;margin:40px auto"><h2>Sign in</h2>' +
-      '<div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username"></div>' +
+      '<div class="field"><label for="em">Email or username</label><input id="em" type="text" autocapitalize="none" autocomplete="username"></div>' +
       '<div class="field" style="margin-top:8px"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div>' +
       '<div class="msg err" id="lm">' + esc(note || "") + '</div><button class="primary" id="go" type="button">Sign in</button></div>';
     var go = function () {
       var b = $("#go"); b.disabled = true; msg($("#lm"), "Signing in…");
-      sb.auth.signInWithPassword({ email: $("#em").value.trim(), password: $("#pw").value }).then(function (r) {
+      sb.auth.signInWithPassword({ email: loginEmail($("#em").value), password: $("#pw").value }).then(function (r) {
         b.disabled = false;
         if (r.error) { msg($("#lm"), r.error.message, "err"); return; }
         boot();
@@ -157,14 +157,16 @@
     var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
+  // A plain name such as "tester1" becomes tester1@example.com. Supabase needs an email-shaped sign-in; this one never receives mail.
+  function loginEmail(v) { v = String(v || "").trim().toLowerCase(); return v && v.indexOf("@") < 0 ? v.replace(/\s+/g, "") + "@example.com" : v; }
   function randomPassword() {
     var a = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", out = "", r = new Uint32Array(12);
     (window.crypto || window.msCrypto).getRandomValues(r); for (var i = 0; i < r.length; i++) out += a[r[i] % a.length]; return out;
   }
   // A second client does the sign-up so this admin stays signed in as themselves.
   function createTestLogin() {
-    var m = $("#tlm"), email = $("#tle").value.trim(), pw = $("#tlp").value;
-    if (!email || email.indexOf("@") < 1) { msg(m, "Type an email address first.", "err"); return; }
+    var m = $("#tlm"), email = loginEmail($("#tle").value), pw = $("#tlp").value;
+    if (!email || email.indexOf("@") < 1) { msg(m, "Type a username first.", "err"); return; }
     if (pw.length < 8) { msg(m, "The password needs at least 8 characters.", "err"); return; }
     var b = $("#tlgo"); b.disabled = true; msg(m, "Creating…");
     var c2 = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
@@ -175,7 +177,7 @@
         b.disabled = false;
         if (x.error) { msg(m, dbError(x.error), "err"); return; }
         $("#tle").value = ""; $("#tlp").value = randomPassword();
-        var kind = existed || needsConfirm ? "err" : "ok", txt = (existed ? "That email already had a login, so it was only added as an admin. Its password is unchanged." : "Created " + email + " with password " + pw + ". Copy it now; it is not shown again.") +
+        var kind = existed || needsConfirm ? "err" : "ok", txt = (existed ? "That email already had a login, so it was only added as an admin. Its password is unchanged." : "Created " + email + " (sign in with " + (email.slice(-12) === "@example.com" ? email.slice(0, -12) : email) + ") with password " + pw + ". Copy it now; it is not shown again.") +
           (needsConfirm && !existed ? " Supabase is asking for email confirmation, so this login cannot sign in until it is confirmed. To skip that for test logins, turn off Confirm email under Authentication > Sign In / Providers > Email." : "");
         renderLeagueAdmins(); setTimeout(function () { var mm = $("#tlm"); if (mm) msg(mm, txt, kind); }, 50);
       });
@@ -207,8 +209,8 @@
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
       '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
-      '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and adds it as an admin of this league in one step, so you can test as someone else. Use an address you can reach or a made-up one such as tester1@example.com.</p>' +
-      '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Email</label><input id="tle" type="email" autocomplete="off"></div>' +
+      '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and adds it as an admin of this league in one step, so you can test as someone else. Just type a name such as tester1. Behind the scenes it becomes tester1@example.com, which is only used to sign in and never receives mail. You can type a full email instead.</p>' +
+      '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Username</label><input id="tle" type="text" autocomplete="off" placeholder="tester1"></div>' +
       '<div class="field"><label for="tlp">Password</label><input id="tlp" type="text" autocomplete="off" value="' + esc(randomPassword()) + '" style="width:190px"></div>' +
       '<button type="button" id="tlnew" title="Make another password">New password</button></div>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>');
