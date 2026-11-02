@@ -461,7 +461,8 @@
 
     on("#sadd", addSeason);
     on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
-    on("[data-swap]", function (b) { swapRounds(b.dataset.swap); });
+    on("[data-rup]", function (b) { stepRound(b.dataset.rup, -1); });
+    on("[data-rdn]", function (b) { stepRound(b.dataset.rdn, 1); });
     on("[data-bye]", function (b) { byeWeek(b.dataset.bye); });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
     on("[data-gp]", function (b) { previewRounds(b.dataset.gp); });
@@ -514,16 +515,16 @@
       "<h3>Rounds (" + evs.length + ")</h3>";
     if (evs.length) {
       var ro = evs.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(roundLabel(e)) + "</option>"; }).join("");
-      h += '<div class="card" style="margin:0 0 8px;border-top-width:1px"><div class="row" style="align-items:flex-end"><div class="field"><label for="swa-' + s.id + '">Swap round</label><select id="swa-' + s.id + '">' + ro + '</select></div>' +
-        '<div class="field"><label for="swb-' + s.id + '">with round</label><select id="swb-' + s.id + '">' + evs.map(function (e, i) { return '<option value="' + esc(e.id) + '"' + (i === 1 ? " selected" : "") + ">" + esc(roundLabel(e)) + "</option>"; }).join("") + '</select></div>' +
-        '<button type="button" data-swap="' + s.id + '">Swap dates</button></div>' +
-        '<div class="row" style="align-items:flex-end;margin-top:8px"><div class="field"><label for="bye-' + s.id + '">Bye week after</label><select id="bye-' + s.id + '">' + ro + '</select></div>' +
+      h += '<div class="card" style="margin:0 0 8px;border-top-width:1px">' +
+        '<div class="row" style="align-items:flex-end"><div class="field"><label for="bye-' + s.id + '">Bye week after</label><select id="bye-' + s.id + '">' + ro + '</select></div>' +
         '<div class="field"><label for="byn-' + s.id + '">Weeks</label><input id="byn-' + s.id + '" type="number" min="1" max="26" value="1" style="width:70px"></div>' +
         '<button type="button" data-bye="' + s.id + '">Add bye week</button></div>' +
-        '<p class="muted" style="margin:8px 0 0">Swap trades the two rounds\' dates and positions in the season; their tracks and results stay with them. A bye week moves every later round on by that many weeks, at the same local time.</p>' +
+        '<p class="muted" style="margin:8px 0 0">Use the arrows beside a round to swap it with the one above or below; the dates and round numbers trade places and each round keeps its track and results. A bye week moves every later round on by that many weeks, at the same local time.</p>' +
         '<div class="msg" id="rm2-' + s.id + '"></div></div>';
     }
-    evs.forEach(function (e) { h += eventHtml(e); });
+    evs.forEach(function (e, i) {
+      h += '<div style="display:flex;gap:4px;align-items:flex-start"><div style="display:flex;gap:2px;margin-top:8px;flex:0 0 auto"><button type="button" data-rup="' + esc(e.id) + '" title="Swap with the round above"' + (i === 0 ? " disabled" : "") + '>↑</button><button type="button" data-rdn="' + esc(e.id) + '" title="Swap with the round below"' + (i === evs.length - 1 ? " disabled" : "") + '>↓</button></div><div style="flex:1;min-width:0">' + eventHtml(e) + "</div></div>";
+    });
     h += genHtml(s.id);
     h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single round outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
       '<h3>Races in this round</h3><div id="rc-new-' + s.id + '">' + raceRow({}, "new-" + s.id) + '</div><div style="margin-top:8px"><button type="button" data-radd="new-' + s.id + '">Add a race</button></div>' +
@@ -910,9 +911,13 @@
     openChamp(state.sel.champ.id);
     setTimeout(function () { var mm = $("#rm2-" + sid); if (mm) msg(mm, msgText, err ? "err" : "ok"); }, 600);
   }
-  function swapRounds(sid) {
-    var m = $("#rm2-" + sid), a = $("#swa-" + sid).value, b = $("#swb-" + sid).value;
-    if (!a || !b || a === b) { msg(m, "Pick two different rounds to swap.", "err"); return; }
+  function stepRound(id, dir) {
+    var me = state.sel.events.filter(function (e) { return e.id === id; })[0]; if (!me) return;
+    var sib = state.sel.events.filter(function (e) { return e.season_id === me.season_id; }), at = sib.indexOf(me), other = sib[at + dir];
+    if (other) swapRounds(me.season_id, id, other.id);
+  }
+  function swapRounds(sid, a, b) {
+    var m = $("#rm2-" + sid);
     var evs = state.sel.events, ea = evs.filter(function (e) { return e.id === a; })[0], eb = evs.filter(function (e) { return e.id === b; })[0];
     if (!ea || !eb) return;
     function take(from, to) {
