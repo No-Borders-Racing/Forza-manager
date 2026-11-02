@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Build sheet</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
+<script>try{var q=localStorage.getItem("fcm.palette");if(q)document.documentElement.setAttribute("data-palette",q);}catch(e){}</script>
 <style>
 /* Layout: two build sheets side by side, each a spec card with a four-axis performance graph; one column on phones. */
 :root {
@@ -11,6 +12,20 @@
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
   --bg: #f2f2ef; --panel: #ffffff; --ink: #15171a; --muted: #5d636b; --line: #d9dadd; --row: #f2f2ef; --accent: #f0a500; --accent-ink: #1a1300; --ref: #8a8f96; --warn: #a15c00; --bad: #b3261e; color-scheme: light; } }
+:root[data-palette="rwb"] { --bg:#0b1020;--panel:#141b30;--ink:#f4f6fb;--muted:#9fa9c4;--line:#27304d;--row:#141b30;--accent:#e5233a;--accent-ink:#ffffff }
+:root[data-palette="rosso"] { --bg:#0f0c0c;--panel:#1a1515;--ink:#f4efee;--muted:#a89c9a;--line:#33292a;--row:#1a1515;--accent:#dc1f26;--accent-ink:#ffffff }
+:root[data-palette="gulf"] { --bg:#0c1318;--panel:#141e26;--ink:#eef4f8;--muted:#9bb0bd;--line:#263642;--row:#141e26;--accent:#6cc4ee;--accent-ink:#06222f }
+:root[data-palette="brg"] { --bg:#0a110d;--panel:#121c16;--ink:#eef3ee;--muted:#9fb1a4;--line:#24362b;--row:#121c16;--accent:#f2c200;--accent-ink:#1a1500 }
+:root[data-palette="papaya"] { --bg:#0f0f12;--panel:#18181d;--ink:#f3f3f5;--muted:#a0a0aa;--line:#2c2c34;--row:#18181d;--accent:#ff8000;--accent-ink:#1a0d00 }
+:root[data-palette="mono"] { --bg:#0d0d0d;--panel:#171717;--ink:#f2f2f2;--muted:#a0a0a0;--line:#2e2e2e;--row:#171717;--accent:#e8e8e8;--accent-ink:#111111 }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"])[data-palette="rwb"] { --bg:#eef1f8;--panel:#ffffff;--ink:#101528;--muted:#566080;--line:#d3d9e8;--row:#eef1f8;--accent:#d11a31;--accent-ink:#ffffff }
+  :root:not([data-theme="dark"])[data-palette="rosso"] { --bg:#f4efee;--panel:#ffffff;--ink:#1c1212;--muted:#6d5e5c;--line:#e0d4d3;--row:#f4efee;--accent:#c4161c;--accent-ink:#ffffff }
+  :root:not([data-theme="dark"])[data-palette="gulf"] { --bg:#eef4f8;--panel:#ffffff;--ink:#0d1a22;--muted:#52687a;--line:#d0dde6;--row:#eef4f8;--accent:#2a9fd6;--accent-ink:#ffffff }
+  :root:not([data-theme="dark"])[data-palette="brg"] { --bg:#eef3ee;--panel:#ffffff;--ink:#101a14;--muted:#52665a;--line:#d2ded5;--row:#eef3ee;--accent:#0f5a32;--accent-ink:#ffffff }
+  :root:not([data-theme="dark"])[data-palette="papaya"] { --bg:#f4f4f6;--panel:#ffffff;--ink:#17171c;--muted:#5f5f6a;--line:#dcdce2;--row:#f4f4f6;--accent:#e06c00;--accent-ink:#ffffff }
+  :root:not([data-theme="dark"])[data-palette="mono"] { --bg:#f2f2f2;--panel:#ffffff;--ink:#111111;--muted:#5f5f5f;--line:#d8d8d8;--row:#f2f2f2;--accent:#222222;--accent-ink:#ffffff }
+}
 body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .wrap { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 h1 { font: 700 24px/1.15 var(--display); text-transform: uppercase; letter-spacing: .05em; margin: 0; }
