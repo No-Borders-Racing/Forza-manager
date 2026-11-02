@@ -88,6 +88,27 @@
     $("#go").addEventListener("click", go);
     $("#pw").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
   }
+  // A login created with "must change password" sits here until the person picks their own.
+  function showChangePassword() {
+    app.innerHTML = '<div class="card" style="max-width:380px;margin:40px auto"><h2>Choose your own password</h2>' +
+      '<p class="muted" style="margin:0 0 8px">This login was set up for you with a temporary password. Pick a new one to carry on.</p>' +
+      '<div class="field"><label for="np1">New password</label><input id="np1" type="password" autocomplete="new-password"></div>' +
+      '<div class="field" style="margin-top:8px"><label for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password"></div>' +
+      '<div class="msg" id="npm"></div><button class="primary" id="npgo" type="button">Save password</button></div>';
+    var go = function () {
+      var a = $("#np1").value, b = $("#np2").value;
+      if (a.length < 8) { msg($("#npm"), "Use at least 8 characters.", "err"); return; }
+      if (a !== b) { msg($("#npm"), "The two passwords do not match.", "err"); return; }
+      var btn = $("#npgo"); btn.disabled = true; msg($("#npm"), "Saving…");
+      sb.auth.updateUser({ password: a, data: { must_change_password: false } }).then(function (r) {
+        btn.disabled = false;
+        if (r.error) { msg($("#npm"), /same|different/i.test(r.error.message || "") ? "Pick a password different from the temporary one." : r.error.message, "err"); return; }
+        boot();
+      });
+    };
+    $("#npgo").addEventListener("click", go);
+    $("#np2").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+  }
   function boot() {
     sb.auth.getSession().then(function (r) {
       var s = r.data && r.data.session;
@@ -95,6 +116,7 @@
       state.user = s.user;
       $("#who").innerHTML = esc(s.user.email) + ' · <button id="out" type="button">Sign out</button>';
       $("#out").addEventListener("click", function () { sb.auth.signOut().then(function () { state.admin = false; showLogin(); }); });
+      if (s.user.user_metadata && s.user.user_metadata.must_change_password) { showChangePassword(); return; }
       sb.rpc("is_admin").then(function (a) {
         if (a.error) { app.innerHTML = '<div class="card err">Could not check admin access: ' + esc(a.error.message) + "</div>"; return; }
         state.admin = a.data === true;
@@ -170,7 +192,7 @@
     if (pw.length < 8) { msg(m, "The password needs at least 8 characters.", "err"); return; }
     var b = $("#tlgo"); b.disabled = true; msg(m, "Creating…");
     var c2 = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-    c2.auth.signUp({ email: email, password: pw }).then(function (r) {
+    c2.auth.signUp({ email: email, password: pw, options: { data: { must_change_password: $("#tlchg").checked } } }).then(function (r) {
       if (r.error) { b.disabled = false; msg(m, /not allowed|disabled/i.test(r.error.message || "") ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up." : r.error.message, "err"); return; }
       var u = r.data && r.data.user, existed = u && u.identities && u.identities.length === 0, needsConfirm = !(r.data && r.data.session);
       sb.rpc("add_league_admin", { lid: state.league.id, admin_email: email }).then(function (x) {
@@ -213,6 +235,7 @@
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Username</label><input id="tle" type="text" autocomplete="off" placeholder="tester1"></div>' +
       '<div class="field"><label for="tlp">Password</label><input id="tlp" type="text" autocomplete="off" value="' + esc(randomPassword()) + '" style="width:190px"></div>' +
       '<button type="button" id="tlnew" title="Make another password">New password</button></div>' +
+      '<label style="display:flex;align-items:center;gap:6px;margin-top:8px"><input type="checkbox" id="tlchg" checked> They must choose their own password the first time they sign in</label>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>');
     bindNav();
     if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
