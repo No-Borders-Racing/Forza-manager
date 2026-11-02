@@ -508,7 +508,6 @@
     var h = '<div class="card"><h2>Season: ' + esc(s.name) + "</h2>" +
       '<div class="row"><div class="field grow"><label for="sn-' + s.id + '">Name</label><input id="sn-' + s.id + '" value="' + esc(s.name) + '"></div>' +
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
-      '<div class="field"><label for="se-' + s.id + '">Ends</label><input id="se-' + s.id + '" type="date" value="' + esc(s.ends_on || "") + '"></div>' +
       '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
       "<h3>Rounds (" + evs.length + ")</h3>";
     evs.forEach(function (e) { h += eventHtml(e); });
@@ -832,7 +831,7 @@
     var h = '<ul class="missing" style="margin-top:8px">' + rows.map(function (r) { return r.line; }).join("") + "</ul>";
     if (bad) h += '<p class="err">Change the start time, the date or the zone so every round is valid, then preview again.</p>';
     else {
-      h += "<p>" + (k === "new" ? "The season will start on <b>" + esc(g.dates[0]) + "</b> and end on <b>" + esc(last) + "</b>." : "The season end date will be set to <b>" + esc(last) + "</b>" + (season && season.ends_on && season.ends_on !== last ? ' <span class="muted">(it is currently ' + esc(season.ends_on) + ")</span>" : "") + ".") + "</p>" +
+      h += "<p>" + (k === "new" ? "The season will start on <b>" + esc(g.dates[0]) + "</b>." : "") + "</p>" +
         (evs.length ? '<p class="muted">This season already has ' + evs.length + " round" + (evs.length === 1 ? "" : "s") + ", so numbering continues from round " + first + ".</p>" : "") +
         '<button class="primary" data-gc="' + k + '" type="button">' + (k === "new" ? "Create season with " : "Create ") + rows.length + " round" + (rows.length === 1 ? "" : "s") + '</button><div class="msg" id="gm2-' + k + '"></div>';
       plans[k] = { rows: rows, first: g.dates[0], last: last, cfg: cfgv, done: done, ser: ser };
@@ -920,7 +919,7 @@
       });
       if (bad) { msg(m, "Nothing was changed. " + bad + " would land on a time that does not exist or happens twice because the clocks change. Move that round by hand first, or pick a different start date.", "err"); return; }
     }
-    sb.from("seasons").update({ name: name, starts_on: ns, ends_on: nul($("#se-" + id).value) }).eq("id", id).then(function (r) {
+    sb.from("seasons").update({ name: name, starts_on: ns }).eq("id", id).then(function (r) {
       if (r.error) { msg(m, dbError(r.error), "err"); return; }
       Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); })).then(function (rs) {
         var e2 = rs.filter(function (x) { return x.error; })[0];
