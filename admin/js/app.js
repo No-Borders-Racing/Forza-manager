@@ -513,19 +513,19 @@
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
       "<h3>Rounds (" + evs.length + ")</h3>";
-    if (evs.length) {
-      var ro = evs.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(roundLabel(e)) + "</option>"; }).join("");
-      h += '<div class="card" style="margin:0 0 8px;border-top-width:1px">' +
-        '<div class="row" style="align-items:flex-end"><div class="field"><label for="bye-' + s.id + '">Bye week after</label><select id="bye-' + s.id + '">' + ro + '</select></div>' +
-        '<div class="field"><label for="byn-' + s.id + '">Weeks</label><input id="byn-' + s.id + '" type="number" min="1" max="26" value="1" style="width:70px"></div>' +
-        '<button type="button" data-bye="' + s.id + '">Add bye week</button></div>' +
-        '<p class="muted" style="margin:8px 0 0">Use the arrows beside a round to swap it with the one above or below; the dates and round numbers trade places and each round keeps its track and results. A bye week moves every later round on by that many weeks, at the same local time.</p>' +
-        '<div class="msg" id="rm2-' + s.id + '"></div></div>';
-    }
     evs.forEach(function (e, i) {
       h += '<div style="display:flex;gap:4px;align-items:flex-start"><div style="display:flex;gap:2px;margin-top:8px;flex:0 0 auto"><button type="button" data-rup="' + esc(e.id) + '" title="Swap with the round above"' + (i === 0 ? " disabled" : "") + '>↑</button><button type="button" data-rdn="' + esc(e.id) + '" title="Swap with the round below"' + (i === evs.length - 1 ? " disabled" : "") + '>↓</button></div><div style="flex:1;min-width:0">' + eventHtml(e) + "</div></div>";
     });
     h += genHtml(s.id);
+    if (evs.length) {
+      var ro = evs.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(roundLabel(e)) + "</option>"; }).join("");
+      h += '<div class="card" style="margin:8px 0;border-top-width:1px"><h3 style="margin-top:0">Skip a week</h3>' +
+        '<p class="muted" style="margin:0 0 8px">For a holiday or a break. Every round after the one you pick moves later by that many weeks, at the same local time. To change the order of rounds, use the arrows beside them.</p>' +
+        '<div class="row" style="align-items:flex-end"><div class="field"><label for="bye-' + s.id + '">Skip after</label><select id="bye-' + s.id + '">' + ro + '</select></div>' +
+        '<div class="field"><label for="byn-' + s.id + '">Weeks to skip</label><input id="byn-' + s.id + '" type="number" min="1" max="26" value="1" style="width:70px"></div>' +
+        '<button type="button" data-bye="' + s.id + '">Skip weeks</button></div>' +
+        '<div class="msg" id="rm2-' + s.id + '"></div></div>';
+    }
     h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single round outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
       '<h3>Races in this round</h3><div id="rc-new-' + s.id + '">' + raceRow({}, "new-" + s.id) + '</div><div style="margin-top:8px"><button type="button" data-radd="new-' + s.id + '">Add a race</button></div>' +
       '<div class="row" style="margin-top:8px"><button class="primary" data-ea="' + s.id + '" type="button">Add round</button></div><div class="msg" id="em-new-' + s.id + '"></div></div></details></div>';
@@ -951,7 +951,7 @@
     Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); })).then(function (rs) {
       var e = rs.filter(function (x) { return x.error; })[0];
       if (e) { afterRoundMove(sid, "Some rounds could not be moved: " + dbError(e.error), true); return; }
-      afterRoundMove(sid, "Bye week added: " + moves.length + " round" + (moves.length === 1 ? "" : "s") + " moved " + n + " week" + (n === 1 ? "" : "s") + " later.", false);
+      afterRoundMove(sid, "Skipped " + n + " week" + (n === 1 ? "" : "s") + ": " + moves.length + " round" + (moves.length === 1 ? "" : "s") + " moved later.", false);
     });
   }
   function saveSeason(id) {
