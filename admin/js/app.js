@@ -69,6 +69,8 @@
   function dbError(e) { return e && e.message ? e.message : "Something went wrong."; }
 
   var state = { user: null, admin: false, champs: [], sel: null };
+  // A link from the public calendar: ?l=<league>&c=<championship>&s=<season> opens that season's setup after sign-in.
+  (function () { try { var q = new URLSearchParams(location.search); if (q.get("l") && q.get("c")) state.deep = { l: q.get("l"), c: q.get("c"), s: q.get("s") }; } catch (e) {} })();
 
   /* ---------- sign in ---------- */
   function showLogin(note) {
@@ -135,9 +137,12 @@
     sb.from("leagues").select("*").order("name", { ascending: true }).then(function (r) {
       if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + " Has migration 008 (leagues) been run?</div>"; return; }
       state.leagues = r.data || [];
-      var want = pick || lsGet("fcm.league"), cur = state.leagues.filter(function (l) { return l.id === want; })[0] || (state.leagues.length === 1 ? state.leagues[0] : null);
+      var want = pick || (state.deep && state.deep.l) || lsGet("fcm.league"), cur = state.leagues.filter(function (l) { return l.id === want; })[0] || (state.leagues.length === 1 ? state.leagues[0] : null);
       if (!cur) { renderLeaguePicker(); return; }
-      state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id); loadChamps();
+      state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
+      var dp = state.deep; state.deep = null;
+      if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
+      loadChamps();
     });
   }
   function renderLeaguePicker() {

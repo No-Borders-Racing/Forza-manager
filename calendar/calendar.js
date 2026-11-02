@@ -34,11 +34,33 @@
   var sid = new URLSearchParams(location.search).get("s");
   if (!sid) { note("This link is missing its calendar."); return; }
   if (!window.supabase || !cfg) { note("The calendar could not be loaded."); return; }
-  var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+  // Admins who are signed in to the admin app (same site) get Edit, Unpublish and Delete here. Everyone else sees only the calendar.
+  function adminBar(c) {
+    var bar = document.createElement("div"); bar.className = "bar";
+    var edit = "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id) + "&s=" + encodeURIComponent(c.season_id);
+    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(edit) + '">Edit season</a><button type="button" id="cu">Unpublish</button><button type="button" class="danger" id="cd">Delete season</button><span id="cm" class="m"></span>';
+    document.querySelector("main").insertBefore(bar, document.querySelector("header"));
+    var m = bar.querySelector("#cm"), armed = false;
+    bar.querySelector("#cu").addEventListener("click", function () {
+      m.textContent = "Unpublishing…";
+      sb.from("seasons").update({ calendar_published: false }).eq("id", c.season_id).then(function (x) { if (x.error) { m.textContent = x.error.message; return; } location.reload(); });
+    });
+    var del = bar.querySelector("#cd");
+    del.addEventListener("click", function () {
+      if (!armed) { armed = true; del.textContent = "Click again to delete the season and all its rounds"; setTimeout(function () { armed = false; del.textContent = "Delete season"; }, 6000); return; }
+      m.textContent = "Deleting…";
+      sb.from("seasons").delete().eq("id", c.season_id).then(function (x) {
+        if (x.error) { m.textContent = x.error.message; armed = false; del.textContent = "Delete season"; return; }
+        document.querySelector("main").innerHTML = '<p class="msg">The season was deleted. <a href="../admin/">Back to the admin app</a></p>';
+      });
+    });
+  }
   sb.rpc("public_calendar", { sid: sid }).then(function (r) {
     if (r.error) { note("The calendar could not be loaded."); return; }
     var c = r.data;
     if (!c) { note("This calendar is not published."); return; }
+    if (c.can_edit) adminBar(c);
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
     document.title = [c.league, c.championship, c.season].join(" · ");
     document.getElementById("title").innerHTML = [c.league, c.championship, c.season].map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");

@@ -1457,6 +1457,10 @@ create or replace function public.public_calendar(sid uuid)
 returns jsonb
 language sql stable security definer set search_path = '' as $$
   select jsonb_build_object(
+    'season_id', s.id,
+    'championship_id', c.id,
+    'league_id', l.id,
+    'can_edit', public.can_admin_league(l.id),
     'league', l.name,
     'palette', l.palette,
     'championship', c.name,
