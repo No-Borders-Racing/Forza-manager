@@ -534,6 +534,15 @@
     on("[data-rup]", function (b) { stepRound(b.dataset.rup, -1); });
     on("[data-rdn]", function (b) { stepRound(b.dataset.rdn, 1); });
     on("[data-bye]", function (b) { byeWeek(b.dataset.bye); });
+    on("[data-cppub]", function (b) { setCalendarPublished(b.dataset.cppub, true); });
+    on("[data-cpoff]", function (b) { setCalendarPublished(b.dataset.cpoff, false); });
+    on("[data-cpcopy]", function (b) {
+      var inp = $("#cpl-" + b.dataset.cpcopy), m = $("#cpm-" + b.dataset.cpcopy);
+      function done() { msg(m, "Link copied.", "ok"); }
+      inp.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (e) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
+      else { try { document.execCommand("copy"); done(); } catch (e) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
+    });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
     on("[data-gp]", function (b) { previewRounds(b.dataset.gp); });
     on("[data-gc]", function (b) { createRounds(b.dataset.gc); });
@@ -576,12 +585,34 @@
   }
 
   /* ---------- seasons ---------- */
+  function calendarLink(sid) { return new URL("../calendar/?s=" + encodeURIComponent(sid), location.href).href; }
+  function calendarPublishHtml(s) {
+    var h = '<div style="margin:12px 0 4px">';
+    if (s.calendar_published) {
+      h += '<div class="row" style="align-items:center"><span class="pill">Calendar is public</span><input readonly id="cpl-' + s.id + '" value="' + esc(calendarLink(s.id)) + '" style="flex:1 1 260px" aria-label="Public calendar link">' +
+        '<button type="button" data-cpcopy="' + s.id + '">Copy link</button><a href="' + esc(calendarLink(s.id)) + '" target="_blank" rel="noopener"><button type="button">Open</button></a><button type="button" data-cpoff="' + s.id + '">Unpublish</button></div>' +
+        '<p class="muted" style="margin:6px 0 0">Anyone with the link can see this season\'s rounds, dates (in their own time zone), tracks, races and notes. It updates as you edit.</p>';
+    } else {
+      h += '<div class="row" style="align-items:center"><button class="primary" type="button" data-cppub="' + s.id + '">Publish calendar</button>' +
+        '<span class="muted">Makes this season\'s calendar public: dates, tracks, races and notes, and nothing else.</span></div>';
+    }
+    return h + '<div class="msg" id="cpm-' + s.id + '"></div></div>';
+  }
+  function setCalendarPublished(sid, on) {
+    var m = $("#cpm-" + sid);
+    sb.from("seasons").update({ calendar_published: on }).eq("id", sid).then(function (r) {
+      if (r.error) { msg(m, dbError(r.error) + (/calendar_published|schema cache/i.test(r.error.message || "") ? " (has migration 022 been run?)" : ""), "err"); return; }
+      openChamp(state.sel.champ.id);
+      setTimeout(function () { var mm = $("#cpm-" + sid); if (mm) msg(mm, on ? "The calendar is public. Copy the link above to share it." : "The calendar is no longer public.", "ok"); }, 600);
+    });
+  }
   function seasonHtml(s) {
     var evs = state.sel.events.filter(function (e) { return e.season_id === s.id; });
     var h = '<div class="card"><h2>Season: ' + esc(s.name) + "</h2>" +
       '<div class="row"><div class="field grow"><label for="sn-' + s.id + '">Name</label><input id="sn-' + s.id + '" value="' + esc(s.name) + '"></div>' +
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
+      calendarPublishHtml(s) +
       "<h3>Rounds (" + evs.length + ")</h3>";
     evs.forEach(function (e, i) {
       h += '<div style="display:flex;gap:4px;align-items:flex-start"><div style="display:flex;gap:2px;margin-top:8px;flex:0 0 auto"><button type="button" data-rup="' + esc(e.id) + '" title="Swap with the round above"' + (i === 0 ? " disabled" : "") + '>↑</button><button type="button" data-rdn="' + esc(e.id) + '" title="Swap with the round below"' + (i === evs.length - 1 ? " disabled" : "") + '>↓</button></div><div style="flex:1;min-width:0">' + eventHtml(e) + "</div></div>";
