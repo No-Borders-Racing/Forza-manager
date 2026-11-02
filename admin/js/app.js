@@ -316,15 +316,18 @@
         '<div class="field"><label for="crace">Race start</label><input id="crace" type="time" value="' + esc(c.race_local_time ? String(c.race_local_time).slice(0, 5) : "") + '"></div></div>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="schsave" type="button">Save schedule</button><button type="button" data-cancel="reset">Cancel</button><span class="muted">Time zone: ' + esc(c.intended_timezone || champZone() || "not set") + '</span></div><div class="msg" id="schm"></div></div>';
   }
-  function renderChamp() {
-    var S = state.sel, c = S.champ, tab = state.tab || "seasons";
+  function champHeadHtml(c, tab) {
     var inSet = tab === "settings" || tab === "points";
     var tabs = [["cars", "Cars"], ["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
-    var h = navHtml("c") +
+    return navHtml("c") +
       '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
       '<button type="button" data-tab="settings" style="margin-left:auto"' + (inSet ? ' class="primary"' : "") + ">Championship settings</button></div>" +
       (inSet ? '<div class="row" style="margin-top:8px"><button type="button" data-tab="settings"' + (tab === "settings" ? ' class="primary"' : "") + '>General</button><button type="button" data-tab="points"' + (tab === "points" ? ' class="primary"' : "") + '>Points</button></div>' : "") + "</div>";
+  }
+  function renderChamp() {
+    var S = state.sel, c = S.champ, tab = state.tab || "seasons";
+    var h = champHeadHtml(c, tab);
     if (tab === "settings") {
       // Older championships have no zone: fill it in from the league once, without a click.
       if (!c.intended_timezone && leagueZone() && !state.tzTried[c.id]) {
@@ -1834,8 +1837,11 @@
         '<td data-pts style="text-align:right"></td>' +
         '<td style="white-space:nowrap"><button type="button" data-up="' + i + '" title="Move up">↑</button><button type="button" data-dn="' + i + '" title="Move down">↓</button><button type="button" data-rm="' + i + '" title="Remove row">✕</button></td></tr>';
     }).join("");
-    app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
-      '<div class="card"><h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
+    state.tab = "results";
+    var sibs = state.sel.races.filter(function (r) { return r.event_id === race.event_id; }).sort(function (x, y) { return x.sort_order - y.sort_order; });
+    var raceTabs = sibs.length > 1 ? '<div class="row" style="margin:0 0 12px">' + sibs.map(function (r) { return '<button type="button" data-rtab="' + esc(r.id) + '"' + (r.id === race.id ? ' class="primary"' : "") + ">" + esc(r.name || "Race") + "</button>"; }).join("") + "</div>" : "";
+    app.innerHTML = champHeadHtml(state.sel.champ, "results") +
+      '<div class="card">' + raceTabs + '<h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
       '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
       '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
       '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
@@ -1844,11 +1850,16 @@
       '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" data-cancel="back">Cancel</button></div>' +
       '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
       '<div class="msg" id="rm"></div></div>';
-    $("#backchamp").addEventListener("click", function () { state.nav = { view: "champ" }; renderCurrent(); });
-    app.querySelectorAll("[data-pick]").forEach(function (sel) { sel.addEventListener("change", function () { if (sel.value) { sel.closest("td").querySelector("[data-f=driver]").value = sel.value; sel.value = ""; refreshGrid(); } }); });
+    bindNav();
+    app.querySelectorAll("[data-tab]").forEach(function (t) { t.addEventListener("click", function () { state.tab = t.dataset.tab; state.nav = { view: "champ" }; renderCurrent(); }); });
+    app.querySelectorAll("[data-rtab]").forEach(function (t) { t.addEventListener("click", function () {
+      if (t.dataset.rtab === race.id) return;
+      if (rr.dirty && !confirm("You have unsaved changes on this race. Switch anyway?")) return;
+      state.nav = { view: "race", rid: t.dataset.rtab }; renderRaceResults(t.dataset.rtab); }); });
+    app.querySelectorAll("[data-pick]").forEach(function (sel) { sel.addEventListener("change", function () { if (sel.value) { rr.dirty = true; sel.closest("td").querySelector("[data-f=driver]").value = sel.value; sel.value = ""; refreshGrid(); } }); });
     app.querySelectorAll("tr[data-ri] input, tr[data-ri] select:not([data-pick]), #rdbl").forEach(function (el) {
-      el.addEventListener("input", refreshGrid);
-      el.addEventListener("change", function () { if (el.dataset.f === "status") { syncRows(); drawRace(); } else refreshGrid(); });
+      el.addEventListener("input", function () { rr.dirty = true; refreshGrid(); });
+      el.addEventListener("change", function () { rr.dirty = true; if (el.dataset.f === "status") { syncRows(); drawRace(); } else refreshGrid(); });
     });
     function move(i, d) { syncRows(); var rows = state.rr.rows, j = i + d; if (j < 0 || j >= rows.length) return; var t = rows[i]; rows[i] = rows[j]; rows[j] = t; drawRace(); }
     app.querySelectorAll("[data-up]").forEach(function (b) { b.addEventListener("click", function () { move(Number(b.dataset.up), -1); }); });
