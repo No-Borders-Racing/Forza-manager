@@ -461,6 +461,8 @@
 
     on("#sadd", addSeason);
     on("[data-sv]", function (b) { saveSeason(b.dataset.sv); });
+    on("[data-swap]", function (b) { swapRounds(b.dataset.swap); });
+    on("[data-bye]", function (b) { byeWeek(b.dataset.bye); });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
     on("[data-gp]", function (b) { previewRounds(b.dataset.gp); });
     on("[data-gc]", function (b) { createRounds(b.dataset.gc); });
@@ -510,6 +512,17 @@
       '<div class="field"><label for="ss-' + s.id + '">Starts</label><input id="ss-' + s.id + '" type="date" value="' + esc(s.starts_on || "") + '"></div>' +
       '<button data-sv="' + s.id + '" type="button">Save season</button><button class="danger" data-sd="' + s.id + '" type="button">Delete season</button></div><div class="msg" id="sm-' + s.id + '"></div>' +
       "<h3>Rounds (" + evs.length + ")</h3>";
+    if (evs.length) {
+      var ro = evs.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(roundLabel(e)) + "</option>"; }).join("");
+      h += '<div class="card" style="margin:0 0 8px;border-top-width:1px"><div class="row" style="align-items:flex-end"><div class="field"><label for="swa-' + s.id + '">Swap round</label><select id="swa-' + s.id + '">' + ro + '</select></div>' +
+        '<div class="field"><label for="swb-' + s.id + '">with round</label><select id="swb-' + s.id + '">' + evs.map(function (e, i) { return '<option value="' + esc(e.id) + '"' + (i === 1 ? " selected" : "") + ">" + esc(roundLabel(e)) + "</option>"; }).join("") + '</select></div>' +
+        '<button type="button" data-swap="' + s.id + '">Swap dates</button></div>' +
+        '<div class="row" style="align-items:flex-end;margin-top:8px"><div class="field"><label for="bye-' + s.id + '">Bye week after</label><select id="bye-' + s.id + '">' + ro + '</select></div>' +
+        '<div class="field"><label for="byn-' + s.id + '">Weeks</label><input id="byn-' + s.id + '" type="number" min="1" max="26" value="1" style="width:70px"></div>' +
+        '<button type="button" data-bye="' + s.id + '">Add bye week</button></div>' +
+        '<p class="muted" style="margin:8px 0 0">Swap trades the two rounds\' dates and positions in the season; their tracks and results stay with them. A bye week moves every later round on by that many weeks, at the same local time.</p>' +
+        '<div class="msg" id="rm2-' + s.id + '"></div></div>';
+    }
     evs.forEach(function (e) { h += eventHtml(e); });
     h += genHtml(s.id);
     h += '<details class="ev" style="margin-top:12px"><summary><span class="muted">Add a single round outside the schedule</span></summary><div style="margin-top:10px">' + eventFields("new-" + s.id, {}) +
@@ -893,6 +906,49 @@
     });
   }
   function shiftDate(d, n) { var t = Date.parse(d + "T00:00:00Z"); return new Date(t + n * 86400000).toISOString().slice(0, 10); }
+  function afterRoundMove(sid, msgText, err) {
+    openChamp(state.sel.champ.id);
+    setTimeout(function () { var mm = $("#rm2-" + sid); if (mm) msg(mm, msgText, err ? "err" : "ok"); }, 600);
+  }
+  function swapRounds(sid) {
+    var m = $("#rm2-" + sid), a = $("#swa-" + sid).value, b = $("#swb-" + sid).value;
+    if (!a || !b || a === b) { msg(m, "Pick two different rounds to swap.", "err"); return; }
+    var evs = state.sel.events, ea = evs.filter(function (e) { return e.id === a; })[0], eb = evs.filter(function (e) { return e.id === b; })[0];
+    if (!ea || !eb) return;
+    function take(from, to) {
+      var u = { starts_at: from.starts_at, lobby_opens_at: from.lobby_opens_at, timezone: from.timezone, round_number: from.round_number };
+      if (to.series_id && (to.starts_at !== from.starts_at)) u.is_override = true;
+      return u;
+    }
+    var ua = take(eb, ea), ub = take(ea, eb), la = roundLabel(ea), lb = roundLabel(eb);
+    Promise.all([sb.from("events").update(ua).eq("id", a), sb.from("events").update(ub).eq("id", b)]).then(function (rs) {
+      var e = rs.filter(function (x) { return x.error; })[0];
+      if (e) { msg(m, dbError(e.error), "err"); return; }
+      afterRoundMove(sid, "Swapped " + la + " and " + lb + ".", false);
+    });
+  }
+  function byeWeek(sid) {
+    var m = $("#rm2-" + sid), after = $("#bye-" + sid).value, n = Math.round(Number($("#byn-" + sid).value));
+    if (!(n >= 1 && n <= 26)) { msg(m, "Enter a whole number of weeks, 1 to 26.", "err"); return; }
+    var evs = state.sel.events.filter(function (e) { return e.season_id === sid; }).sort(function (x, y) { return String(x.starts_at || "~").localeCompare(String(y.starts_at || "~")); });
+    var at = evs.map(function (e) { return e.id; }).indexOf(after), later = evs.slice(at + 1).filter(function (e) { return e.starts_at && e.timezone; });
+    if (!later.length) { msg(m, "There are no dated rounds after that one to move.", "err"); return; }
+    var delta = n * 7, moves = [], bad = null;
+    later.forEach(function (e) {
+      var a = TZ.localText(Date.parse(e.starts_at), e.timezone), r = TZ.zonedToInstant(shiftDate(a.date, delta), a.time, e.timezone);
+      if (r.error) { bad = bad || roundLabel(e); return; }
+      var upd = { starts_at: r.instant };
+      if (e.lobby_opens_at) { var lb = TZ.localText(Date.parse(e.lobby_opens_at), e.timezone), lr = TZ.zonedToInstant(shiftDate(lb.date, delta), lb.time, e.timezone); if (lr.error) { bad = bad || roundLabel(e); return; } upd.lobby_opens_at = lr.instant; }
+      if (e.series_id) upd.is_override = true;
+      moves.push({ id: e.id, upd: upd });
+    });
+    if (bad) { msg(m, "Nothing was changed. " + bad + " would land on a time that does not exist or happens twice because the clocks change. Move that round by hand first.", "err"); return; }
+    Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); })).then(function (rs) {
+      var e = rs.filter(function (x) { return x.error; })[0];
+      if (e) { afterRoundMove(sid, "Some rounds could not be moved: " + dbError(e.error), true); return; }
+      afterRoundMove(sid, "Bye week added: " + moves.length + " round" + (moves.length === 1 ? "" : "s") + " moved " + n + " week" + (n === 1 ? "" : "s") + " later.", false);
+    });
+  }
   function saveSeason(id) {
     var m = $("#sm-" + id), name = $("#sn-" + id).value.trim();
     if (!name) { msg(m, "The name cannot be blank.", "err"); return; }
