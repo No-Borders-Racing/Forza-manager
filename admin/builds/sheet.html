@@ -79,6 +79,14 @@ button.btn.danger { color: var(--bad); border-color: var(--bad); }
 .addpart { display: flex; gap: 8px; padding: 6px 0 2px 14px; }
 .addpart input { max-width: 260px; }
 .part.c { grid-template-columns: minmax(110px, 1.1fr) 110px minmax(0, 1.2fr) 28px; }
+@media (max-width: 560px) {
+  .part, .part.c { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 6px 0; border-top: 1px solid var(--line); }
+  .part .n { grid-column: 1 / -1; }
+  .part.c { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+  .part.c .n { grid-column: 1 / -1; }
+  .part select, .part input { min-width: 0; width: 100%; box-sizing: border-box; }
+  details.grp .part { padding-left: 0; }
+}
 .seg { display: inline-flex; } .segb { border-radius: 0; } .segb:first-child { border-radius: 6px 0 0 6px; } .segb:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
 .segb[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 body { padding-block: 8px; }
@@ -253,6 +261,15 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     return t === 100 ? "" : "Front and rear should add up to 100 (this adds up to " + t + ").";
   }
   function partVal(p) { return [p.tier, detailOf(p)].filter(Boolean).join(" · ") || "—"; }
+  var PUB = new URLSearchParams(location.search).get("pub"), pubState = { on: false, url: "" };
+  if (PUB) document.documentElement.className += " pub";
+  // Publish state: the admin's Publish build button and the link shown under it.
+  function drawPub() {
+    document.querySelectorAll("[data-publish]").forEach(function (x) { x.textContent = pubState.on ? "Unpublish build" : "Publish build"; });
+    document.querySelectorAll("[data-pubbox]").forEach(function (x) {
+      x.innerHTML = pubState.on ? '<div class="row2" style="margin-top:8px;align-items:center"><span class="lbl">Public link</span><input type="text" readonly data-publink value="' + esc(pubState.url) + '" style="flex:1 1 260px" aria-label="Public link"><button class="btn" type="button" data-pubcopy>Copy link</button><a class="btn" href="' + esc(pubState.url) + '" target="_blank" rel="noopener">Open</a></div><div class="sub" data-pubmsg>Anyone with this link can see this build, read-only.</div>' : "";
+    });
+  }
   function badge(b) { return ((b.cls || "") + " " + (b.pi || "")).trim(); }
   function render(b, bi) {
     var c = document.createElement("section"); c.className = "card";
@@ -324,7 +341,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       '<div class="field"><label for="ds' + bi + '">Distribution</label><input type="text" id="ds' + bi + '" data-f="dist" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="xx/xx" value="' + esc(b.dist) + '"><div class="sub bad" data-distwarn>' + esc(distWarn(b.dist)) + '</div></div></div>' +
       '<h3>Parts</h3><div class="two"><div class="field"><label for="qb' + bi + '">Quick build</label><select id="qb' + bi + '" data-qb><option value="">Set every part to…</option>' + tierOpts("") + '</select></div></div>' +
       '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
-      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Draft. Racers cannot see it until it is complete.</span></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button><button class="btn" type="button" data-publish>Publish build</button><span class="sub">Draft.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     function viewHtml() {
       var byG = {}; b.parts.forEach(function (p) { (byG[p.group] = byG[p.group] || []).push(p); });
@@ -337,7 +354,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         '<div class="legend"><span><span class="sw"></span>Built</span><span><span class="sw d"></span>Stock</span></div>' +
         '<h3>Final specs</h3><p class="note" style="margin:0 0 6px">Entered by hand, not calculated. Update after any change to the build.</p><div class="specs">' + spec("Class", b.cls || "—") + spec("PI", b.pi || "—") + spec("Engine", b.engine || "—") + spec("Power", num(toDisp("hp", b.hp), " " + UN[unitSys].hp)) + spec("Torque", num(toDisp("tq", b.tq), " " + UN[unitSys].tq)) + spec("Weight", num(toDisp("lb", b.lb), " " + UN[unitSys].lb)) + spec("Ratio", ratioTxt(b) || "—") + spec("Distribution", distTxt(b.dist) || "—") + "</div>" +
         order.map(function (g) { if (g === "Wheels") return '<h3>Wheels</h3><div class="specs">' + (b.wheelState !== "Upgraded" ? spec("Wheels", "Stock") : spec("Wheels", "Upgraded") + spec("Wheel group", b.wheelGroup || "—") + spec("Wheel style", b.wheelStyle || "—") + (b.wheelNote ? spec("Wheel note", b.wheelNote) : "") + spec("Front rim size", b.rimF || "—") + spec("Rear rim size", b.rimR || "—")) + "</div>"; var st = groupState(g); return "<h3>" + esc(g) + (g === "Conversion" && convFirst ? ' <span class="tag done">Do this first</span>' : "") + '</h3>' + (g === "Conversion" && convFirst ? '<p class="sub" style="margin:0 0 6px">Fit these before any other upgrade. The game can reset parts to stock when a conversion is fitted.</p>' : "") + '<div class="specs">' + (st.uniform ? spec("All parts", st.tier || "—") : st.ps.map(function (p) { return spec(icon(p.custom ? "_custom" : p.name) + " " + esc(p.name), partVal(p)); }).join("")) + "</div>"; }).join("") +
-        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Admin only. Racers see this read-only version.</span></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><button class="btn" type="button" data-publish>Publish build</button><span class="sub">Completed.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     function addPart(g) {
       var inp = c.querySelector('[data-addname="' + g + '"]'), n = inp.value.trim();
@@ -355,7 +372,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
       var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
     }
-    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); }
+    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-publish],[data-pubbox],[data-delbar]").forEach(function (x) { x.remove(); }); else drawPub(); }
     c.addEventListener("input", function (e) {
       var t = e.target;
       if (t.dataset.g) {
@@ -404,6 +421,13 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         var ta2 = c.querySelector("[data-extext]"), mg = c.querySelector("[data-exmsg]"); ta2.select();
         var done = function (ok) { mg.textContent = ok ? "Copied." : "Press Ctrl+C to copy."; };
         try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta2.value).then(function () { done(true); }, function () { done(document.execCommand("copy")); }); else done(document.execCommand("copy")); } catch (err) { done(false); }
+        return;
+      }
+      if (e.target.closest("[data-publish]")) { send({ fcm: "publish", on: !pubState.on }); return; }
+      if (e.target.closest("[data-pubcopy]")) {
+        var pi = document.querySelector("[data-publink]"), pm = document.querySelector("[data-pubmsg]"); if (!pi) return; pi.select();
+        var pd = function (ok) { if (pm) pm.textContent = ok ? "Link copied." : "Press Ctrl+C to copy the selected link."; };
+        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pi.value).then(function () { pd(true); }, function () { pd(document.execCommand("copy")); }); else pd(document.execCommand("copy")); } catch (er) { pd(false); }
         return;
       }
       if (e.target.closest("[data-done]")) { b.done = true; draw(); }
@@ -459,7 +483,8 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     if (e.source !== parent) return;
     var m = e.data; if (!m || typeof m !== "object") return;
     if (m.fcm === "new" && m.car) { var b = carToBuild(m.car); show(b); bname.value = m.name || b.title; dirty = false; status("New build. Not saved yet.", "dirty"); }
-    else if (m.fcm === "load" && m.data) { show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
+    else if (m.fcm === "load" && m.data) { pubState = { on: !!m.published, url: m.url || "" }; show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
+    else if (m.fcm === "published") { pubState = { on: !!m.on, url: m.url || "" }; drawPub(); var pm2 = document.querySelector("[data-pubmsg]"); if (pm2 && m.on) pm2.textContent = "Published. Anyone with this link can see this build, read-only."; }
     else if (m.fcm === "saved") { dirty = false; if (m.name) bname.value = m.name; status("Saved.", "ok"); }
     else if (m.fcm === "error") { status(m.message || "Could not save.", "dirty"); }
   });
@@ -467,6 +492,21 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   function reportHeight() { var h = Math.ceil(document.documentElement.getBoundingClientRect().height); if (h !== lastH) { lastH = h; send({ fcm: "height", h: h }); } }
   if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(document.body);
   window.addEventListener("load", reportHeight);
-  send({ fcm: "ready" });
+  if (PUB) {
+    document.querySelector(".wrap > .card").style.display = "none";
+    var note = function (t) { host.innerHTML = '<div class="card"><p class="sub" style="margin:0">' + esc(t) + "</p></div>"; };
+    note("Loading…");
+    var ld = function (src, cb) { var x = document.createElement("script"); x.src = src; x.onload = cb; x.onerror = function () { note("This build could not be loaded."); }; document.head.appendChild(x); };
+    ld("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js", function () { ld("../js/config.js", function () {
+      var cfg = window.FCM_CONFIG, cl = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      cl.rpc("public_build", { bid: PUB }).then(function (r) {
+        if (r.error) { note("This build could not be loaded."); return; }
+        if (!r.data || !r.data.data) { note("This build is not published."); return; }
+        if (r.data.palette) document.documentElement.setAttribute("data-palette", r.data.palette);
+        document.title = r.data.name + " · " + r.data.league;
+        var b = r.data.data; b.done = true; show(b);
+      });
+    }); });
+  } else send({ fcm: "ready" });
 })();
 </script></body></html>

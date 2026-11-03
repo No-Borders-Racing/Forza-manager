@@ -1651,7 +1651,7 @@
   function openBuild(id) {
     sb.from("build_sheets").select("*").eq("id", id).single().then(function (r) {
       if (r.error) { msg($("#cmsg"), dbError(r.error), "err"); return; }
-      state.editor = { buildId: id, carId: r.data.car_id, data: r.data.data, name: r.data.name, dirty: false }; renderBuildEditor();
+      state.editor = { buildId: id, carId: r.data.car_id, data: r.data.data, name: r.data.name, published: !!r.data.published, dirty: false }; renderBuildEditor();
     });
   }
   /* Compare: any number of stock cars and saved builds, shown two across and as many rows as needed. */
@@ -1733,10 +1733,18 @@
     if (!fr || !E || e.source !== fr.contentWindow) return;
     var m = e.data; if (!m || typeof m !== "object") return;
     function post(x) { try { fr.contentWindow.postMessage(x, "*"); } catch (er) {} }
-    if (m.fcm === "ready") post(E.car ? { fcm: "new", car: E.car, name: E.name || "" } : { fcm: "load", data: E.data, name: E.name });
+    if (m.fcm === "ready") post(E.car ? { fcm: "new", car: E.car, name: E.name || "" } : { fcm: "load", data: E.data, name: E.name, published: !!E.published, url: E.buildId ? buildLink(E.buildId) : "" });
     else if (m.fcm === "height" && m.h) fr.style.height = Math.max(400, Math.min(m.h + 24, 20000)) + "px";
     else if (m.fcm === "dirty") E.dirty = true;
     else if (m.fcm === "save") saveBuild(m, post);
+    else if (m.fcm === "publish") {
+      if (!E.buildId) { post({ fcm: "error", message: "Save the build first, then publish it." }); return; }
+      var on = !!m.on;
+      sb.from("build_sheets").update({ published: on }).eq("id", E.buildId).then(function (r) {
+        if (r.error) { post({ fcm: "error", message: dbError(r.error) + (/published|schema cache/i.test(r.error.message || "") ? " (has migration 026 been run?)" : "") }); return; }
+        E.published = on; post({ fcm: "published", on: on, url: buildLink(E.buildId) });
+      });
+    }
     else if (m.fcm === "delete") {
       if (!E.buildId) { state.editor = null; renderCars(); return; }
       sb.from("build_sheets").delete().eq("id", E.buildId).then(function (r) {
@@ -1745,6 +1753,7 @@
       });
     }
   });
+  function buildLink(id) { return new URL("builds/sheet.html?pub=" + encodeURIComponent(id), location.href).href; }
   function saveBuild(m, post) {
     var E = state.editor, d = m.data || {}, name = String(m.name || "").trim();
     if (!name) { post({ fcm: "error", message: "Give the build a name first." }); return; }
