@@ -43,8 +43,9 @@
   }
   function adminBar(label, href, table, id, flag) {
     var bar = document.createElement("div"); bar.className = "bar";
-    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a><button type="button" id="up">Unpublish</button><span class="m" id="bm"></span>';
+    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (table === "leagues" ? "" : '<button type="button" id="up">Unpublish</button>') + '<span class="m" id="bm"></span>';
     document.querySelector("main").insertBefore(bar, document.querySelector("header"));
+    if (table === "leagues") return;
     bar.querySelector("#up").addEventListener("click", function () {
       var m = bar.querySelector("#bm"), patch = {}; patch[flag] = false; m.textContent = "Unpublishing…";
       sb.from(table).update(patch).eq("id", id).then(function (x) { if (x.error) { m.textContent = x.error.message; return; } location.reload(); });
