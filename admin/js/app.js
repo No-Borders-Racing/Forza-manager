@@ -275,8 +275,15 @@
         el.innerHTML = r.data.map(function (a) {
           var me = state.user && a.user_id === state.user.id;
           return '<div class="row" style="justify-content:space-between;align-items:center;margin:4px 0"><span>' + esc(a.email) + (me ? ' <span class="pill">you</span>' : "") + "</span>" +
-            (me ? "" : '<button type="button" class="danger" data-ladel="' + esc(a.user_id) + '">Remove</button>') + "</div>";
+            (me ? "" : '<span><button type="button" data-ladel="' + esc(a.user_id) + '">Remove from league</button>' + (state.owner ? ' <button type="button" class="danger" data-ladelog="' + esc(a.user_id) + '">Delete login</button>' : "") + "</span>") + "</div>";
         }).join("");
+        el.querySelectorAll("[data-ladelog]").forEach(function (b) { b.addEventListener("click", function () {
+          if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Click again to delete the whole login"; setTimeout(function () { b.dataset.armed = ""; b.textContent = "Delete login"; }, 6000); return; }
+          sb.rpc("delete_login", { uid: b.dataset.ladelog }).then(function (x) {
+            if (x.error) { msg($("#lam"), dbError(x.error) + (/does not exist|schema cache/i.test(x.error.message || "") ? " (has migration 024 been run?)" : ""), "err"); return; }
+            msg($("#lam"), "The login was deleted.", "ok"); loadAdmins();
+          });
+        }); });
         el.querySelectorAll("[data-ladel]").forEach(function (b) { b.addEventListener("click", function () {
           sb.rpc("remove_league_admin", { lid: state.league.id, uid: b.dataset.ladel }).then(function (x) { if (x.error) msg($("#lam"), dbError(x.error), "err"); else loadAdmins(); });
         }); });
