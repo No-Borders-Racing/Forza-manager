@@ -139,6 +139,7 @@
       state.leagues = r.data || [];
       var want = pick || (state.deep && state.deep.l) || lsGet("fcm.league"), cur = state.leagues.filter(function (l) { return l.id === want; })[0] || (state.leagues.length === 1 ? state.leagues[0] : null);
       if (!cur) { renderLeaguePicker(); return; }
+      if (state.league && state.league.id !== cur.id) state.lastChamp = null;
       state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
       var dp = state.deep; state.deep = null;
       if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
@@ -173,15 +174,25 @@
   // Top bar: Championships on the left, League settings hard right. Inside League settings a second row holds
   // General, Points systems, Drivers and Admins.
   function navHtml(active, sub) {
-    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button>' +
+    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button><button type="button" id="nav-r">Results</button>' +
       '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
     if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"]].map(function (t) {
       return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
     }).join("") + "</div>";
     return h;
   }
+  // Results from anywhere: the championship you were last in, or the newest one if you have not opened any.
+  function goResults() {
+    var id = state.lastChamp || (state.champs && state.champs[0] && state.champs[0].id);
+    if (id && state.league) { state.wantTab = "results"; state.nav = { view: "champ" }; openChamp(id, { view: "champ" }); return; }
+    sb.from("championships").select("id").eq("league_id", state.league.id).order("created_at", { ascending: false }).limit(1).then(function (r) {
+      var c = r.data && r.data[0];
+      if (!c) { loadChamps(); return; }
+      state.wantTab = "results"; state.nav = { view: "champ" }; openChamp(c.id, { view: "champ" });
+    });
+  }
   function bindNav() {
-    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
+    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-r": goResults, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
   // A plain name such as "tester1" becomes tester1@example.com. Supabase needs an email-shaped sign-in; this one never receives mail.
@@ -319,7 +330,7 @@
     app.innerHTML = navHtml("c") + '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><div class="row">' + ((state.leagues || []).length > 1 || state.owner ? '<button type="button" id="switchbtn">Switch league</button>' : "") + '</div></div></div>' +
       '<div class="card"><h2>Championships</h2><div class="list">' +
       (state.champs.length ? state.champs.map(function (c) {
-        return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span><span class="muted">' + esc(c.status) + (c.visibility ? " · " + esc(c.visibility) : " · visibility not set") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
+        return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
       }).join("") : '<p class="muted">None yet.</p>') + '</div><div id="ldelbox"></div></div>' +
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
       '<p class="muted">It starts as a draft. The time zone is filled in from the league settings, or from this browser if the league has none (you can change it on the championship page); every other setting is blank.</p></div>';
@@ -388,23 +399,16 @@
         raceP.then(function (rr) {
           var bad = [xs[4], xs[5], rr].filter(function (x) { return x.error; })[0];
           if (bad) { app.innerHTML = '<div class="card err">' + esc(dbError(bad.error)) + ' Has the latest database change (migrations/003_round_race_structure.sql) been run?</div>'; return; }
+          state.lastChamp = id;
           state.sel = { champ: rs[0].data, seasons: seasons, events: evList, series: xs[1].data || [], points: xs[2].data || [], library: xs[3].data || [], leaguePts: xs[6].data || [], templates: xs[4].data || [], races: rr.data || [] };
           state.tracks = xs[5].data || [];
           if (!prev) state.tab = "seasons";
+          if (state.wantTab) { state.tab = state.wantTab; state.wantTab = null; }
           state.nav = nav || prev || { view: "champ" };
           if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
           loadChampCarOpts(id, function (n) { if (!prev && !nav && n === 0) state.tab = "cars"; renderCurrent(); });
         });
       });
-    });
-  }
-  function refreshMissing() {
-    var c = state.sel.champ, el = $("#missing"); if (!el) return;
-    sb.rpc("championship_missing_items", { cid: c.id }).then(function (r) {
-      if (r.error) { el.innerHTML = '<span class="err">' + esc(dbError(r.error)) + "</span>"; return; }
-      var m = r.data || [];
-      el.innerHTML = m.length ? '<span class="err">Not ready to publish. Still missing:</span><ul class="missing">' + m.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : '<span class="ok">Nothing missing. This championship can be published.</span>';
-      if (c.status === "published" && m.length) el.innerHTML += '<p class="err">It is already published, so visitors can see these gaps.</p>';
     });
   }
 
@@ -419,13 +423,13 @@
       '<div class="row" style="margin-top:8px"><button class="primary" id="schsave" type="button">Save schedule</button><button type="button" data-cancel="reset">Cancel</button><span class="muted">Time zone: ' + esc(c.intended_timezone || champZone() || "not set") + '</span></div><div class="msg" id="schm"></div></div>';
   }
   function champHeadHtml(c, tab) {
-    var inSet = tab === "settings" || tab === "points";
-    var tabs = [["cars", "Cars"], ["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
+    var inSet = tab === "settings";
+    var tabs = [["cars", "Cars"], ["points", "Points"], ["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
     return navHtml("c") +
-      '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + ' <span class="pill">' + esc(c.status) + '</span></h2></div>' +
+      '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + '</h2></div>' +
       '<div class="row" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
       '<button type="button" data-tab="settings" style="margin-left:auto"' + (inSet ? ' class="primary"' : "") + ">Championship settings</button></div>" +
-      (inSet ? '<div class="row" style="margin-top:8px"><button type="button" data-tab="settings"' + (tab === "settings" ? ' class="primary"' : "") + '>General</button><button type="button" data-tab="points"' + (tab === "points" ? ' class="primary"' : "") + '>Points</button></div>' : "") + "</div>";
+      "</div>";
   }
   function renderChamp() {
     var S = state.sel, c = S.champ, tab = state.tab || "seasons";
@@ -440,14 +444,12 @@
       }
       var tzNote = c.intended_timezone ? '<b>' + esc(c.intended_timezone) + '</b> · ' + esc(gmt(c.intended_timezone)) + ' <span class="muted">(the league time zone when this championship was created; viewers see times in their own zone)</span>' :
         '<span class="err">Not set.</span> <button type="button" id="cusetz">Use the league time zone (' + esc(leagueZone() || "none found") + ")</button>";
-      h += '<div class="card"><div class="row"><div class="field"><label for="cv">Visibility</label><select id="cv">' + opts([["public", "Public"], ["private", "Private"]], c.visibility, "Not set") + "</select></div>" +
-        '<div class="field"><label for="cs">Status</label><select id="cs">' + opts([["draft", "Draft"], ["published", "Published"], ["archived", "Archived"]], c.status, "") .replace('<option value=""></option>', "") + "</select></div></div>" +
+      h += '<div class="card">' +
         '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
         '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
         '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
         '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
-        '<div id="renamebox"></div>' +
-        '<h3>Ready to publish?</h3><div id="missing" class="muted">Checking…</div></div>';
+        '<div id="renamebox"></div></div>';
       h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
         '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
     } else if (tab === "points") h += pointsCardHtml();
@@ -470,7 +472,6 @@
     }
     app.innerHTML = h;
     bindAll(); bindNav();
-    refreshMissing();
     if (tab === "cars") fillChampCars();
     if (tab === "results") fillCounts();
     if (tab === "standings") renderStandings();
@@ -522,6 +523,7 @@
     on("#cdel", deleteChamp);
     var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
     on("[data-rr]", function (b) { state.nav = { view: "race", rid: b.dataset.rr }; renderCurrent(); });
+    on("#tolp", function () { renderLeaguePoints(); });
     on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
     on("#padd", addPoints);
     var plib = $("#plib"); if (plib) plib.addEventListener("change", function () { showPointsPreview(plib.value, $("#pprev")); });
@@ -594,7 +596,7 @@
   }
   function saveChamp() {
     var c = state.sel.champ, m = $("#cm");
-    var patch = { name: $("#cn") ? $("#cn").value.trim() : c.name, visibility: nul($("#cv").value), description: nul($("#cd").value), status: $("#cs").value };
+    var patch = { name: $("#cn") ? $("#cn").value.trim() : c.name, description: nul($("#cd").value) };
     var rl = $("#cr"); if (rl && (nul(rl.value) !== null || c.rules != null)) patch.rules = nul(rl.value);
     if (!patch.name) { msg(m, "The name cannot be blank.", "err"); return; }
     msg(m, "Saving…");
@@ -673,13 +675,14 @@
     var S = state.sel;
     return '<div class="card"><h2>Default points system</h2><p class="muted" style="margin:0 0 8px">Every race uses this one unless you pick another for that race on its weekend, for example one system for Sprint and another for Main.</p>' +
       (S.points.length ? '<div class="field"><label for="cpts">Points system</label><select id="cpts">' + opts(S.points.map(function (x) { return [x.id, x.name]; }), state.sel.champ.points_system_id, "Not set") + '</select></div>' : '<p class="muted" style="margin:0">None to choose from yet. Add a points system below, then pick it here.</p>') + '<div class="msg" id="cptsm"></div></div>' +
-      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Open one to edit it, or add another below.</p><div class="list">' +
+      '<div class="card"><h2>Points systems</h2><p class="muted" style="margin:0 0 8px">The systems this championship has. Open one to edit it, or add another below. Systems saved for the whole league are managed under <button type="button" id="tolp" style="padding:2px 8px">League points systems</button>.</p><div class="list">' +
       (S.points.length ? S.points.map(function (x) { return '<button type="button" class="item" data-pp="' + esc(x.id) + '"><span>' + esc(x.name) + '</span><span class="muted">' + (updAvail(x) ? '<span class="pill">league version changed</span>' : "") + "</span></button>"; }).join("") : '<p class="muted">None yet.</p>') + "</div>" +
       '<div class="row" style="margin-top:10px"><div class="field grow"><label for="plib">Add from</label><select id="plib">' + fromOpts(S.leaguePts, S.library) + "</select></div>" +
       '<button class="primary" id="padd" type="button">Add points system</button></div><div id="pprev" class="muted" style="margin-top:8px"></div><div class="msg" id="pm"></div></div>';
   }
   /* ---------- race format template ---------- */
-  function pointsOpts(cur) { return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), cur, "Same as the championship"); }
+  // Each race shows an actual system. One that was never picked shows the championship's default, so nothing says "same as".
+  function pointsOpts(cur) { var pre = cur || (state.sel.champ && state.sel.champ.points_system_id) || ""; return opts(state.sel.points.map(function (x) { return [x.id, x.name]; }), pre, state.sel.points.length ? "Select a points system" : "No points systems yet"); }
   function templateRow(t) {
     return '<div class="row trow" style="margin-top:6px"><div class="field grow"><label>Race name</label><input data-tn value="' + esc(t.name || "") + '" placeholder="For example Sprint"></div>' +
       '<div class="field"><label>Laps</label><input data-tl type="number" min="1" style="width:90px" value="' + esc(t.laps == null ? "" : t.laps) + '"></div>' +
