@@ -198,7 +198,11 @@
     var b = $("#tlgo"); b.disabled = true; msg(m, "Creating…");
     var c2 = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     c2.auth.signUp({ email: email, password: pw, options: { data: { must_change_password: $("#tlchg").checked } } }).then(function (r) {
-      if (r.error) { b.disabled = false; msg(m, /not allowed|disabled/i.test(r.error.message || "") ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up." : r.error.message, "err"); return; }
+      if (r.error) { b.disabled = false; var em = r.error.message || "", why = /not allowed|disabled/i.test(em) ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up."
+        : /rate limit/i.test(em) ? "Supabase has hit its email limit because Confirm email is switched on, so it tried to send a confirmation message. Turn Confirm email off under Authentication > Sign In / Providers > Email, then wait up to an hour and try again."
+        : /invalid/i.test(em) ? em + ". Supabase only accepts addresses on a domain that can receive mail, so the made-up domain was refused."
+        : em;
+      msg(m, why, "err"); return; }
       var u = r.data && r.data.user, existed = u && u.identities && u.identities.length === 0, needsConfirm = !(r.data && r.data.session);
       var own = (document.querySelector("input[name=tlw]:checked") || {}).value === "own", base = email.replace(/@example\.com$/, "").replace(/@.*$/, "");
       (own ? sb.rpc("create_league_for", { league_name: base + " league", league_slug: null, admin_email: email })
