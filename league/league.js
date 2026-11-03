@@ -127,14 +127,33 @@
     }
     draw();
   }
+  function safeUrl(u) { u = String(u || "").trim(); return /^https?:\/\/\S+$/i.test(u) ? u : ""; }
+  // Plain text with line breaks; web addresses become links.
+  function richText(t) { return esc(t).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }); }
+  var SOC = [["website", "Website"], ["discord", "Discord"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
   function showLeague(l) {
     if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), "leagues", l.league_id, "page_published");
     if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
     head([l.league]);
+    document.getElementById("sub").textContent = l.tagline || "";
+    var h = "", ban = safeUrl(l.banner_url);
+    if (ban) h += '<img src="' + esc(ban) + '" alt="" style="display:block;width:100%;max-height:200px;object-fit:cover;border-radius:6px;margin:0 0 12px" onerror="this.remove()">';
+    var L = l.links || {}, soc = SOC.filter(function (o) { return safeUrl(L[o[0]]); });
+    if (soc.length) h += '<div class="tabs">' + soc.map(function (o) { return '<a class="btn soc" href="' + esc(safeUrl(L[o[0]])) + '" target="_blank" rel="noopener noreferrer">' + o[1] + "</a>"; }).join("") + "</div>";
+    if (l.about) h += '<p class="desc" style="color:var(--ink)">' + richText(l.about) + "</p>";
+    if (l.join_text) h += '<div class="notes" style="margin:0 0 12px"><b>How to join</b><br>' + richText(l.join_text) + "</div>";
+    var n = l.next;
+    if (n && n.starts_at) {
+      var d = new Date(n.starts_at);
+      h += '<h2 class="sn">Next race</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
+        (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") +
+        '<div class="sub"><a href="?c=' + encodeURIComponent(n.championship_id) + '&t=calendar" style="color:var(--link)">See the calendar →</a></div></div>';
+    }
     var cs = l.championships || [];
-    out.innerHTML = cs.length ? '<div class="cards">' + cs.map(function (c) {
+    h += '<h2 class="sn">Championships</h2>' + (cs.length ? '<div class="cards">' + cs.map(function (c) {
       return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + "</b>" + (c.description ? "<span>" + esc(String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
-    }).join("") + "</div>" : '<p class="msg">No championships have been published yet.</p>';
+    }).join("") + "</div>" : '<p class="msg">No championships have been published yet.</p>');
+    out.innerHTML = h;
   }
 
   if (cid) sb.rpc("public_championship", { cid: cid }).then(function (r) {

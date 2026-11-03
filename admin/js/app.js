@@ -353,7 +353,7 @@
       '<div class="field" style="margin-top:8px"><label for="lpal">Colour palette</label><select id="lpal">' + PALETTES.map(function (o) { return '<option value="' + o[0] + '"' + ((lg.palette || "") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' +
-      (gen ? pagePublishHtml("l", lg) : "") +
+      (gen ? profileCardHtml(lg) : "") + (gen ? pagePublishHtml("l", lg) : "") +
       (state.owner ? '<div class="card"><h3 style="margin-top:0">Delete this league</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the league with all of its championships, seasons, rounds, races, results, drivers, points systems and builds. Logins are not deleted. It cannot be undone. Type the league name to confirm.</p>' +
         '<div class="row"><div class="field grow"><label for="ldn">League name</label><input id="ldn" autocomplete="off"></div><button class="danger" id="ldel" type="button" disabled>Delete league</button></div><div class="msg" id="ldm"></div></div>' : "") :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
@@ -382,6 +382,7 @@
       });
     }
     if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
+    if (gen && $("#lpsave")) $("#lpsave").addEventListener("click", saveProfile);
     if (gen) $("#lsave").addEventListener("click", function () {
       var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value), palette: nul($("#lpal").value) };
       if (!row.name) { msg($("#lm"), "A league needs a name.", "err"); return; }
@@ -721,6 +722,32 @@
     });
   }
 
+  /* ---------- league profile (shown on the public league page) ---------- */
+  var SOCIALS = [["website", "Website"], ["discord", "Discord invite"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
+  function profileCardHtml(lg) {
+    var L = lg.links || {};
+    return '<div class="card"><h2>League profile</h2><p class="muted" style="margin:0 0 8px">Shown on the public league page. Everything here is optional; blank items are left out.</p>' +
+      '<div class="field"><label for="lptag">Tagline</label><input id="lptag" maxlength="120" placeholder="Eg Sunday night GT racing, all skill levels" value="' + esc(lg.tagline || "") + '"></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lpabout">About the league</label><textarea id="lpabout" rows="4" maxlength="2000">' + esc(lg.about || "") + '</textarea></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lpjoin">How to join</label><textarea id="lpjoin" rows="3" maxlength="1000" placeholder="Eg Join our Discord, then add the gamertag NBR Admin">' + esc(lg.join_text || "") + '</textarea></div>' +
+      '<div class="field" style="margin-top:8px"><label for="lpban">Banner image link</label><input id="lpban" type="url" autocapitalize="none" placeholder="https://… (a wide image, shown at the top of the page)" value="' + esc(lg.banner_url || "") + '"></div>' +
+      '<div class="two" style="margin-top:8px">' + SOCIALS.map(function (o) { return '<div class="field"><label for="lps-' + o[0] + '">' + o[1] + '</label><input id="lps-' + o[0] + '" type="url" autocapitalize="none" placeholder="https://…" value="' + esc(L[o[0]] || "") + '"></div>'; }).join("") + "</div>" +
+      '<div class="row" style="margin-top:8px"><button class="primary" id="lpsave" type="button">Save profile</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lpm"></div></div>';
+  }
+  function saveProfile() {
+    var m = $("#lpm"), links = {}, bad = null, url = function (v) { v = String(v || "").trim(); return v && !/^https?:\/\/\S+$/i.test(v) ? null : v; };
+    SOCIALS.forEach(function (o) { var v = url($("#lps-" + o[0]).value); if (v === null) bad = o[1]; else if (v) links[o[0]] = v; });
+    var ban = url($("#lpban").value); if (ban === null) bad = "Banner image link";
+    if (bad) { msg(m, bad + " must be a full link starting with https://", "err"); return; }
+    var row = { tagline: nul($("#lptag").value), about: nul($("#lpabout").value), join_text: nul($("#lpjoin").value), banner_url: ban || null, links: links };
+    sb.from("leagues").update(row).eq("id", state.league.id).then(function (r) {
+      if (r.error) { msg(m, dbError(r.error) + (/schema cache|column/i.test(r.error.message || "") ? " (has migration 028 been run?)" : ""), "err"); return; }
+      state.league = Object.assign({}, state.league, row);
+      state.leagues = state.leagues.map(function (l) { return l.id === state.league.id ? state.league : l; });
+      msg(m, "Saved. The public league page shows this now.", "ok");
+    });
+  }
+
   /* ---------- public championship and league pages ---------- */
   function pageLink(kind, id) { return new URL("../league/?" + kind + "=" + encodeURIComponent(id), location.href).href; }
   // kind "c" = a championship page (builds, calendar, results, standings); "l" = the league page listing its published championships.
@@ -730,10 +757,10 @@
     if (on) {
       h += '<div class="row" style="align-items:center"><span class="pill">Page is public</span><input readonly id="pgl-' + kind + '" value="' + esc(link) + '" style="flex:1 1 260px" aria-label="Public page link">' +
         '<button type="button" data-pgcopy="' + kind + '">Copy link</button><a href="' + esc(link) + '" target="_blank" rel="noopener"><button type="button">Open</button></a><button type="button" data-pgoff="' + kind + '">Unpublish</button></div>' +
-        '<p class="muted" style="margin:6px 0 0">' + (kind === "c" ? "Anyone with the link sees this championship\'s calendars, results and standings, and the car builds you have published that belong to its cars. It updates as you edit." : "Anyone with the link sees a list of this league\'s published championships.") + "</p>";
+        '<p class="muted" style="margin:6px 0 0">' + (kind === "c" ? "Anyone with the link sees this championship\'s calendars, results and standings, and the car builds you have published that belong to its cars. It updates as you edit." : "On by default. Anyone with the link sees the league profile and the championships you have published. Unpublish it to hide the page.") + "</p>";
     } else {
       h += '<div class="row" style="align-items:center"><button class="primary" type="button" data-pgpub="' + kind + '">Publish ' + what + '</button><span class="muted">' +
-        (kind === "c" ? "Makes the calendars, results and standings public, plus any published builds for its cars. Driver gamertags are not shown." : "Makes a public list of this league\'s published championships.") + "</span></div>";
+        (kind === "c" ? "Makes the calendars, results and standings public, plus any published builds for its cars. Driver gamertags are not shown." : "The league page is switched off. Publish it to share your league profile and championships.") + "</span></div>";
     }
     return h + '<div class="msg" id="pgm-' + kind + '"></div></div>';
   }
