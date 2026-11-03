@@ -116,7 +116,7 @@
       var s = r.data && r.data.session;
       if (!s) { showLogin(); return; }
       state.user = s.user;
-      $("#who").innerHTML = esc(s.user.email) + ' · <button id="out" type="button">Sign out</button>';
+      $("#who").innerHTML = '<span class="wem" title="' + esc(s.user.email) + '">' + esc(s.user.email) + '</span><button id="out" type="button">Sign out</button>';
       $("#out").addEventListener("click", function () { sb.auth.signOut().then(function () { state.admin = false; showLogin(); }); });
       if (s.user.user_metadata && s.user.user_metadata.must_change_password) { showChangePassword(); return; }
       sb.rpc("is_admin").then(function (a) {
