@@ -253,6 +253,7 @@
       '<div class="field" style="margin-top:8px"><label for="lpal">Colour palette</label><select id="lpal">' + PALETTES.map(function (o) { return '<option value="' + o[0] + '"' + ((lg.palette || "") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' +
+      (gen ? pagePublishHtml("l", lg) : "") +
       (state.owner ? '<div class="card"><h3 style="margin-top:0">Delete this league</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the league with all of its championships, seasons, rounds, races, results, drivers, points systems and builds. Logins are not deleted. It cannot be undone. Type the league name to confirm.</p>' +
         '<div class="row"><div class="field grow"><label for="ldn">League name</label><input id="ldn" autocomplete="off"></div><button class="danger" id="ldel" type="button" disabled>Delete league</button></div><div class="msg" id="ldm"></div></div>' : "") :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
@@ -450,6 +451,7 @@
         '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
         '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
         '<div id="renamebox"></div></div>';
+      h += pagePublishHtml("c", c);
       h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
         '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
     } else if (tab === "points") h += pointsCardHtml();
@@ -617,6 +619,43 @@
       state.sel.champ = r.data; renderChamp(); msg($("#schm"), "Saved.", "ok");
     });
   }
+
+  /* ---------- public championship and league pages ---------- */
+  function pageLink(kind, id) { return new URL("../league/?" + kind + "=" + encodeURIComponent(id), location.href).href; }
+  // kind "c" = a championship page (builds, calendar, results, standings); "l" = the league page listing its published championships.
+  function pagePublishHtml(kind, row) {
+    var what = kind === "c" ? "championship page" : "league page", on = !!row.page_published, link = pageLink(kind, row.id);
+    var h = '<div class="card"><h3 style="margin-top:0">Public ' + what + '</h3>';
+    if (on) {
+      h += '<div class="row" style="align-items:center"><span class="pill">Page is public</span><input readonly id="pgl-' + kind + '" value="' + esc(link) + '" style="flex:1 1 260px" aria-label="Public page link">' +
+        '<button type="button" data-pgcopy="' + kind + '">Copy link</button><a href="' + esc(link) + '" target="_blank" rel="noopener"><button type="button">Open</button></a><button type="button" data-pgoff="' + kind + '">Unpublish</button></div>' +
+        '<p class="muted" style="margin:6px 0 0">' + (kind === "c" ? "Anyone with the link sees this championship\'s calendars, results and standings, and the car builds you have published that belong to its cars. It updates as you edit." : "Anyone with the link sees a list of this league\'s published championships.") + "</p>";
+    } else {
+      h += '<div class="row" style="align-items:center"><button class="primary" type="button" data-pgpub="' + kind + '">Publish ' + what + '</button><span class="muted">' +
+        (kind === "c" ? "Makes the calendars, results and standings public, plus any published builds for its cars. Driver gamertags are not shown." : "Makes a public list of this league\'s published championships.") + "</span></div>";
+    }
+    return h + '<div class="msg" id="pgm-' + kind + '"></div></div>';
+  }
+  function setPagePublished(kind, on) {
+    var row = kind === "c" ? state.sel.champ : state.league, m = $("#pgm-" + kind);
+    sb.from(kind === "c" ? "championships" : "leagues").update({ page_published: on }).eq("id", row.id).then(function (r) {
+      if (r.error) { msg(m, dbError(r.error) + (/page_published|schema cache/i.test(r.error.message || "") ? " (has migration 027 been run?)" : ""), "err"); return; }
+      row.page_published = on;
+      if (kind === "c") renderChamp(); else renderLeague();
+      setTimeout(function () { var mm = $("#pgm-" + kind); if (mm) msg(mm, on ? "The page is public. Copy the link above to share it." : "The page is no longer public.", "ok"); }, 50);
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-pgpub],[data-pgoff],[data-pgcopy]"); if (!b) return;
+    if (b.dataset.pgpub) setPagePublished(b.dataset.pgpub, true);
+    else if (b.dataset.pgoff) setPagePublished(b.dataset.pgoff, false);
+    else {
+      var k = b.dataset.pgcopy, inp = $("#pgl-" + k), m = $("#pgm-" + k);
+      var done = function () { msg(m, "Link copied.", "ok"); }; inp.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
+      else { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
+    }
+  });
 
   /* ---------- seasons ---------- */
   function calendarLink(sid) { return new URL("../calendar/?s=" + encodeURIComponent(sid), location.href).href; }
