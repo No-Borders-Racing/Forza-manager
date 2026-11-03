@@ -38,6 +38,31 @@ h3 { font: 600 13px var(--display); text-transform: uppercase; letter-spacing: .
 .card { background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--accent); border-radius: 10px; padding: 14px; min-width: 0; }
 .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
 .sub { color: var(--muted); font-size: 13px; }
+/* Completed / published parts view */
+.overall { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; margin: 2px 0 10px; }
+.overall b { font: 700 28px/1 var(--display); color: var(--accent); }
+.pbar.big { flex: 1 1 140px; display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.pbar.big i.fill { display: block; height: 100%; background: var(--accent); }
+.cats { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.cat { background: var(--bg); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 12px; }
+.cat.first { border-color: var(--accent); }
+.cat.none { border-left-color: var(--line); opacity: .65; }
+.cathead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cathead h3 { margin: 0; font: 700 20px/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.catn { margin-left: auto; font-size: 12px; color: var(--muted); }
+.cat:not(.none) .catn { color: var(--accent); font-weight: 600; }
+.pbar { display: flex; gap: 3px; margin: 8px 0; }
+.pbar:not(.big) i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.pbar:not(.big) i.on { background: var(--accent); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+.tile { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 8px; align-items: center; border-radius: 6px; padding: 6px 8px; border: 1px solid var(--line); }
+.tile .ic { grid-row: 1 / 3; }
+.tile .tn { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.tile .tv { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.tile.up { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.tile.up .ic { color: var(--accent); }
+.tile.st { opacity: .5; }
+.tile:not(:has(.ic)) { grid-template-columns: minmax(0, 1fr); }
 .cls { font: 700 26px/1 var(--display); border: 2px solid var(--ink); border-radius: 4px; padding: 4px 10px; white-space: nowrap; }
 .field { display: grid; gap: 3px; min-width: 0; }
 label, .lbl { font-size: 12px; color: var(--muted); }
@@ -343,6 +368,35 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
       '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button><button class="btn" type="button" data-publish>Publish build</button><span class="sub">Draft.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
+    // Published/completed view of the parts: one card per category, a bar with a segment per part
+    // (filled = upgraded), upgraded parts as bright tiles, stock parts dimmed.
+    function partsView(order, convFirst) {
+      var cards = order.map(function (g) {
+        var tiles = [], total, up;
+        if (g === "Wheels") {
+          var wu = b.wheelState === "Upgraded";
+          if (wu) { [["Wheel group", b.wheelGroup], ["Wheel style", b.wheelStyle], ["Wheel note", b.wheelNote], ["Front rim size", b.rimF], ["Rear rim size", b.rimR]].forEach(function (r) { var v = String(r[1] || "").trim(); if (v && v.toLowerCase() !== "stock") tiles.push({ n: r[0], v: v, up: true }); }); }
+          total = wu ? Math.max(tiles.length, 1) : 1; up = wu ? Math.max(tiles.length, 1) : 0;
+          if (wu && !tiles.length) tiles.push({ n: "Wheels", v: "Upgraded", up: true });
+        } else {
+          var ps = b.parts.filter(function (p) { return p.group === g; });
+          total = ps.length;
+          ps.forEach(function (p) { var u = builtPart(p); if (u) up++; tiles.push({ n: p.name, v: partVal(p), up: u, icon: icon(p.custom ? "_custom" : p.name) }); });
+          up = tiles.filter(function (t) { return t.up; }).length;
+          tiles.sort(function (a, z) { return (z.up ? 1 : 0) - (a.up ? 1 : 0); });
+        }
+        var conv = g === "Conversion" && convFirst;
+        var segs = ""; for (var n = 0; n < total; n++) segs += '<i' + (n < up ? ' class="on"' : "") + "></i>";
+        var head = '<div class="cathead"><h3>' + esc(g) + "</h3>" + (conv ? '<span class="tag done">Do this first</span>' : "") + '<span class="catn">' + (up ? up + " of " + total + " upgraded" : "All stock") + "</span></div>" +
+          '<div class="pbar" aria-hidden="true">' + segs + "</div>";
+        if (!up) return '<section class="cat none">' + head + "</section>";
+        return '<section class="cat' + (conv ? " first" : "") + '">' + head + (conv ? '<p class="sub" style="margin:0 0 6px">Fit these before any other upgrade. The game can reset parts to stock when a conversion is fitted.</p>' : "") +
+          '<div class="tiles">' + tiles.map(function (t) { return '<div class="tile ' + (t.up ? "up" : "st") + '">' + (t.icon || "") + '<span class="tn">' + esc(t.n) + '</span><span class="tv">' + esc(t.up ? t.v : "Stock") + "</span></div>"; }).join("") + "</div></section>";
+      });
+      var allUp = 0, allN = 0;
+      order.forEach(function (g) { if (g === "Wheels") { allN++; if (b.wheelState === "Upgraded") allUp++; } else b.parts.forEach(function (p) { if (p.group === g) { allN++; if (builtPart(p)) allUp++; } }); });
+      return '<h3>Parts</h3><div class="overall"><b>' + allUp + '</b> of ' + allN + ' parts upgraded<span class="pbar big" aria-hidden="true"><i class="fill" style="width:' + (allN ? Math.round(100 * allUp / allN) : 0) + '%"></i></span></div><div class="cats">' + cards.join("") + "</div>";
+    }
     function viewHtml() {
       var byG = {}; b.parts.forEach(function (p) { (byG[p.group] = byG[p.group] || []).push(p); });
       var order = groups.filter(function (g) { return g === "Wheels" || byG[g]; });
@@ -353,7 +407,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         '<h3>Performance graph</h3><div class="graph"><div>' + radar(b) + '</div><div>' + AXES.map(function (a) { return spec(a[0], b.built[a[1]]); }).join("") + '</div></div>' +
         '<div class="legend"><span><span class="sw"></span>Built</span><span><span class="sw d"></span>Stock</span></div>' +
         '<h3>Final specs</h3><p class="note" style="margin:0 0 6px">Entered by hand, not calculated. Update after any change to the build.</p><div class="specs">' + spec("Class", b.cls || "—") + spec("PI", b.pi || "—") + spec("Engine", b.engine || "—") + spec("Power", num(toDisp("hp", b.hp), " " + UN[unitSys].hp)) + spec("Torque", num(toDisp("tq", b.tq), " " + UN[unitSys].tq)) + spec("Weight", num(toDisp("lb", b.lb), " " + UN[unitSys].lb)) + spec("Ratio", ratioTxt(b) || "—") + spec("Distribution", distTxt(b.dist) || "—") + "</div>" +
-        order.map(function (g) { if (g === "Wheels") return '<h3>Wheels</h3><div class="specs">' + (b.wheelState !== "Upgraded" ? spec("Wheels", "Stock") : spec("Wheels", "Upgraded") + spec("Wheel group", b.wheelGroup || "—") + spec("Wheel style", b.wheelStyle || "—") + (b.wheelNote ? spec("Wheel note", b.wheelNote) : "") + spec("Front rim size", b.rimF || "—") + spec("Rear rim size", b.rimR || "—")) + "</div>"; var st = groupState(g); return "<h3>" + esc(g) + (g === "Conversion" && convFirst ? ' <span class="tag done">Do this first</span>' : "") + '</h3>' + (g === "Conversion" && convFirst ? '<p class="sub" style="margin:0 0 6px">Fit these before any other upgrade. The game can reset parts to stock when a conversion is fitted.</p>' : "") + '<div class="specs">' + (st.uniform ? spec("All parts", st.tier || "—") : st.ps.map(function (p) { return spec(icon(p.custom ? "_custom" : p.name) + " " + esc(p.name), partVal(p)); }).join("")) + "</div>"; }).join("") +
+        partsView(order, convFirst) +
         '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><button class="btn" type="button" data-publish>Publish build</button><span class="sub">Completed.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     function addPart(g) {
