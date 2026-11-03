@@ -143,7 +143,7 @@
       state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
       var dp = state.deep; state.deep = null;
       if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
-      loadChamps();
+      startView();
     });
   }
   function renderLeaguePicker() {
@@ -171,10 +171,110 @@
       renderChampList();
     });
   }
-  // Top bar: Championships on the left, League settings hard right. Inside League settings a second row holds
+  /* ---------- home: what needs doing, at a glance ---------- */
+  // A per-login choice kept on the login itself (user metadata), so it follows the admin to any device. On unless switched off.
+  function homeFirst() { var m = state.user && state.user.user_metadata; return !(m && m.home_first === false); }
+  function startView() { if (homeFirst()) renderHome(); else loadChamps(); }
+  function whenText(iso) {
+    try { return new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso)); } catch (e) { return String(iso); }
+  }
+  function copyBtnHtml(url) { return '<button type="button" data-copy="' + esc(url) + '">Copy link</button><a href="' + esc(url) + '" target="_blank" rel="noopener"><button type="button">Open</button></a>'; }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-copy]"); if (!b) return;
+    var u = b.dataset.copy, done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy link"; }, 1800); };
+    var fallback = function () { var t = document.createElement("textarea"); t.value = u; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (x) { b.textContent = "Press Ctrl+C"; } t.remove(); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(done, fallback); else fallback();
+  });
+  function renderHome() {
+    var lg = state.league; state.sel = null; state.nav = { view: "champ" };
+    app.innerHTML = navHtml("h") + '<div class="card"><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League") + '</h2><div id="hm" class="muted" style="margin-top:8px">Loading…</div></div>';
+    bindNav();
+    var lid = lg.id, now = Date.now();
+    sb.from("championships").select("*").eq("league_id", lid).order("created_at", { ascending: false }).then(function (cr) {
+      if (cr.error) { $("#hm").innerHTML = '<span class="err">' + esc(dbError(cr.error)) + "</span>"; return; }
+      var champs = cr.data || [], cids = champs.map(function (c) { return c.id; });
+      var sP = cids.length ? sb.from("seasons").select("*").in("championship_id", cids) : Promise.resolve({ data: [] });
+      sP.then(function (sr) {
+        var seasons = sr.data || [], sids = seasons.map(function (x) { return x.id; });
+        var eP = sids.length ? sb.from("events").select("id,season_id,name,round_number,starts_at,lobby_opens_at,status,track_layout_id").in("season_id", sids) : Promise.resolve({ data: [] });
+        eP.then(function (er) {
+          var evs = (er.data || []).filter(function (e) { return e.status !== "cancelled" && e.starts_at; });
+          var seasonOf = {}; seasons.forEach(function (x) { seasonOf[x.id] = x; });
+          var champOf = {}; champs.forEach(function (c) { champOf[c.id] = c; });
+          var up = evs.filter(function (e) { return new Date(e.starts_at).getTime() >= now; }).sort(function (a, b) { return a.starts_at < b.starts_at ? -1 : 1; });
+          var past = evs.filter(function (e) { return new Date(e.starts_at).getTime() < now; }).sort(function (a, b) { return a.starts_at < b.starts_at ? 1 : -1; }).slice(0, 12);
+          var next = up[0] || null;
+          var rP = past.length ? sb.from("races").select("id,event_id,name,sort_order").in("event_id", past.map(function (e) { return e.id; })) : Promise.resolve({ data: [] });
+          rP.then(function (rr) {
+            var races = (rr.data || []).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+            var xP = races.length ? sb.from("results").select("race_id").in("race_id", races.map(function (r) { return r.id; })) : Promise.resolve({ data: [] });
+            xP.then(function (xr) {
+              var scored = {}; (xr.data || []).forEach(function (x) { scored[x.race_id] = true; });
+              // The oldest recent round that still has a race without results is the next one to enter.
+              var todo = null;
+              past.slice().reverse().some(function (e) { var r = races.filter(function (q) { return q.event_id === e.id && !scored[q.id]; })[0]; if (r) { todo = { ev: e, race: r }; return true; } return false; });
+              var ids = []; [next, todo && todo.ev].forEach(function (e) { if (e && e.track_layout_id && ids.indexOf(e.track_layout_id) < 0) ids.push(e.track_layout_id); });
+              var tP = ids.length ? sb.from("track_layouts").select("id,name,track_venues(name)").in("id", ids) : Promise.resolve({ data: [] });
+              tP.then(function (tr) {
+                var tn = {}; (tr.data || []).forEach(function (t) { tn[t.id] = (t.track_venues && t.track_venues.name ? t.track_venues.name + " · " : "") + t.name; });
+                drawHome({ champs: champs, seasons: seasons, seasonOf: seasonOf, champOf: champOf, next: next, todo: todo, tn: tn });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+  function drawHome(d) {
+    var lg = state.league, box = $("#hm"); if (!box) return;
+    function label(e) { var s = d.seasonOf[e.season_id], c = s && d.champOf[s.championship_id]; return [e.round_number ? "Round " + e.round_number : (e.name || "Round"), d.tn[e.track_layout_id]].filter(Boolean).join(" · ") + (c ? " — " + c.name + (s ? " · " + s.name : "") : ""); }
+    var h = '<div class="row" style="margin:0 0 4px;align-items:stretch">';
+    h += d.todo ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
+    h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button></div>';
+    if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
+    h += '<h3 style="margin:16px 0 6px">Next race</h3>';
+    if (d.next) {
+      var s = d.seasonOf[d.next.season_id];
+      h += '<div class="card" style="margin:0"><div style="font-size:18px;font-weight:700">' + esc(whenText(d.next.starts_at)) + '</div><div>' + esc(label(d.next)) + "</div>" +
+        (d.next.lobby_opens_at ? '<div class="muted">Lobby opens ' + esc(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(d.next.lobby_opens_at))) + "</div>" : "") +
+        '<div class="row" style="margin-top:8px"><button type="button" id="hopen">Open this round</button></div></div>';
+    } else h += '<p class="muted" style="margin:0">' + (d.champs.length ? "No upcoming rounds are scheduled." : "No championships yet.") + "</p>";
+    // What is public right now.
+    var rows = [], pub = function (on, url, name, go, id) {
+      return '<div class="row" style="align-items:center;margin:4px 0"><span style="flex:1 1 180px">' + esc(name) + "</span>" + (on ? '<span class="pill">Public</span>' + copyBtnHtml(url) : '<span class="muted">Not public</span><button type="button" data-hgo="' + go + '"' + (id ? ' data-id="' + esc(id) + '"' : "") + ">Publish…</button>") + "</div>";
+    };
+    rows.push(pub(!!lg.page_published, pageLink("l", lg.id), "League page", "league"));
+    d.champs.forEach(function (c) { rows.push(pub(!!c.page_published, pageLink("c", c.id), c.name + " page", "champ", c.id)); });
+    d.seasons.filter(function (x) { return x.calendar_published; }).forEach(function (x) { var c = d.champOf[x.championship_id]; rows.push(pub(true, calendarLink(x.id), (c ? c.name + " · " : "") + x.name + " calendar", "")); });
+    h += '<h3 style="margin:16px 0 6px">Published links</h3>' + rows.join("");
+    h += '<label style="display:flex;align-items:center;gap:8px;margin-top:18px"><input type="checkbox" id="hfirst"' + (homeFirst() ? " checked" : "") + '> Show this page first when I sign in</label><div class="msg" id="hfm"></div>';
+    box.className = ""; box.innerHTML = h;
+    var newest = d.champs[0] && d.champs[0].id;
+    $("#hres").addEventListener("click", function () {
+      if (d.todo) { var sn = d.seasonOf[d.todo.ev.season_id]; if (sn) { openChamp(sn.championship_id, { view: "race", rid: d.todo.race.id }); return; } }
+      goResults();
+    });
+    $("#hround").addEventListener("click", function () { if (newest) { state.wantTab = "seasons"; openChamp(newest); } });
+    $("#hchamp").addEventListener("click", function () { state.focusNew = true; loadChamps(); });
+    var ho = $("#hopen"); if (ho) ho.addEventListener("click", function () { var sn = d.seasonOf[d.next.season_id]; if (sn) openChamp(sn.championship_id, { view: "season", sid: sn.id }); });
+    box.querySelectorAll("[data-hgo]").forEach(function (b) { b.addEventListener("click", function () {
+      if (b.dataset.hgo === "league") { renderLeague(); return; }
+      state.wantTab = "settings"; openChamp(b.dataset.id);
+    }); });
+    $("#hfirst").addEventListener("change", function () {
+      var v = $("#hfirst").checked, m = $("#hfm"); msg(m, "Saving…");
+      sb.auth.updateUser({ data: { home_first: v } }).then(function (r) {
+        if (r.error) { msg(m, dbError(r.error), "err"); $("#hfirst").checked = !v; return; }
+        state.user.user_metadata = Object.assign({}, state.user.user_metadata, { home_first: v });
+        msg(m, v ? "This page will open first when you sign in." : "You will go straight to the championship list when you sign in.", "ok");
+      });
+    });
+  }
+
+  // Top bar: Home and Championships on the left, League settings hard right. Inside League settings a second row holds
   // General, Points systems, Drivers and Admins.
   function navHtml(active, sub) {
-    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button><button type="button" id="nav-r">Results</button>' +
+    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-h"' + (active === "h" ? ' class="primary"' : "") + '>Home</button><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button><button type="button" id="nav-r">Results</button>' +
       '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
     if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"]].map(function (t) {
       return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
@@ -192,7 +292,7 @@
     });
   }
   function bindNav() {
-    var go = { "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-r": goResults, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
+    var go = { "nav-h": renderHome, "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-r": goResults, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins };
     Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
   }
   // A plain name such as "tester1" becomes tester1@example.com. Supabase needs an email-shaped sign-in; this one never receives mail.
@@ -336,6 +436,7 @@
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
       '<p class="muted">It starts as a draft. The time zone is filled in from the league settings, or from this browser if the league has none (you can change it on the championship page); every other setting is blank.</p></div>';
     app.querySelectorAll("button.item").forEach(function (b) { b.addEventListener("click", function () { openChamp(b.dataset.id); }); });
+    if (state.focusNew) { state.focusNew = false; var nf = $("#nn"); if (nf) { nf.focus(); try { nf.scrollIntoView({ block: "center" }); } catch (e) {} } }
     app.querySelectorAll("[data-ldel]").forEach(function (b) { b.addEventListener("click", function () {
       var c = state.champs.filter(function (x) { return x.id === b.dataset.ldel; })[0], box = $("#ldelbox");
       box.innerHTML = '<div class="card" style="border-color:var(--err)"><p style="margin:0 0 8px">Permanently delete <b>' + esc(c.name) + '</b> with all of its seasons, rounds, races, points systems, classes and race format? It cannot be undone. Type its name to confirm.</p>' +
