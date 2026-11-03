@@ -238,7 +238,7 @@
       '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
-      '<div class="row"><div class="field grow"><label for="lae">Email</label><input id="lae" type="email"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
+      '<div class="row"><div class="field grow"><label for="lae">Email or username</label><input id="lae" type="text" autocapitalize="none" autocomplete="off"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
       (state.owner ? '<div class="card"><h2>Create a test login</h2><p class="muted" style="margin:0 0 8px">Makes a new sign-in and gives it a league to work in, in one step, so someone else can test. Just type a name such as tester1. Behind the scenes it becomes tester1@example.com, which is only used to sign in and never receives mail. You can type a full email instead.</p>' +
       '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tle">Username</label><input id="tle" type="text" autocomplete="off" placeholder="tester1"></div>' +
       '<div class="field"><label for="tlp">Password</label><input id="tlp" type="text" autocomplete="off" value="' + esc(randomPassword()) + '" style="width:190px"></div>' +
@@ -280,7 +280,7 @@
     if (!gen && $("#tlnew")) $("#tlnew").addEventListener("click", function () { $("#tlp").value = randomPassword(); });
     if (!gen && $("#tlgo")) $("#tlgo").addEventListener("click", createTestLogin);
     if (!gen) $("#laadd").addEventListener("click", function () {
-      var e = $("#lae").value.trim(); if (!e) { msg($("#lam"), "Type an email first.", "err"); return; }
+      var e = loginEmail($("#lae").value); if (!e) { msg($("#lam"), "Type an email or username first.", "err"); return; }
       sb.rpc("add_league_admin", { lid: state.league.id, admin_email: e }).then(function (x) {
         if (x.error) { msg($("#lam"), dbError(x.error), "err"); return; }
         $("#lae").value = ""; msg($("#lam"), "Added.", "ok"); loadAdmins();
