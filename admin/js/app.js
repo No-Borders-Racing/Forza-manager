@@ -241,7 +241,9 @@
       '<div class="field" style="margin-top:8px"><label for="lu">Units of measurement</label><select id="lu">' + opts([["imperial", "Imperial (hp, lb-ft, lbs, mi)"], ["metric", "Metric (kW, N·m, kg, km)"]], lg.units || "", "Not set") + '</select></div>' +
       '<div class="field" style="margin-top:8px"><label for="lpal">Colour palette</label><select id="lpal">' + PALETTES.map(function (o) { return '<option value="' + o[0] + '"' + ((lg.palette || "") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
       '<p class="muted" style="margin:6px 0 0">' + (lg.timezone ? "New championships start with this time zone. Viewers still see every time in their own local time." : "Not saved yet. The time zone shown is detected from this browser; click Save to keep it.") + '</p>' +
-      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' :
+      '<div class="row" style="margin-top:8px"><button class="primary" id="lsave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button></div><div class="msg" id="lm"></div></div>' +
+      (state.owner ? '<div class="card"><h3 style="margin-top:0">Delete this league</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the league with all of its championships, seasons, rounds, races, results, drivers, points systems and builds. Logins are not deleted. It cannot be undone. Type the league name to confirm.</p>' +
+        '<div class="row"><div class="field grow"><label for="ldn">League name</label><input id="ldn" autocomplete="off"></div><button class="danger" id="ldel" type="button" disabled>Delete league</button></div><div class="msg" id="ldm"></div></div>' : "") :
       '<div class="card"><h2>Admins</h2><div id="ladmins" class="muted">Loading…</div>' +
       '<h3>Add an admin</h3><p class="muted" style="margin:0 0 6px">They need a login first: create it in Supabase under Authentication, Users. Then enter the same email here.</p>' +
       '<div class="row"><div class="field grow"><label for="lae">Email or username</label><input id="lae" type="text" autocapitalize="none" autocomplete="off"></div><button id="laadd" type="button">Add admin</button></div><div class="msg" id="lam"></div></div>' +
@@ -255,6 +257,18 @@
       '<label style="display:flex;align-items:center;gap:6px;margin-top:10px"><input type="checkbox" id="tlchg" checked> They must choose their own password the first time they sign in</label>' +
       '<div class="row" style="margin-top:8px"><button class="primary" id="tlgo" type="button">Create login</button></div><div class="msg" id="tlm"></div></div>' : "") + '');
     bindNav();
+    if (gen && $("#ldel")) {
+      $("#ldn").addEventListener("input", function () { $("#ldel").disabled = $("#ldn").value.trim() !== (state.league.name || ""); });
+      $("#ldel").addEventListener("click", function () {
+        var m = $("#ldm"), id = state.league.id; $("#ldel").disabled = true; msg(m, "Deleting…");
+        sb.rpc("delete_league", { lid: id }).then(function (x) {
+          if (x.error) { msg(m, dbError(x.error) + (/does not exist|schema cache/i.test(x.error.message || "") ? " (has migration 025 been run?)" : ""), "err"); $("#ldel").disabled = false; return; }
+          try { window.localStorage.removeItem("fcm.league"); } catch (e) {}
+          state.league = null; state.sel = null; applyPalette("");
+          loadLeagues();
+        });
+      });
+    }
     if (gen) $("#lpal").addEventListener("change", function () { applyPalette($("#lpal").value); });
     if (gen) $("#lsave").addEventListener("click", function () {
       var row = { name: nul($("#ln").value), timezone: nul($("#lz").value), units: nul($("#lu").value), palette: nul($("#lpal").value) };
