@@ -198,6 +198,8 @@
     var b = $("#tlgo"); b.disabled = true; msg(m, "Creating…");
     var c2 = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     c2.auth.signUp({ email: email, password: pw, options: { data: { must_change_password: $("#tlchg").checked } } }).then(function (r) {
+      // With Confirm email off, Supabase says so outright when the login already exists; carry on and just add it.
+      if (r.error && /already (been )?registered|user_already_exists|already exists/i.test((r.error.message || "") + " " + (r.error.code || ""))) r = { data: { user: { identities: [] }, session: null }, error: null };
       if (r.error) { b.disabled = false; var em = r.error.message || "", why = /not allowed|disabled/i.test(em) ? "Sign-ups are switched off in Supabase. Turn them on under Authentication > Sign In / Providers > Allow new users to sign up."
         : /rate limit/i.test(em) ? "Supabase has hit its email limit because Confirm email is switched on, so it tried to send a confirmation message. Turn Confirm email off under Authentication > Sign In / Providers > Email, then wait up to an hour and try again."
         : /invalid/i.test(em) ? em + ". Supabase only accepts addresses on a domain that can receive mail, so the made-up domain was refused."
