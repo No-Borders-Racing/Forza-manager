@@ -2,7 +2,7 @@
   "use strict";
   var out = document.getElementById("out"), cfg = window.FCM_CONFIG;
   function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function note(t) { out.innerHTML = '<p class="msg">' + esc(t) + "</p>"; }
+  function note(t) { out.innerHTML = '<p class="msg">' + esc(t) + "</p>"; if (window.FCMChrome) FCMChrome.ready(); }
   // Every date and time is shown in the viewer's own time zone.
   function dateText(d) { return new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d); }
   function timeText(d, withZone) { return new Intl.DateTimeFormat(undefined, withZone ? { hour: "numeric", minute: "2-digit", timeZoneName: "short" } : { hour: "numeric", minute: "2-digit" }).format(d); }
@@ -36,12 +36,13 @@
   if (!sid) { note("This link is missing its calendar."); return; }
   if (!window.supabase || !cfg) { note("The calendar could not be loaded."); return; }
   var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+  FCMChrome.who(sb, "../admin/");
   // Admins who are signed in to the admin app (same site) get Edit, Unpublish and Delete here. Everyone else sees only the calendar.
   function adminBar(c) {
-    var bar = document.createElement("div"); bar.className = "bar";
+    var bar = document.createElement("div"); bar.className = "actrow";
     var edit = "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id) + "&s=" + encodeURIComponent(c.season_id);
     bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(edit) + '">Edit season</a><button type="button" id="cu">Unpublish</button><button type="button" class="danger" id="cd">Delete season</button><span id="cm" class="m"></span>';
-    document.querySelector("main").insertBefore(bar, document.querySelector("header"));
+    document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
     var m = bar.querySelector("#cm"), armed = false;
     bar.querySelector("#cu").addEventListener("click", function () {
       m.textContent = "Unpublishing…";
@@ -63,7 +64,7 @@
     if (!c) { note("This calendar is not published."); return; }
     if (c.can_edit) adminBar(c);
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
-    document.title = [c.league, c.championship, c.season].join(" · ");
+    document.title = [c.league, c.championship, c.season].join(" · "); FCMChrome.footer(c.league); FCMChrome.ready();
     document.getElementById("title").innerHTML = [c.league, c.championship, c.season].map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");
     var z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     document.getElementById("sub").textContent = "All times are shown in your local time" + (z ? " (" + z.replace(/_/g, " ") + ")" : "") + ".";

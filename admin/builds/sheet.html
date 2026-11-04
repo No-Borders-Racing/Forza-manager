@@ -7,6 +7,7 @@
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
 <script>try{var q=localStorage.getItem("fcm.palette");if(q)document.documentElement.setAttribute("data-palette",q);}catch(e){}</script>
+<script>if(/[?&]pub=/.test(location.search)){document.documentElement.className+=" wait";setTimeout(function(){document.documentElement.classList.remove("wait");},3000);}</script>
 <style>
 /* Layout: two build sheets side by side, each a spec card with a four-axis performance graph; one column on phones. */
 :root {
@@ -124,6 +125,27 @@ body { padding-block: 8px; }
 .msgline { font-size: 13px; color: var(--muted); min-height: 1.2em; }
 .msgline.dirty { color: var(--warn); }
 .msgline.ok { color: var(--accent); }
+/* Public build page: the same top bar and footer as the rest of the app */
+header.top { position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto 18px; padding:14px 0 12px; color:var(--ink); }
+header.top::after { content:""; position:absolute; left:0; right:0; bottom:-8px; height:8px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/8px 8px; opacity:.9; }
+header.top .muted { color:var(--muted); }
+header.top h1 { min-width:0; }
+header.top #who { display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
+header.top #who .wem { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+header.top #who button { flex:0 0 auto; }
+@media (max-width:600px) { header.top { flex-wrap:wrap; row-gap:8px; } header.top h1 { flex:1 1 100%; font-size:17px; } header.top #who { flex:1 1 100%; justify-content:space-between; } }
+footer.bot { position:fixed; left:0; right:0; bottom:0; z-index:5; background:var(--bg); border-top:1px solid var(--line); }
+footer.bot .in { box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto; height:34px; display:flex; align-items:center; justify-content:space-between; gap:12px; font:600 12px/1 var(--display); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+footer.bot .in span { overflow:hidden; text-overflow:ellipsis; }
+footer.bot .in b { color:var(--ink); font-weight:600; }
+footer.bot::before { content:""; position:absolute; left:max(16px, calc(50% - 474px)); right:max(16px, calc(50% - 474px)); top:-6px; height:5px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/5px 5px; opacity:.6; }
+@media (max-width:600px) { footer.bot .in .tag { display:none; } }
+header.top h1 { padding-left:4px; font-family:var(--display); font-weight:700; line-height:1.2; font-size:20px; text-transform:uppercase; letter-spacing:.05em; margin:0; display:flex; align-items:center; gap:10px; }
+header.top h1::before { content:""; width:7px; height:24px; background:var(--accent); transform:skewX(-18deg); }
+header.top #who a.btn, header.top #who button { white-space:nowrap; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 12px; color:var(--ink); text-decoration:none; font:inherit; cursor:pointer; }
+html.pub .wrap { padding-bottom:56px; }
+@media (max-width:600px) { header.top h1 { flex:1 1 100%; font-size:17px; } }
+html.wait body { opacity:0; }
 </style></head><body>
 <div class="wrap">
   <div class="card"><div class="bar"><div class="field"><label for="bname">Build name</label><input type="text" id="bname" maxlength="80" autocomplete="off" placeholder="For example Daytona Sport spec"></div>
@@ -552,17 +574,22 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   window.addEventListener("load", reportHeight);
   if (PUB) {
     document.querySelector(".wrap > .card").style.display = "none";
-    var note = function (t) { host.innerHTML = '<div class="card"><p class="sub" style="margin:0">' + esc(t) + "</p></div>"; };
+    document.body.insertAdjacentHTML("afterbegin", '<header class="top"><h1>Forza Championship Manager</h1><div id="who" class="muted"></div></header>');
+    document.body.insertAdjacentHTML("beforeend", '<footer class="bot"><div class="in"><span id="ftloc"></span><span class="tag">Forza Championship Manager</span></div></footer>');
+    var ready = function () { document.documentElement.classList.remove("wait"); };
+    var note = function (t) { host.innerHTML = '<div class="card"><p class="sub" style="margin:0">' + esc(t) + "</p></div>"; ready(); };
     note("Loading…");
     var ld = function (src, cb) { var x = document.createElement("script"); x.src = src; x.onload = cb; x.onerror = function () { note("This build could not be loaded."); }; document.head.appendChild(x); };
     ld("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js", function () { ld("../js/config.js", function () {
-      var cfg = window.FCM_CONFIG, cl = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      var cfg = window.FCM_CONFIG, cl = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+      var cs = document.createElement("script"); cs.src = "../../assets/chrome.js"; cs.onload = function () { if (window.FCMChrome) FCMChrome.who(cl, "../"); }; document.head.appendChild(cs);
       cl.rpc("public_build", { bid: PUB }).then(function (r) {
         if (r.error) { note("This build could not be loaded."); return; }
         if (!r.data || !r.data.data) { note("This build is not published."); return; }
         if (r.data.palette) document.documentElement.setAttribute("data-palette", r.data.palette);
         document.title = r.data.name + " · " + r.data.league;
         var b = r.data.data; b.done = true; show(b);
+        var ft = document.getElementById("ftloc"); if (ft) ft.textContent = r.data.league || ""; ready();
       });
     }); });
   } else send({ fcm: "ready" });

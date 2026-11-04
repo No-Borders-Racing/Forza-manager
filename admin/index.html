@@ -5,78 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Forza Championship Manager · Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
-<style>
-:root { --bg:#0e0f11; --card:#17191c; --ink:#f1f1ee; --muted:#9aa0a8; --line:#2b2f35; --accent:#ffb400; --accent-ink:#1a1300; --link:#ffc233; --err:#ff6b5e; --ok:#3ecf8e; --head:#09090a; --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif; color-scheme:dark; }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f2f2ef; --card:#ffffff; --ink:#15171a; --muted:#5d636b; --line:#d9dadd; --accent:#f0a500; --accent-ink:#1a1300; --link:#8a5a00; --err:#b3261e; --ok:#1d7a3a; --head:#15171a; color-scheme:light; } }
-:root[data-palette="rwb"] { --bg:#0b1020;--card:#141b30;--ink:#f4f6fb;--muted:#9fa9c4;--line:#27304d;--accent:#e5233a;--accent-ink:#ffffff;--link:#7fb2ff;--head:#070b17 }
-:root[data-palette="rosso"] { --bg:#0f0c0c;--card:#1a1515;--ink:#f4efee;--muted:#a89c9a;--line:#33292a;--accent:#dc1f26;--accent-ink:#ffffff;--link:#ff7b7f;--head:#080606 }
-:root[data-palette="gulf"] { --bg:#0c1318;--card:#141e26;--ink:#eef4f8;--muted:#9bb0bd;--line:#263642;--accent:#6cc4ee;--accent-ink:#06222f;--link:#ff8a2a;--head:#070d11 }
-:root[data-palette="brg"] { --bg:#0a110d;--card:#121c16;--ink:#eef3ee;--muted:#9fb1a4;--line:#24362b;--accent:#f2c200;--accent-ink:#1a1500;--link:#7fd69a;--head:#060b08 }
-:root[data-palette="papaya"] { --bg:#0f0f12;--card:#18181d;--ink:#f3f3f5;--muted:#a0a0aa;--line:#2c2c34;--accent:#ff8000;--accent-ink:#1a0d00;--link:#ff9d3d;--head:#08080a }
-:root[data-palette="mono"] { --bg:#0d0d0d;--card:#171717;--ink:#f2f2f2;--muted:#a0a0a0;--line:#2e2e2e;--accent:#e8e8e8;--accent-ink:#111111;--link:#ffffff;--head:#070707 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"])[data-palette="rwb"] { --bg:#eef1f8;--card:#ffffff;--ink:#101528;--muted:#566080;--line:#d3d9e8;--accent:#d11a31;--accent-ink:#ffffff;--link:#1f4fa8;--head:#101a3a }
-  :root:not([data-theme="dark"])[data-palette="rosso"] { --bg:#f4efee;--card:#ffffff;--ink:#1c1212;--muted:#6d5e5c;--line:#e0d4d3;--accent:#c4161c;--accent-ink:#ffffff;--link:#b3121a;--head:#1c1212 }
-  :root:not([data-theme="dark"])[data-palette="gulf"] { --bg:#eef4f8;--card:#ffffff;--ink:#0d1a22;--muted:#52687a;--line:#d0dde6;--accent:#2a9fd6;--accent-ink:#ffffff;--link:#c25a00;--head:#12303f }
-  :root:not([data-theme="dark"])[data-palette="brg"] { --bg:#eef3ee;--card:#ffffff;--ink:#101a14;--muted:#52665a;--line:#d2ded5;--accent:#0f5a32;--accent-ink:#ffffff;--link:#0f5a32;--head:#0f2a1a }
-  :root:not([data-theme="dark"])[data-palette="papaya"] { --bg:#f4f4f6;--card:#ffffff;--ink:#17171c;--muted:#5f5f6a;--line:#dcdce2;--accent:#e06c00;--accent-ink:#ffffff;--link:#a84f00;--head:#17171c }
-  :root:not([data-theme="dark"])[data-palette="mono"] { --bg:#f2f2f2;--card:#ffffff;--ink:#111111;--muted:#5f5f5f;--line:#d8d8d8;--accent:#222222;--accent-ink:#ffffff;--link:#222222;--head:#111111 }
-}
-* { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
-main { max-width: 980px; margin: 0 auto; padding: 16px; }
-header.top { position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto 18px; padding:14px 0 12px; color:var(--ink); }
-header.top::after { content:""; position:absolute; left:0; right:0; bottom:-8px; height:8px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/8px 8px; opacity:.9; }
-header.top .muted { color:var(--muted); }
-header.top h1 { min-width:0; }
-header.top #who { display:flex; align-items:center; gap:8px; min-width:0; flex:0 1 auto; }
-header.top #who .wem { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-header.top #who button { flex:0 0 auto; }
-@media (max-width:600px) { header.top { flex-wrap:wrap; row-gap:8px; } header.top h1 { flex:1 1 100%; font-size:17px; } header.top #who { flex:1 1 100%; justify-content:space-between; } }
-footer.bot { position:fixed; left:0; right:0; bottom:0; z-index:5; background:var(--bg); border-top:1px solid var(--line); }
-footer.bot .in { box-sizing:border-box; width:calc(100% - 32px); max-width:948px; margin:0 auto; height:34px; display:flex; align-items:center; justify-content:space-between; gap:12px; font:600 12px/1 var(--display); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
-footer.bot .in span { overflow:hidden; text-overflow:ellipsis; }
-footer.bot .in b { color:var(--ink); font-weight:600; }
-footer.bot::before { content:""; position:absolute; left:max(16px, calc(50% - 474px)); right:max(16px, calc(50% - 474px)); top:-6px; height:5px; background:repeating-conic-gradient(var(--ink) 0 25%, var(--bg) 0 50%) 0 0/5px 5px; opacity:.6; }
-main { padding-bottom:64px; }
-@media (max-width:600px) { footer.bot .in .tag { display:none; } }
-h1, h2, h3 { font-family:var(--display); text-transform:uppercase; letter-spacing:.05em; }
-h1 { padding-left:4px; font-size:20px; font-weight:700; margin:0; display:flex; align-items:center; gap:10px; } h1::before { content:""; width:7px; height:24px; background:var(--accent); transform:skewX(-18deg); }
-h2 { font-size:19px; font-weight:700; margin:0 0 10px; } h3 { font-size:14px; font-weight:600; color:var(--muted); margin:14px 0 8px; }
-.card { background:var(--card); border:1px solid var(--line); border-top:2px solid var(--accent); border-radius:10px; padding:14px; margin:12px 0; }
-.row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
-.field { display:flex; flex-direction:column; gap:3px; min-width:0; } .grow { flex:1 1 180px; }
-label, .lbl { font-size:13px; color:var(--muted); }
-input, select, textarea, button { font:inherit; color:inherit; }
-input, select, textarea { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; max-width:100%; }
-textarea { min-height:70px; resize:vertical; width:100%; }
-button { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 12px; cursor:pointer; transition:border-color .12s, background .12s; }
-button:hover:not(:disabled) { border-color:var(--accent); }
-:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; }
-button.primary:hover:not(:disabled) { filter:brightness(1.08); }
-button.danger { border-color:var(--err); color:var(--err); }
-button:disabled { opacity:.5; cursor:default; }
-.muted { color:var(--muted); } .err { color:var(--err); } .ok { color:var(--ok); }
-.pill { display:inline-block; border:1px solid var(--line); border-radius:99px; padding:1px 9px; font-size:12px; font-family:var(--display); letter-spacing:.06em; text-transform:uppercase; }
-.list button.item { display:flex; width:100%; justify-content:space-between; text-align:left; margin:4px 0; }
-.msg { min-height:20px; margin:6px 0; }
-details.ev { border:1px solid var(--line); border-radius:6px; margin:8px 0; padding:8px 10px; }
-details.ev > summary { cursor:pointer; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-ul.missing { margin:6px 0 0 18px; padding:0; }
-.cmpgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media (max-width:700px){.cmpgrid{grid-template-columns:minmax(0,1fr)}}
-.tgrid{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:12px;margin-top:12px;align-items:start}@media (max-width:700px){.tgrid{grid-template-columns:minmax(0,1fr)}}
-a{color:var(--link)}
-/* Race-dashboard touches: timing-screen numerals, instrument-style tabs and tiles */
-body { font-variant-numeric: tabular-nums; }
-[id^="nav-"], [id^="sub-"], [data-tab] { font-family:var(--display); text-transform:uppercase; letter-spacing:.07em; font-weight:600; font-size:14px; border-radius:4px; }
-[data-tab].primary, [id^="nav-"].primary, [id^="sub-"].primary { box-shadow:0 2px 0 0 var(--accent-ink) inset; }
-.card { border-radius:6px; }
-.tile { flex:1 1 120px; min-width:110px; border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:4px; padding:8px 12px; background:linear-gradient(180deg, rgba(255,255,255,.025), transparent); }
-.tile .k { font:600 11px var(--display); text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
-.tile .v { font:700 22px/1.1 var(--display); margin-top:3px; letter-spacing:.02em; }
-.card h2::after { content:""; display:block; height:1px; margin-top:8px; background:repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 10px); }
-</style>
+<link rel="stylesheet" href="../assets/app.css?v=20261104d">
 </head>
 <body>
 <header class="top"><h1>Forza Championship Manager · Admin</h1><div id="who" class="muted"></div></header>
@@ -86,7 +15,7 @@ body { font-variant-numeric: tabular-nums; }
 <script src="js/config.js?v=20261026a"></script>
 <script src="js/tz.js?v=20261026a"></script>
 <script src="js/schedule.js?v=20261026a"></script>
-<script src="../results/engine.js?v=20261104c"></script>
-<script src="js/app.js?v=20261104c"></script>
+<script src="../results/engine.js?v=20261104d"></script>
+<script src="js/app.js?v=20261104d"></script>
 </body>
 </html>

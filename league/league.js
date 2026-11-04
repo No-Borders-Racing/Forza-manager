@@ -31,20 +31,21 @@
     if (!body) return '<div class="round' + (off ? " off" : "") + '"><div class="sum">' + head + "</div></div>";
     return '<details class="round' + (off ? " off" : "") + '"><summary class="sum">' + head + '<span class="chev" aria-hidden="true"></span></summary><div class="more">' + body + "</div></details>";
   }
-  function note(t) { out.innerHTML = '<p class="msg">' + esc(t) + "</p>"; }
+  function note(t) { out.innerHTML = '<p class="msg">' + esc(t) + "</p>"; if (window.FCMChrome) FCMChrome.ready(); }
   var qs = new URLSearchParams(location.search), cid = qs.get("c"), lid = qs.get("l");
   if (!cid && !lid) { note("This link is missing its championship."); return; }
   if (!window.supabase || !cfg) { note("This page could not be loaded."); return; }
   var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+  FCMChrome.who(sb, "../admin/");
 
   function head(parts) {
-    document.title = parts.join(" · ");
+    document.title = parts.join(" · "); FCMChrome.footer(parts[0]); FCMChrome.ready();
     document.getElementById("title").innerHTML = parts.map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");
   }
   function adminBar(label, href, table, id, flag) {
-    var bar = document.createElement("div"); bar.className = "bar";
+    var bar = document.createElement("div"); bar.className = "actrow";
     bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (table === "leagues" ? "" : '<button type="button" id="up">Unpublish</button>') + '<span class="m" id="bm"></span>';
-    document.querySelector("main").insertBefore(bar, document.querySelector("header"));
+    document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
     if (table === "leagues") return;
     bar.querySelector("#up").addEventListener("click", function () {
       var m = bar.querySelector("#bm"), patch = {}; patch[flag] = false; m.textContent = "Unpublishing…";
@@ -120,10 +121,10 @@
     var want = qs.get("t"), cur = TABS.some(function (t) { return t[0] === want; }) ? want : "calendar";
     function draw() {
       out.innerHTML = (c.description ? '<p class="desc">' + esc(c.description) + "</p>" : "") +
-        '<div class="tabs" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-t="' + t[0] + '" aria-selected="' + (t[0] === cur) + '">' + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
+        '<div class="row" style="margin:0 0 12px" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         TABS.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
-      out.querySelectorAll("[data-t]").forEach(function (b) { b.addEventListener("click", function () {
-        cur = b.dataset.t; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
+      out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
+        cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });
     }
     draw();
@@ -140,7 +141,7 @@
     var h = "", ban = safeUrl(l.banner_url);
     if (ban) h += '<img src="' + esc(ban) + '" alt="" style="display:block;width:100%;max-height:200px;object-fit:cover;border-radius:6px;margin:0 0 12px" onerror="this.remove()">';
     var L = l.links || {}, soc = SOC.filter(function (o) { return safeUrl(L[o[0]]); });
-    if (soc.length) h += '<div class="tabs">' + soc.map(function (o) { return '<a class="btn soc" href="' + esc(safeUrl(L[o[0]])) + '" target="_blank" rel="noopener noreferrer">' + o[1] + "</a>"; }).join("") + "</div>";
+    if (soc.length) h += '<div class="actrow">' + soc.map(function (o) { return '<a class="btn nav" href="' + esc(safeUrl(L[o[0]])) + '" target="_blank" rel="noopener noreferrer">' + o[1] + "</a>"; }).join("") + "</div>";
     if (l.about) h += '<p class="desc" style="color:var(--ink)">' + richText(l.about) + "</p>";
     if (l.join_text) h += '<div class="notes" style="margin:0 0 12px"><b>How to join</b><br>' + richText(l.join_text) + "</div>";
     var n = l.next;
