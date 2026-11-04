@@ -37,16 +37,17 @@
   if (!window.supabase || !cfg) { note("The calendar could not be loaded."); return; }
   var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
   FCMChrome.who(sb, "../admin/");
-  // Admins who are signed in to the admin app (same site) get Edit, Unpublish and Delete here. Everyone else sees only the calendar.
+  // Admins who are signed in to the admin app (same site) get Edit, Who can view and Delete here. Everyone else sees only the calendar.
   function adminBar(c) {
     var bar = document.createElement("div"); bar.className = "actrow";
     var edit = "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id) + "&s=" + encodeURIComponent(c.season_id);
-    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(edit) + '">Edit season</a><button type="button" id="cu">Unpublish</button><button type="button" class="danger" id="cd">Delete season</button><span id="cm" class="m"></span>';
+    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(edit) + '">Edit season</a><label class="m" for="cv" style="display:inline-flex;align-items:center;gap:6px">Who can view? <select id="cv" style="width:auto"><option value="public">Public</option><option value="admin">Admin only</option></select></label><button type="button" class="danger" id="cd">Delete season</button><span id="cm" class="m"></span>';
+    bar.querySelector("#cv").value = c.is_public === false ? "admin" : "public";
     document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
     var m = bar.querySelector("#cm"), armed = false;
-    bar.querySelector("#cu").addEventListener("click", function () {
-      m.textContent = "Unpublishing…";
-      sb.from("seasons").update({ calendar_published: false }).eq("id", c.season_id).then(function (x) { if (x.error) { m.textContent = x.error.message; return; } location.reload(); });
+    bar.querySelector("#cv").addEventListener("change", function () {
+      m.textContent = "Saving…";
+      sb.from("seasons").update({ calendar_published: this.value === "public" }).eq("id", c.season_id).then(function (x) { if (x.error) { m.textContent = x.error.message; return; } location.reload(); });
     });
     var del = bar.querySelector("#cd");
     del.addEventListener("click", function () {
@@ -61,7 +62,7 @@
   sb.rpc("public_calendar", { sid: sid }).then(function (r) {
     if (r.error) { note("The calendar could not be loaded."); return; }
     var c = r.data;
-    if (!c) { note("This calendar is not published."); return; }
+    if (!c) { note("This page isn't available."); return; }
     if (c.can_edit) adminBar(c);
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
     document.title = [c.league, c.championship, c.season].join(" · "); FCMChrome.footer(c.league); FCMChrome.ready(); FCMChrome.setLeague(c.league_id);

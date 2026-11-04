@@ -42,15 +42,11 @@
     document.title = parts.join(" · "); FCMChrome.footer(parts[0]); FCMChrome.ready();
     document.getElementById("title").innerHTML = parts.map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");
   }
-  function adminBar(label, href, table, id, flag) {
+  // Signed-in league admins get an Edit link; if the page is set to Admin only they are told visitors cannot see it.
+  function adminBar(label, href, isPublic) {
     var bar = document.createElement("div"); bar.className = "actrow";
-    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (table === "leagues" ? "" : '<button type="button" id="up">Unpublish</button>') + '<span class="m" id="bm"></span>';
+    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (isPublic === false ? '<span class="m">Admin only: visitors cannot see this page.</span>' : "");
     document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
-    if (table === "leagues") return;
-    bar.querySelector("#up").addEventListener("click", function () {
-      var m = bar.querySelector("#bm"), patch = {}; patch[flag] = false; m.textContent = "Unpublishing…";
-      sb.from(table).update(patch).eq("id", id).then(function (x) { if (x.error) { m.textContent = x.error.message; return; } location.reload(); });
-    });
   }
   function ms(n) { if (n == null) return ""; var m = Math.floor(n / 60000), s = (n % 60000) / 1000; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(3); }
   function roundTitle(r) {
@@ -61,7 +57,7 @@
 
   /* ----- tabs ----- */
   function buildsHtml(c) {
-    var bs = c.builds || []; if (!bs.length) return '<p class="msg">No car builds have been published for this championship yet.</p>';
+    var bs = c.builds || []; if (!bs.length) return '<p class="msg">No car builds to show for this championship yet.</p>';
     return '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
       return '<a class="card" href="' + esc("../admin/builds/sheet.html?pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
@@ -118,7 +114,7 @@
 
   function showChampionship(c) {
     FCMChrome.setLeague(c.league_id);
-    if (c.can_edit) adminBar("Edit championship", "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id), "championships", c.championship_id, "page_published");
+    if (c.can_edit) adminBar("Edit championship", "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id), c.is_public);
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
     head([c.league, c.championship]);
     var sub = document.getElementById("sub");
@@ -138,11 +134,27 @@
   // Plain text with line breaks; web addresses become links.
   function richText(t) { return esc(t).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }); }
   var SOC = [["website", "Website"], ["discord", "Discord"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
-  var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"]];
+  var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
+  // Ranks come from the database order (points, wins, podiums); equal rows share a rank.
+  function rankRows(rows) {
+    var rank = 0, prev = null;
+    return rows.map(function (r, i) { var sig = [r.points, r.wins, r.podiums].join("|"); if (sig !== prev) { rank = i + 1; prev = sig; } return Object.assign({ rank: rank }, r); });
+  }
+  function standingTable(rows) {
+    return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Pts</th><th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
+      rankRows(rows).map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+Number(r.points).toFixed(2)) + "</b></td><td>" + r.wins + "</td><td>" + r.podiums + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+  }
+  function leagueStandingsHtml(l) {
+    var ss = l.standings || [];
+    return ss.length ? ss.map(function (x) {
+      return '<h2 class="sn">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + "</h2>" + (x.rows && x.rows.length ? standingTable(x.rows) : '<p class="msg">No standings yet.</p>') +
+        '<div class="sub" style="margin-top:8px"><a href="?c=' + encodeURIComponent(x.championship_id) + '&t=standings" style="color:var(--link)">Full championship page →</a></div>';
+    }).join("") : '<p class="msg">No standings yet. They appear once results are entered.</p>';
+  }
   function champCardsHtml(cs, full) {
     return cs.length ? '<div class="cards">' + cs.map(function (c) {
       return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + "</b>" + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
-    }).join("") + "</div>" : '<p class="msg">No championships have been published yet.</p>';
+    }).join("") + "</div>" : '<p class="msg">No championships to show yet.</p>';
   }
   function leagueCalendarHtml(l) {
     var rs = l.calendar || [], z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
@@ -173,17 +185,21 @@
       var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
       return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<div class="line">' + top.map(function (y) { return "<b>" + y.position + ".</b> " + esc(y.driver); }).join(" &nbsp; ") + "</div>" : "") + "</div>";
     }).join("");
+    var sd = (l.standings || []).filter(function (x) { return x.rows && x.rows.length; });
+    if (sd.length) h += '<h2 class="sn">Standings</h2>' + sd.map(function (x) {
+      return '<div class="round"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><div class="line">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<b>" + r.rank + ".</b> " + esc(r.driver) + " (" + esc(+Number(r.points).toFixed(2)) + ")"; }).join(" &nbsp; ") + "</div></div>";
+    }).join("");
     h += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
     return h;
   }
   function showLeague(l) {
     FCMChrome.setLeague(l.league_id);
-    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), "leagues", l.league_id, "page_published");
+    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), l.is_public);
     if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
     head([l.league]);
     document.getElementById("sub").textContent = l.tagline || "";
     var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
-    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml };
+    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml };
     function draw() {
       out.innerHTML = '<div class="row" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
@@ -195,12 +211,12 @@
 
   if (cid) sb.rpc("public_championship", { cid: cid }).then(function (r) {
     if (r.error) { note("This page could not be loaded."); return; }
-    if (!r.data) { note("This championship is not published."); return; }
+    if (!r.data) { note("This page isn't available."); return; }
     showChampionship(r.data);
   });
   else sb.rpc("public_league", { lid: lid }).then(function (r) {
     if (r.error) { note("This page could not be loaded."); return; }
-    if (!r.data) { note("This league page is not published."); return; }
+    if (!r.data) { note("This page isn't available."); return; }
     showLeague(r.data);
   });
 })();

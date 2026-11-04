@@ -232,7 +232,7 @@
     function label(e) { var s = d.seasonOf[e.season_id], c = s && d.champOf[s.championship_id]; return [e.round_number ? "Round " + e.round_number : (e.name || "Round"), d.tn[e.track_layout_id]].filter(Boolean).join(" · ") + (c ? " — " + c.name + (s ? " · " + s.name : "") : ""); }
     var h = '<div class="row" style="margin:0 0 4px;align-items:stretch">';
     h += d.todo ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
-    h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button></div>';
+    h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
     if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
     h += '<h3 style="margin:16px 0 6px">Next race</h3>';
     if (d.next) {
@@ -241,14 +241,14 @@
         (d.next.lobby_opens_at ? '<div class="muted">Lobby opens ' + esc(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(d.next.lobby_opens_at))) + "</div>" : "") +
         '<div class="row" style="margin-top:8px"><button type="button" id="hopen">Open this round</button></div></div>';
     } else h += '<p class="muted" style="margin:0">' + (d.champs.length ? "No upcoming rounds are scheduled." : "No championships yet.") + "</p>";
-    // What is public right now.
+    // Who can view each page right now.
     var rows = [], pub = function (on, url, name, go, id) {
-      return '<div class="row" style="align-items:center;margin:4px 0"><span style="flex:1 1 180px">' + esc(name) + "</span>" + (on ? '<span class="pill">Public</span>' + copyBtnHtml(url) : '<span class="muted">Not public</span><button type="button" data-hgo="' + go + '"' + (id ? ' data-id="' + esc(id) + '"' : "") + ">Publish…</button>") + "</div>";
+      return '<div class="row" style="align-items:center;margin:4px 0"><span style="flex:1 1 180px">' + esc(name) + "</span>" + (on ? '<span class="pill">Public</span>' + copyBtnHtml(url) : '<span class="pill">Admin only</span><button type="button" data-hgo="' + go + '"' + (id ? ' data-id="' + esc(id) + '"' : "") + ">Change…</button>") + "</div>";
     };
-    rows.push(pub(!!lg.page_published, pageLink("l", lg.id), "League page", "league"));
+    rows.push(pub(lg.page_published !== false && !!lg.page_published, pageLink("l", lg.id), "League page", "league"));
     d.champs.forEach(function (c) { rows.push(pub(!!c.page_published, pageLink("c", c.id), c.name + " page", "champ", c.id)); });
-    d.seasons.filter(function (x) { return x.calendar_published; }).forEach(function (x) { var c = d.champOf[x.championship_id]; rows.push(pub(true, calendarLink(x.id), (c ? c.name + " · " : "") + x.name + " calendar", "")); });
-    h += '<h3 style="margin:16px 0 6px">Published links</h3>' + rows.join("");
+    d.seasons.forEach(function (x) { var c = d.champOf[x.championship_id]; rows.push(pub(!!x.calendar_published, calendarLink(x.id), (c ? c.name + " · " : "") + x.name + " calendar", "champ", x.championship_id)); });
+    h += '<h3 style="margin:16px 0 6px">Who can view</h3>' + rows.join("");
     h += '<label style="display:flex;align-items:center;gap:8px;margin-top:18px"><input type="checkbox" id="hfirst"' + (homeFirst() ? " checked" : "") + '> Show this page first when I sign in</label><div class="msg" id="hfm"></div>';
     box.className = ""; box.innerHTML = h;
     var newest = d.champs[0] && d.champs[0].id;
@@ -674,8 +674,6 @@
     on("[data-rup]", function (b) { stepRound(b.dataset.rup, -1); });
     on("[data-rdn]", function (b) { stepRound(b.dataset.rdn, 1); });
     on("[data-bye]", function (b) { byeWeek(b.dataset.bye); });
-    on("[data-cppub]", function (b) { setCalendarPublished(b.dataset.cppub, true); });
-    on("[data-cpoff]", function (b) { setCalendarPublished(b.dataset.cpoff, false); });
     on("[data-cpcopy]", function (b) {
       var inp = $("#cpl-" + b.dataset.cpcopy), m = $("#cpm-" + b.dataset.cpcopy);
       function done() { msg(m, "Link copied.", "ok"); }
@@ -752,61 +750,65 @@
 
   /* ---------- public championship and league pages ---------- */
   function pageLink(kind, id) { return new URL("../league/?" + kind + "=" + encodeURIComponent(id), location.href).href; }
-  // kind "c" = a championship page (builds, calendar, results, standings); "l" = the league page listing its published championships.
+  // Who can view a page: Public (anyone with the link) or Admin only (league admins, signed in). New pages start Public.
+  function whoSelHtml(attr, id, isPublic) {
+    return '<div class="field" style="max-width:260px"><label for="ws-' + attr + '-' + esc(id) + '">Who can view?</label><select id="ws-' + attr + '-' + esc(id) + '" data-' + attr + '="' + esc(id) + '">' +
+      '<option value="public"' + (isPublic ? " selected" : "") + '>Public</option><option value="admin"' + (isPublic ? "" : " selected") + ">Admin only</option></select></div>";
+  }
+  // kind "c" = a championship page (builds, calendar, results, standings); "l" = the league page.
   function pagePublishHtml(kind, row) {
-    var what = kind === "c" ? "championship page" : "league page", on = !!row.page_published, link = pageLink(kind, row.id);
-    var h = '<div class="card"><h3 style="margin-top:0">Public ' + what + '</h3>';
+    var what = kind === "c" ? "Championship page" : "League page", on = row.page_published !== false && !!row.page_published, link = pageLink(kind, row.id);
+    var h = '<div class="card"><h3 style="margin-top:0">' + what + '</h3>' + whoSelHtml("pgsel", kind, on);
     if (on) {
-      h += '<div class="row" style="align-items:center"><span class="pill">Page is public</span><input readonly id="pgl-' + kind + '" value="' + esc(link) + '" style="flex:1 1 260px" aria-label="Public page link">' +
-        '<button type="button" data-pgcopy="' + kind + '">Copy link</button><a href="' + esc(link) + '" target="_blank" rel="noopener"><button type="button">Open</button></a><button type="button" data-pgoff="' + kind + '">Unpublish</button></div>' +
-        '<p class="muted" style="margin:6px 0 0">' + (kind === "c" ? "Anyone with the link sees this championship\'s calendars, results and standings, and the car builds you have published that belong to its cars. It updates as you edit." : "On by default. Anyone with the link sees the league profile and the championships you have published. Unpublish it to hide the page.") + "</p>";
+      h += '<div class="row" style="align-items:center;margin-top:8px"><input readonly id="pgl-' + kind + '" value="' + esc(link) + '" style="flex:1 1 260px" aria-label="Page link">' +
+        '<button type="button" data-pgcopy="' + kind + '">Copy link</button><a href="' + esc(link) + '" target="_blank" rel="noopener"><button type="button">Open</button></a></div>' +
+        '<p class="muted" style="margin:6px 0 0">' + (kind === "c" ? "Anyone with the link sees this championship\'s calendars, results, standings and the car builds that belong to its cars. It updates as you edit. Driver gamertags are not shown." : "Anyone with the link sees the league profile and its championships. It updates as you edit.") + "</p>";
     } else {
-      h += '<div class="row" style="align-items:center"><button class="primary" type="button" data-pgpub="' + kind + '">Publish ' + what + '</button><span class="muted">' +
-        (kind === "c" ? "Makes the calendars, results and standings public, plus any published builds for its cars. Driver gamertags are not shown." : "The league page is switched off. Publish it to share your league profile and championships.") + "</span></div>";
+      h += '<p class="muted" style="margin:8px 0 0">Only league admins who are signed in can open this page. Visitors see a "not available" message.</p>';
     }
     return h + '<div class="msg" id="pgm-' + kind + '"></div></div>';
   }
   function setPagePublished(kind, on) {
     var row = kind === "c" ? state.sel.champ : state.league, m = $("#pgm-" + kind);
     sb.from(kind === "c" ? "championships" : "leagues").update({ page_published: on }).eq("id", row.id).then(function (r) {
-      if (r.error) { msg(m, dbError(r.error) + (/page_published|schema cache/i.test(r.error.message || "") ? " (has migration 027 been run?)" : ""), "err"); return; }
+      if (r.error) { msg(m, dbError(r.error) + (/page_published|schema cache/i.test(r.error.message || "") ? " (has migration 030 been run?)" : ""), "err"); return; }
       row.page_published = on;
       if (kind === "c") renderChamp(); else renderLeague();
-      setTimeout(function () { var mm = $("#pgm-" + kind); if (mm) msg(mm, on ? "The page is public. Copy the link above to share it." : "The page is no longer public.", "ok"); }, 50);
+      setTimeout(function () { var mm = $("#pgm-" + kind); if (mm) msg(mm, on ? "Anyone with the link can view this page." : "Only admins can view this page now.", "ok"); }, 50);
     });
   }
+  document.addEventListener("change", function (e) {
+    var t = e.target; if (!t || !t.dataset) return;
+    if (t.dataset.pgsel) setPagePublished(t.dataset.pgsel, t.value === "public");
+    else if (t.dataset.cpsel) setCalendarPublished(t.dataset.cpsel, t.value === "public");
+  });
   document.addEventListener("click", function (e) {
-    var b = e.target.closest && e.target.closest("[data-pgpub],[data-pgoff],[data-pgcopy]"); if (!b) return;
-    if (b.dataset.pgpub) setPagePublished(b.dataset.pgpub, true);
-    else if (b.dataset.pgoff) setPagePublished(b.dataset.pgoff, false);
-    else {
-      var k = b.dataset.pgcopy, inp = $("#pgl-" + k), m = $("#pgm-" + k);
-      var done = function () { msg(m, "Link copied.", "ok"); }; inp.select();
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
-      else { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
-    }
+    var b = e.target.closest && e.target.closest("[data-pgcopy]"); if (!b) return;
+    var k = b.dataset.pgcopy, inp = $("#pgl-" + k), m = $("#pgm-" + k);
+    var done = function () { msg(m, "Link copied.", "ok"); }; inp.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
+    else { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
   });
 
   /* ---------- seasons ---------- */
   function calendarLink(sid) { return new URL("../calendar/?s=" + encodeURIComponent(sid), location.href).href; }
   function calendarPublishHtml(s) {
-    var h = '<div style="margin:12px 0 4px">';
-    if (s.calendar_published) {
-      h += '<div class="row" style="align-items:center"><span class="pill">Calendar is public</span><input readonly id="cpl-' + s.id + '" value="' + esc(calendarLink(s.id)) + '" style="flex:1 1 260px" aria-label="Public calendar link">' +
-        '<button type="button" data-cpcopy="' + s.id + '">Copy link</button><a href="' + esc(calendarLink(s.id)) + '" target="_blank" rel="noopener"><button type="button">Open</button></a><button type="button" data-cpoff="' + s.id + '">Unpublish</button></div>' +
+    var on = !!s.calendar_published, h = '<div style="margin:12px 0 4px">' + whoSelHtml("cpsel", s.id, on);
+    if (on) {
+      h += '<div class="row" style="align-items:center;margin-top:8px"><input readonly id="cpl-' + s.id + '" value="' + esc(calendarLink(s.id)) + '" style="flex:1 1 260px" aria-label="Calendar link">' +
+        '<button type="button" data-cpcopy="' + s.id + '">Copy link</button><a href="' + esc(calendarLink(s.id)) + '" target="_blank" rel="noopener"><button type="button">Open</button></a></div>' +
         '<p class="muted" style="margin:6px 0 0">Anyone with the link can see this season\'s rounds, dates (in their own time zone), tracks, races and notes. It updates as you edit.</p>';
     } else {
-      h += '<div class="row" style="align-items:center"><button class="primary" type="button" data-cppub="' + s.id + '">Publish calendar</button>' +
-        '<span class="muted">Makes this season\'s calendar public: dates, tracks, races and notes, and nothing else.</span></div>';
+      h += '<p class="muted" style="margin:8px 0 0">Only league admins who are signed in can open this calendar.</p>';
     }
     return h + '<div class="msg" id="cpm-' + s.id + '"></div></div>';
   }
   function setCalendarPublished(sid, on) {
     var m = $("#cpm-" + sid);
     sb.from("seasons").update({ calendar_published: on }).eq("id", sid).then(function (r) {
-      if (r.error) { msg(m, dbError(r.error) + (/calendar_published|schema cache/i.test(r.error.message || "") ? " (has migration 022 been run?)" : ""), "err"); return; }
+      if (r.error) { msg(m, dbError(r.error) + (/calendar_published|schema cache/i.test(r.error.message || "") ? " (has migration 030 been run?)" : ""), "err"); return; }
       openChamp(state.sel.champ.id);
-      setTimeout(function () { var mm = $("#cpm-" + sid); if (mm) msg(mm, on ? "The calendar is public. Copy the link above to share it." : "The calendar is no longer public.", "ok"); }, 600);
+      setTimeout(function () { var mm = $("#cpm-" + sid); if (mm) msg(mm, on ? "Anyone with the link can view this calendar." : "Only admins can view this calendar now.", "ok"); }, 600);
     });
   }
   function seasonHtml(s) {
@@ -1907,10 +1909,10 @@
     else if (m.fcm === "dirty") E.dirty = true;
     else if (m.fcm === "save") saveBuild(m, post);
     else if (m.fcm === "publish") {
-      if (!E.buildId) { post({ fcm: "error", message: "Save the build first, then publish it." }); return; }
+      if (!E.buildId) { post({ fcm: "error", message: "Save the build first, then choose who can view it." }); return; }
       var on = !!m.on;
       sb.from("build_sheets").update({ published: on }).eq("id", E.buildId).then(function (r) {
-        if (r.error) { post({ fcm: "error", message: dbError(r.error) + (/published|schema cache/i.test(r.error.message || "") ? " (has migration 026 been run?)" : "") }); return; }
+        if (r.error) { post({ fcm: "error", message: dbError(r.error) + (/published|schema cache/i.test(r.error.message || "") ? " (has migration 030 been run?)" : "") }); return; }
         E.published = on; post({ fcm: "published", on: on, url: buildLink(E.buildId) });
       });
     }
@@ -1927,11 +1929,11 @@
     var E = state.editor, d = m.data || {}, name = String(m.name || "").trim();
     if (!name) { post({ fcm: "error", message: "Give the build a name first." }); return; }
     var row = { name: name, status: d.done ? "completed" : "draft", class_letter: /^[A-Z]$/.test(d.cls || "") ? d.cls : null, pi: d.pi ? Math.max(0, Math.min(999, Math.round(Number(d.pi)))) : null, data: d };
-    var q = (m.copy || !E.buildId) ? sb.from("build_sheets").insert(Object.assign({ league_id: state.league.id, car_id: E.carId }, row)).select("id").single()
-      : sb.from("build_sheets").update(row).eq("id", E.buildId).select("id").single();
+    var q = (m.copy || !E.buildId) ? sb.from("build_sheets").insert(Object.assign({ league_id: state.league.id, car_id: E.carId }, row)).select("id,published").single()
+      : sb.from("build_sheets").update(row).eq("id", E.buildId).select("id,published").single();
     q.then(function (r) {
       if (r.error) { post({ fcm: "error", message: r.error.code === "23505" ? "Another build in this league already has that name. Pick a different name." : dbError(r.error) }); return; }
-      E.buildId = r.data.id; E.name = name; E.car = null; E.data = d; E.dirty = false; post({ fcm: "saved", name: name });
+      E.buildId = r.data.id; E.name = name; E.car = null; E.data = d; E.dirty = false; E.published = !!r.data.published; post({ fcm: "saved", name: name, published: E.published, url: buildLink(E.buildId) });
     });
   }
   /* A championship's cars: stock (catalogue) and custom (saved builds) */
