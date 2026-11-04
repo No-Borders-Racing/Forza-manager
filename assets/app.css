@@ -75,3 +75,8 @@ a.btn:hover { border-color:var(--accent); }
 a.btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; }
 a.btn.nav { font-family:var(--display); text-transform:uppercase; letter-spacing:.07em; font-weight:600; font-size:14px; border-radius:4px; }
 .sub { color:var(--muted); font-size:13px; }
+
+/* On phones the nav, sub-nav, tabs and admin shortcuts stay on one swipeable line instead of wrapping into stacks. */
+@media (max-width:600px) { .scrollrow { flex-wrap:nowrap !important; overflow-x:auto; gap:6px !important; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .scrollrow::-webkit-scrollbar { display:none; }
+  .scrollrow > * { flex:0 0 auto !important; white-space:nowrap; padding:7px 11px !important; font-size:13px !important; min-height:0 !important; } }

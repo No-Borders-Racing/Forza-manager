@@ -234,9 +234,9 @@
   // Top bar: Home and Championships on the left, League settings hard right. Inside League settings a second row holds
   // General, Points systems, Drivers and Admins.
   function navHtml(active, sub) {
-    var h = '<div class="row" style="margin-bottom:12px"><button type="button" id="nav-h"' + (active === "h" ? ' class="primary"' : "") + '>Home</button><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button><button type="button" id="nav-r">Results</button>' +
+    var h = '<div class="row scrollrow" style="margin-bottom:12px"><button type="button" id="nav-h"' + (active === "h" ? ' class="primary"' : "") + '>Home</button><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Tracks</button><button type="button" id="nav-r">Results</button>' +
       '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
-    if (active === "l") h += '<div class="row" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"], ["s", "Sharing"]].map(function (t) {
+    if (active === "l") h += '<div class="row scrollrow" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"], ["s", "Sharing"]].map(function (t) {
       return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
     }).join("") + "</div>";
     return h;

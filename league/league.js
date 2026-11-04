@@ -15,7 +15,7 @@
   }
   // Signed-in league admins get an Edit link; if the page is set to Admin only they are told visitors cannot see it.
   function adminBar(label, href, isPublic, more) {
-    var bar = document.createElement("div"); bar.className = "actrow";
+    var bar = document.createElement("div"); bar.className = "actrow scrollrow";
     bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (more || []).map(function (m) { return '<a class="btn" href="' + esc(m[1]) + '">' + esc(m[0]) + "</a>"; }).join("") + (isPublic === false ? '<span class="m">Admin only: visitors cannot see this page.</span>' : "");
     document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
   }
@@ -93,7 +93,7 @@
     var want = qs.get("t"), cur = TABS.some(function (t) { return t[0] === want; }) ? want : "calendar";
     function draw() {
       out.innerHTML = (c.description ? '<p class="desc">' + esc(c.description) + "</p>" : "") +
-        '<div class="row" style="margin:0 0 12px" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
+        '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         TABS.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
         cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
@@ -167,7 +167,7 @@
     FCMChrome.setLeague(l.league_id);
     if (l.can_edit) {
       var ad = "../admin/?l=" + encodeURIComponent(l.league_id) + "&v=";
-      adminBar("Enter results", ad + "results", l.is_public, [["Add a round", ad + "addround"], ["New championship", ad + "newchamp"], ["League settings", ad + "league"]]);
+      adminBar("Enter results", ad + "results", l.is_public, [["Add a round", ad + "addround"], ["New championship", ad + "newchamp"]]);
     }
     if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
     head([l.league]);
@@ -175,7 +175,7 @@
     var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
     var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml };
     function draw() {
-      out.innerHTML = '<div class="row" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
+      out.innerHTML = '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
         cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });

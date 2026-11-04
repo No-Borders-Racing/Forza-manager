@@ -16,7 +16,7 @@
     css();
     var host = document.querySelector("main") || document.querySelector(".wrap"); if (!host) return;
     var el = document.getElementById("fcmnav");
-    if (!el) { el = document.createElement("nav"); el.id = "fcmnav"; el.className = "fcmnav"; host.insertBefore(el, host.firstChild); }
+    if (!el) { el = document.createElement("nav"); el.id = "fcmnav"; el.className = "fcmnav scrollrow"; host.insertBefore(el, host.firstChild); }
     el.innerHTML = NAV.map(function (n, i) {
       return '<a href="' + esc(n[0] === "home" && st.league ? new URL("../league/?l=" + encodeURIComponent(st.league), new URL(st.base || "", location.href)).href : st.base + "?v=" + n[0] + (st.league ? "&l=" + encodeURIComponent(st.league) : "")) + '"' + (i === NAV.length - 1 ? ' class="last"' : "") + ">" + n[1] + "</a>";
     }).join("");
