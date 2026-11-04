@@ -14,9 +14,9 @@
     document.getElementById("title").innerHTML = parts.map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");
   }
   // Signed-in league admins get an Edit link; if the page is set to Admin only they are told visitors cannot see it.
-  function adminBar(label, href, isPublic) {
+  function adminBar(label, href, isPublic, more) {
     var bar = document.createElement("div"); bar.className = "actrow";
-    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (isPublic === false ? '<span class="m">Admin only: visitors cannot see this page.</span>' : "");
+    bar.innerHTML = '<span class="pill">Admin</span><a class="btn primary" href="' + esc(href) + '">' + esc(label) + '</a>' + (more || []).map(function (m) { return '<a class="btn" href="' + esc(m[1]) + '">' + esc(m[0]) + "</a>"; }).join("") + (isPublic === false ? '<span class="m">Admin only: visitors cannot see this page.</span>' : "");
     document.querySelector("main").insertBefore(bar, document.getElementById("ph"));
   }
   function ms(n) { if (n == null) return ""; var m = Math.floor(n / 60000), s = (n % 60000) / 1000; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(3); }
@@ -165,7 +165,10 @@
   }
   function showLeague(l) {
     FCMChrome.setLeague(l.league_id);
-    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), l.is_public);
+    if (l.can_edit) {
+      var ad = "../admin/?l=" + encodeURIComponent(l.league_id) + "&v=";
+      adminBar("Enter results", ad + "results", l.is_public, [["Add a round", ad + "addround"], ["New championship", ad + "newchamp"], ["League settings", ad + "league"]]);
+    }
     if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
     head([l.league]);
     document.getElementById("sub").textContent = l.tagline || "";
