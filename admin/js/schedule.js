@@ -5,7 +5,6 @@
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function text(ms) { var d = new Date(ms); return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()); }
   function dayMs(p) { return Date.UTC(p.y, p.m - 1, p.d); }
-  function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
   // opts: { start, count, pattern: weekly|fortnightly|monthly|custom,
   //         monthlyMode: day_of_month|nth_weekday, intervalCount, intervalUnit: day|week|month }
   // Returns { dates: [...] } or { error: "message" }.

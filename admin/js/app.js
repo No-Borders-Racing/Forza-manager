@@ -167,7 +167,7 @@
 
   /* ---------- championships ---------- */
   function loadChamps() {
-    sb.from("championships").select("id,name,status,visibility").eq("league_id", state.league.id).order("created_at", { ascending: false }).then(function (r) {
+    sb.from("championships").select("id,name").eq("league_id", state.league.id).order("created_at", { ascending: false }).then(function (r) {
       if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + "</div>"; return; }
       state.champs = r.data; state.sel = null;
       renderChampList();
@@ -181,11 +181,14 @@
     try { return new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso)); } catch (e) { return String(iso); }
   }
   function copyBtnHtml(url) { return '<button type="button" data-copy="' + esc(url) + '">Copy link</button><a href="' + esc(url) + '" target="_blank" rel="noopener"><button type="button">Open</button></a>'; }
+  // Copies text. Calls back true when it worked, false when the person must press Ctrl+C themselves.
+  function copyText(text, cb) {
+    function fallback() { var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); var ok = false; try { ok = document.execCommand("copy"); } catch (e) {} t.remove(); cb(ok); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { cb(true); }, fallback); else fallback();
+  }
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-copy]"); if (!b) return;
-    var u = b.dataset.copy, done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy link"; }, 1800); };
-    var fallback = function () { var t = document.createElement("textarea"); t.value = u; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (x) { b.textContent = "Press Ctrl+C"; } t.remove(); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(done, fallback); else fallback();
+    copyText(b.dataset.copy, function (ok) { b.textContent = ok ? "Copied" : "Press Ctrl+C"; if (ok) setTimeout(function () { b.textContent = "Copy link"; }, 1800); });
   });
   function renderHome() {
     var lg = state.league; state.sel = null; state.nav = { view: "champ" };
@@ -586,11 +589,6 @@
     var n = state.nav || { view: "champ" };
     if (n.view === "race") renderRaceResults(n.rid); else if (n.view === "points") renderPoints(n.pid); else if (n.view === "season") { state.curSeason = n.sid; state.tab = "seasons"; state.nav = { view: "champ" }; renderChamp(); } else if (n.view === "newseason") renderNewSeason(); else renderChamp();
   }
-  function renderSeason(sid) {
-    var s = state.sel.seasons.filter(function (x) { return x.id === sid; })[0];
-    app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" + seasonHtml(s);
-    bindAll();
-  }
   function renderNewSeason() {
     app.innerHTML = '<p><button type="button" id="backchamp">← ' + esc(state.sel.champ.name) + "</button></p>" +
       '<div class="card"><h2>New season</h2><div class="row"><div class="field grow"><label for="sn">Season name</label><input id="sn"></div></div><div class="msg" id="sm"></div>' +
@@ -602,7 +600,6 @@
     on("#back", function () { loadChamps(); });
     on("#backchamp", function () { state.nav = { view: "champ" }; renderCurrent(); });
     on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
-    on("[data-open]", function (b) { state.nav = { view: "season", sid: b.dataset.open }; renderCurrent(); });
     on("[data-tab]", function (b) { state.tab = b.dataset.tab; renderChamp(); });
     on("#csave", saveChamp);
     on("#schsave", saveSchedule);
@@ -675,11 +672,8 @@
     on("[data-rdn]", function (b) { stepRound(b.dataset.rdn, 1); });
     on("[data-bye]", function (b) { byeWeek(b.dataset.bye); });
     on("[data-cpcopy]", function (b) {
-      var inp = $("#cpl-" + b.dataset.cpcopy), m = $("#cpm-" + b.dataset.cpcopy);
-      function done() { msg(m, "Link copied.", "ok"); }
-      inp.select();
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (e) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
-      else { try { document.execCommand("copy"); done(); } catch (e) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
+      var inp = $("#cpl-" + b.dataset.cpcopy), m = $("#cpm-" + b.dataset.cpcopy); inp.select();
+      copyText(inp.value, function (ok) { msg(m, ok ? "Link copied." : "Press Ctrl+C to copy the selected link.", ok ? "ok" : ""); });
     });
     on("[data-sd]", function (b) { del("seasons", b.dataset.sd, b); });
     on("[data-gp]", function (b) { previewRounds(b.dataset.gp); });
@@ -687,7 +681,6 @@
     on("[data-ea]", function (b) { addEvent(b.dataset.ea); });
     on("[data-es]", function (b) { saveEvent(b.dataset.es); });
     on("[data-ed]", function (b) { del("events", b.dataset.ed, b); });
-    app.querySelectorAll("[data-gf]").forEach(function (el) { el.addEventListener("change", function () { delete plans[el.dataset.gf]; var pv = $("#gv-" + el.dataset.gf); if (pv) pv.innerHTML = ""; }); });
   }
   function deleteChamp() {
     var c = state.sel.champ, m = $("#cdm");
@@ -784,10 +777,8 @@
   });
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-pgcopy]"); if (!b) return;
-    var k = b.dataset.pgcopy, inp = $("#pgl-" + k), m = $("#pgm-" + k);
-    var done = function () { msg(m, "Link copied.", "ok"); }; inp.select();
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, function () { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } });
-    else { try { document.execCommand("copy"); done(); } catch (x) { msg(m, "Press Ctrl+C to copy the selected link.", ""); } }
+    var inp = $("#pgl-" + b.dataset.pgcopy), m = $("#pgm-" + b.dataset.pgcopy); inp.select();
+    copyText(inp.value, function (ok) { msg(m, ok ? "Link copied." : "Press Ctrl+C to copy the selected link.", ok ? "ok" : ""); });
   });
 
   /* ---------- seasons ---------- */
@@ -1122,7 +1113,6 @@
     }
     return h + '<div class="row" style="margin-top:8px"><button data-gp="' + k + '" type="button">Preview rounds</button></div><div id="gv-' + k + '"></div></div>';
   }
-  function toggleGen() { /* the frequency has no dependent fields any more */ }
   function previewRounds(k) {
     var box = $("#gv-" + k), sid = k === "new" ? null : k; delete plans[k];
     var ser = sid ? seriesFor(sid) : null, done = ser ? ser.occurrence_count : 0, extra = numOrNull($("#gn-" + k).value), cfgv;

@@ -268,7 +268,6 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   }
   var AXES = [["Speed", "speed"], ["Braking", "braking"], ["Handling", "handling"], ["Accel", "accel"]];
   function P(g, n, t, d) { return { group: g, name: n, tier: t || "", detail: d || "" }; }
-  var builds = [];
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function poly(vals, cx, cy, R) {
     return AXES.map(function (a, i) {

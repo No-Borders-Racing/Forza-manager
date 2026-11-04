@@ -1,67 +1,58 @@
 # Forza Championship Manager
 
-A league manager for Forza Motorsport (2023): championships, seasons, recurring event schedules with proper time zones, cars and classes, tracks and race distances, results and standings, and a public calendar.
+A league manager for Forza Motorsport (2023). League admins build the data (championships, seasons, rounds, cars, builds, results) in the admin app. Everyone else sees the finished result on public pages: a league home page, a page per championship, season calendars and car build sheets.
 
-Status: database is live on Supabase. The admin app (`admin/`) has login, championships, seasons and events so far. Recurring schedules, importers, classes, build specs, results and the public page are not built yet.
+Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/`).
 
 ## Stack
 
-- Database and login: Supabase (PostgreSQL)
-- Hosting: GitHub Pages (static site that talks to Supabase from the browser)
-- Because the site's code is public, security comes from login and row level security in the database, not from hiding pages.
+- Database and login: Supabase (PostgreSQL, row level security).
+- Hosting: GitHub Pages, a static site that talks to Supabase from the browser. No build step.
+- The site's code is public, so security is login plus row level security in the database, never hidden pages. Only the project URL and the public anon key go in `admin/js/config.js`. Never commit the `service_role` key.
 
-## Scope
+## Layout
 
-1. Championships, seasons and events, with recurring schedules and time zones, and one free-text notes field per event.
-2. Cars, classes and eligibility, using an imported car catalogue.
-3. Tracks, layouts (including reverse variants) and a distance calculator, using an imported track list.
-4. Build specs per car per championship: admin-defined fields, tune policy, notes.
-5. Results, an admin-defined points system, and standings.
-6. A public calendar and standings page.
+| Path | What it is |
+| --- | --- |
+| `admin/` | The manager app: `index.html`, `js/app.js` (the whole app), `js/schedule.js` and `js/tz.js` (round generation and time zones), `builds/sheet.html` (the custom build sheet; also the public build page when opened with `?pub=<id>`). |
+| `league/` | Public league page (`?l=<league id>`) and public championship page (`?c=<championship id>`). |
+| `calendar/` | Public season calendar (`?s=<season id>`). |
+| `assets/` | `app.css` (the one stylesheet for the admin and every public page), `public.css`, `chrome.js` (top bar, nav bar and footer on public pages), `public.js` (helpers shared by the public pages), `og.png` (social preview image). |
+| `results/engine.js` | The scoring engine. Points are worked out in application code and stored on each result. |
+| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
+| `tools/car-catalogue-check.html` | A developer tool for checking the imported car catalogue. |
 
-Deliberately left out: any attempt to list or control Forza's lobby settings. Race conditions go in the event notes.
+## How it fits together
 
-## Design decisions in `supabase/schema.sql`
+**Structure.** League, then championship, then season, then round (stored in `events`), then race. Every league is its own folder: its championships, drivers, points systems, build sheets and admins are visible and editable only to that league's admins.
 
-**Blank stays blank.** Championship settings are nullable and start empty. The only defaults are system states: a new championship is `draft`, a new event is `scheduled`, imported cars and tracks are `unverified`. A points table entry or status rule that does not exist means "not set", never zero.
+**Roles.** Site owners (rows in `admins`) create and delete leagues and logins and maintain the shared car and track lists. League admins (`league_admins`) manage their own league. A new login can be created from the app, with a username instead of an email and a forced password change on first sign-in.
 
-**Publishing is guarded.** A database trigger refuses to publish a championship until it has visibility, an intended time zone, at least one season with start and end dates, and a date and time for every event that is not cancelled. `championship_missing_items(id)` returns the list so the admin screen can show what is left. The check runs when the championship itself is saved as published. An event added or edited afterwards is not blocked, so the app should call `championship_missing_items` after event edits and warn the admin.
+**Public pages.** Everything is Public by default. A "Who can view?" setting (Public or Admin only) on a league page, championship page, season calendar or build controls what visitors see. Anonymous visitors cannot read any table directly: they call `security definer` functions (`public_league`, `public_championship`, `public_calendar`, `public_build`) that return exactly what a page shows, and only when that item is Public. A build only shows once it is marked complete. Driver gamertags are never exposed, only display names. Signed-in admins see the app's nav bar on every public page.
 
-**Time zones.** Each event stores an exact instant (`starts_at`, timestamptz) and the IANA zone it was meant in (`timezone`, validated against the database's zone list). Viewers see it converted in their own browser.
+**Time zones.** Each round stores an exact instant (`starts_at`) and the IANA zone it was meant in. Public pages show every date and time in the viewer's own zone.
 
-**Recurring schedules.** `event_series` holds the rule. Events are generated as real rows. A unique index on `(series_id, occurrence_date)` stops regeneration from creating duplicates. `original_starts_at` keeps what the rule produced, and `is_override` marks an event that has been moved or edited, so the original schedule and the overrides stay distinguishable. Cancelling keeps the row with status `cancelled`.
+**Schedules.** A season supplies a start date and a number of rounds, generated from the championship's pattern (weekly, fortnightly, monthly or custom). Moving a season's start shifts every round. Rounds can be swapped, skipped or edited singly.
 
-**Classes are rules, not car lists.** A class has include and exclude rules by division, by admin-defined category, or by individual car. Precedence, most specific first: exclude car, include car, exclude division or category, include division or category, otherwise not eligible. Official Forza divisions (a column on `cars`) are kept apart from admin categories (`categories`).
+**Results and points.** Drivers are per league. Results are typed from the game's results screen. Each championship has named points systems (copyable from the library), chosen per race. Standings are the sum of the points stored on the results.
 
-**Builds are separate from the catalogue.** `build_specs` is per championship and per car. The tune policy (`drivers_own` or `prescribed`) is independent of the build type. The upgrade fields live in `spec_fields`, seeded from screenshots of the in-game Upgrade Shop (8 tabs, using the game's own part names), and the admin can edit them. Each field a build sets is one row in `build_spec_values`: a rule (allowed, prohibited, required or note), an optional part tier (stock, street, sport or race) and free text. For an allowed part the tier is the highest permitted; for a required part it is the tier that must be fitted. A new build spec starts with every part at Required, Stock tier, like a stock car in the game's shop, so the manager only changes the parts that may be upgraded (this is the one deliberate exception to "blank stays blank", requested by the league admin, and a trigger applies it, including to parts added later). Wheels are the exception to the tier list: a build spec has stock wheels, or an aftermarket wheel chosen by category then style, which also opens a rim size (stored on `build_specs` as `wheel_source`, `wheel_category`, `wheel_style`, `rim_size`; category, style and rim size are free text because the game's lists are not in any data source). A part with no row is left out. Not every car offers every part or tier, so the app records the rule and cannot check availability.
+**Cars and builds.** The Cars page holds the stock catalogue and the league's saved custom builds. A build is a build sheet saved under its own name, so one car can have several versions.
 
-**Results.** Each result stores its status, position and which points system scored it, and every change is written to `results_audit`. Points are calculated by application code from approved results, so a change to the scoring rules can be applied to future results only or recalculated across past ones, as the admin chooses.
+**Palettes.** Each league picks a colour palette (`data-palette` on `<html>`). The admin, the public pages and the build sheet all follow it.
 
-**Public access.** Anonymous visitors can read only published, public championships and what hangs off them. The imported `cars` and `track_*` tables are admin-only because the licence of the community data is unverified. Visitors see cars by name and tracks by layout through `public_class_cars`, `public_races` and `public_build_specs`.
+## Setup
 
-**Lobby and race start.** A season's schedule has an optional lobby-open time and a race start time, both in the league time zone. Every round inherits both, and either can be changed on a single round. The lobby must open at or before the race start on the same day. A database that was created before this was added needs `supabase/migrations/001_lobby_time.sql` run once.
+1. Create a Supabase project.
+2. Run `supabase/schema.sql` in the SQL editor, then `supabase/points_library.sql`.
+3. Create your login under Authentication and add it to `public.admins` (the exact statement is at the top of the schema file).
+4. Put the project URL and the public anon key in `admin/js/config.js`.
+5. Turn on GitHub Pages for the repository. In Supabase, switch "Confirm email" off while testing with made-up addresses.
 
-**Points systems.** A championship has any number of named points systems, each with points per position, optional DNF/DNS/DSQ points and bonuses or penalties. A library of real-world tables (`supabase/points_library.sql`, run once after the schema) can be copied into a championship and edited; each library row records its source and caveats. Library tables stop at 24 places because a Forza lobby holds at most 24 players; re-running the file replaces the library rows without touching copies already made. The tool does not yet model per-position stage points (NASCAR stages). A new points system starts with a DNF worth 0 (a deliberate exception to "blank stays blank", requested by the league admin, applied by a trigger and editable); DNS and DSQ stay unset. Databases created before this need `supabase/migrations/002_dnf_default.sql` run once.
-
-**Structure.** Championship, then season, then round (stored in `events`), then race. The championship holds the time zone, visibility, schedule pattern (frequency, lobby time, race start), points systems, classes and the race format (`race_templates`). A season supplies a starting date and a number of rounds. A round holds the date, lobby time, track layout and a bonus flag. A race holds its laps and points system, and a `double_points` flag that is ticked when results are uploaded. New rounds copy the championship's race format; changing the format later does not rewrite existing rounds. A database created before this needs `supabase/migrations/003_round_race_structure.sql` run once (it drops `race_classes` and the track on `races`).
-
-**Results.** Drivers are per league. A race's results are typed from the game's results screen (position order, status, best lap, race time, penalties, total). "Arrange final grid" can rank DNFs after the finishers by best lap (a points system setting) and marks the fastest lap; the scoring engine in `results/engine.js` calculates points. `supabase/migrations/010_results_fields.sql` adds the fields.
-
-**Leagues.** Every league is its own folder: its championships, drivers, points systems, build sheets and admins are visible and editable only to that league's admins (row level security, `supabase/migrations/008_leagues.sql`). Site owners (rows in `admins`) create leagues and are the only ones who can change the shared car and track lists; league admins can read them. Each league has a name, time zone and default units, and an admin list managed from the League settings screen. Adding an admin needs a login created first under Supabase Authentication.
+An existing project is updated by running any migrations it is missing, in order, from `supabase/migrations/`. `schema.sql` already contains all of them.
 
 ## Not done yet
 
-- The licence of the FM23Data files has not been checked, and there is no licence file in that repository.
-- Imported car and track values are unverified community data.
-- The schema has not been run against a real Supabase project.
-- Admin app: login, championships, seasons and events are built and were tested only against a fake in-memory database, not your real Supabase project.
-- No importer, schedule generator, class, build spec, results or scoring screens yet, and no public page.
-
-## Setup (when the app exists)
-
-1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
-3. Create your admin user under Authentication, then add them to `public.admins` (the exact statement is at the top of the schema file).
-4. Put only the project URL and the public anon key in the site's config. Never commit the `service_role` key.
-
-**Cars and builds.** The top bar has a Cars page: the stock catalogue (filter by class, division, make, year, country and drivetrain; sort by make, model, name or year; shared league favourites) and the league's saved custom builds. A build is the build sheet (`admin/builds/sheet.html`, shown in a frame) saved under its own name, so one car can have several versions; "Save as a copy" starts a new version. Each championship has a Cars tab that lists its stock unmodified cars and custom builds. Needs `supabase/migrations/014_cars_builds.sql`.
+- A real sign-up flow with email confirmation and password reset (today, an owner creates logins).
+- The AI results scan (reading results from a screenshot).
+- The licence of the FM23Data car and track files has not been checked, and imported values are unverified community data. For that reason the `cars` and `track_*` tables are admin-only; visitors see cars by name only through builds.
+- Deliberately left out: anything that lists or controls Forza's lobby settings. Race conditions go in the event notes.
