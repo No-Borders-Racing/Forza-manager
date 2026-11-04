@@ -64,7 +64,7 @@
     if (!c) { note("This calendar is not published."); return; }
     if (c.can_edit) adminBar(c);
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
-    document.title = [c.league, c.championship, c.season].join(" · "); FCMChrome.footer(c.league); FCMChrome.ready();
+    document.title = [c.league, c.championship, c.season].join(" · "); FCMChrome.footer(c.league); FCMChrome.ready(); FCMChrome.setLeague(c.league_id);
     document.getElementById("title").innerHTML = [c.league, c.championship, c.season].map(function (x, i) { return (i ? '<span class="sep">·</span> ' : "") + "<span>" + esc(x) + "</span>"; }).join(" ");
     var z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     document.getElementById("sub").textContent = "All times are shown in your local time" + (z ? " (" + z.replace(/_/g, " ") + ")" : "") + ".";

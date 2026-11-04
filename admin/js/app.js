@@ -70,7 +70,7 @@
 
   var state = { user: null, admin: false, champs: [], sel: null };
   // A link from the public calendar: ?l=<league>&c=<championship>&s=<season> opens that season's setup after sign-in.
-  (function () { try { var q = new URLSearchParams(location.search); if (q.get("l") && q.get("c")) state.deep = { l: q.get("l"), c: q.get("c"), s: q.get("s") }; } catch (e) {} })();
+  (function () { try { var q = new URLSearchParams(location.search); if (q.get("v") || (q.get("l") && q.get("c"))) state.deep = { l: q.get("l"), c: q.get("c"), s: q.get("s"), v: q.get("v") }; } catch (e) {} })();
 
   /* ---------- sign in ---------- */
   function showLogin(note) {
@@ -142,6 +142,8 @@
       if (state.league && state.league.id !== cur.id) state.lastChamp = null;
       state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
       var dp = state.deep; state.deep = null;
+      // From the nav bar on a public page: ?v=home|champs|cars|tracks|results|league
+      if (dp && dp.v && !dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} var VW = { home: renderHome, champs: loadChamps, cars: renderCars, tracks: renderTracks, results: goResults, league: renderLeague }; (VW[dp.v] || startView)(); return; }
       if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
       startView();
     });

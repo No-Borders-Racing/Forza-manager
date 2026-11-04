@@ -14,7 +14,7 @@
   }
   function roundHtml(r) {
     var d = r.starts_at ? new Date(r.starts_at) : null, off = r.status === "cancelled", races = r.races || [];
-    var head = '<div class="rnd">' + (r.round ? "Round " + esc(r.round) : esc(r.name || "Round")) +
+    var head = '<div class="rnd">' + (r.championship ? esc(r.championship) + " · " : "") + (r.round ? "Round " + esc(r.round) : esc(r.name || "Round")) +
       (r.bonus ? ' <span class="pill">Bonus</span>' : "") + (off ? ' <span class="pill bad">Cancelled</span>' : r.status === "completed" ? ' <span class="pill">Completed</span>' : "") + "</div>";
     head += d ? '<div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" : '<div class="big tbc">Date and time to be confirmed</div>';
     if (r.track) head += '<div class="big">' + esc(r.track.venue) + " · " + esc(r.track.layout) + "</div>";
@@ -77,18 +77,22 @@
     var z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     return h ? '<p class="sub" style="margin:0 0 4px">All times are shown in your local time' + (z ? " (" + esc(z.replace(/_/g, " ")) + ")" : "") + ".</p>" + h : '<p class="msg">No rounds have been scheduled yet.</p>';
   }
+  // The tables for each race of a round: Pos, Driver, Best lap, Pts.
+  function raceTables(rs) {
+    return rs.map(function (x, i) {
+      return (rs.length > 1 ? '<div class="rtitle">' + esc(x.name || "Race " + (i + 1)) + "</div>" : "") +
+        '<div class="wrapx"><table class="t"><thead><tr><th>Pos</th><th>Driver</th><th>Best lap</th><th>Pts</th></tr></thead><tbody>' +
+        x.results.map(function (y) {
+          return '<tr class="' + (y.position === 1 ? "top1" : "") + '"><td>' + (y.position != null ? y.position : "–") + "</td><td>" + esc(y.driver) + (y.status && y.status !== "finished" ? ' <span class="st">' + esc(y.status) + "</span>" : "") + (y.fastest_lap ? '<span class="fl" title="Fastest lap">FL</span>' : "") + "</td><td>" + esc(ms(y.best_lap_ms)) + "</td><td><b>" + (y.points == null ? "–" : esc(+y.points)) + "</b></td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }).join("");
+  }
   function resultsHtml(c) {
     var h = seasonsWrap(c, function (s) {
       return (s.rounds || []).filter(function (r) { return (r.races || []).some(function (x) { return (x.results || []).length; }); }).map(function (r) {
         var rs = r.races.filter(function (x) { return (x.results || []).length; });
         return '<details class="round"><summary class="sum"><div class="rnd">' + esc(r.round ? "Round " + r.round : "Round") + '</div><div class="big">' + esc(roundTitle(r).replace(/^Round \d+ · /, "")) + '</div><span class="chev" aria-hidden="true"></span></summary><div class="more">' +
-          rs.map(function (x, i) {
-            return (rs.length > 1 ? '<div class="rtitle">' + esc(x.name || "Race " + (i + 1)) + "</div>" : "") +
-              '<div class="wrapx"><table class="t"><thead><tr><th>Pos</th><th>Driver</th><th>Best lap</th><th>Pts</th></tr></thead><tbody>' +
-              x.results.map(function (y) {
-                return '<tr class="' + (y.position === 1 ? "top1" : "") + '"><td>' + (y.position != null ? y.position : "–") + "</td><td>" + esc(y.driver) + (y.status && y.status !== "finished" ? ' <span class="st">' + esc(y.status) + "</span>" : "") + (y.fastest_lap ? '<span class="fl" title="Fastest lap">FL</span>' : "") + "</td><td>" + esc(ms(y.best_lap_ms)) + "</td><td><b>" + (y.points == null ? "–" : esc(+y.points)) + "</b></td></tr>";
-              }).join("") + "</tbody></table></div>";
-          }).join("") + "</div></details>";
+          raceTables(rs) + "</div></details>";
       }).join("");
     });
     return h || '<p class="msg">No results yet.</p>';
@@ -113,6 +117,7 @@
   var TABS = [["builds", "Car builds", buildsHtml], ["calendar", "Calendar", calendarHtml], ["results", "Results", resultsHtml], ["standings", "Standings", standingsHtml]];
 
   function showChampionship(c) {
+    FCMChrome.setLeague(c.league_id);
     if (c.can_edit) adminBar("Edit championship", "../admin/?l=" + encodeURIComponent(c.league_id) + "&c=" + encodeURIComponent(c.championship_id), "championships", c.championship_id, "page_published");
     if (c.palette) document.documentElement.setAttribute("data-palette", c.palette);
     head([c.league, c.championship]);
@@ -133,11 +138,24 @@
   // Plain text with line breaks; web addresses become links.
   function richText(t) { return esc(t).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }); }
   var SOC = [["website", "Website"], ["discord", "Discord"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
-  function showLeague(l) {
-    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), "leagues", l.league_id, "page_published");
-    if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
-    head([l.league]);
-    document.getElementById("sub").textContent = l.tagline || "";
+  var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"]];
+  function champCardsHtml(cs, full) {
+    return cs.length ? '<div class="cards">' + cs.map(function (c) {
+      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + "</b>" + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
+    }).join("") + "</div>" : '<p class="msg">No championships have been published yet.</p>';
+  }
+  function leagueCalendarHtml(l) {
+    var rs = l.calendar || [], z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+    return rs.length ? '<p class="sub" style="margin:0 0 4px">Upcoming rounds across all championships. Times are shown in your local time' + (z ? " (" + esc(z.replace(/_/g, " ")) + ")" : "") + ".</p>" + rs.map(roundHtml).join("") : '<p class="msg">No upcoming rounds are scheduled.</p>';
+  }
+  function leagueResultsHtml(l) {
+    var ls = l.latest || [];
+    return ls.length ? '<p class="sub" style="margin:0 0 4px">The latest round with results in each championship.</p>' + ls.map(function (r) {
+      return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + '</div><div class="big">' + esc(roundTitle(r).replace(/^Round \d+ · /, "")) + "</div>" + raceTables(r.races || []) +
+        '<div class="sub" style="margin-top:8px"><a href="?c=' + encodeURIComponent(r.championship_id) + '&t=standings" style="color:var(--link)">Full results and standings →</a></div></div>';
+    }).join("") : '<p class="msg">No results yet.</p>';
+  }
+  function overviewHtml(l) {
     var h = "", ban = safeUrl(l.banner_url);
     if (ban) h += '<img src="' + esc(ban) + '" alt="" style="display:block;width:100%;max-height:200px;object-fit:cover;border-radius:6px;margin:0 0 12px" onerror="this.remove()">';
     var L = l.links || {}, soc = SOC.filter(function (o) { return safeUrl(L[o[0]]); });
@@ -148,14 +166,31 @@
     if (n && n.starts_at) {
       var d = new Date(n.starts_at);
       h += '<h2 class="sn">Next race</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
-        (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") +
-        '<div class="sub"><a href="?c=' + encodeURIComponent(n.championship_id) + '&t=calendar" style="color:var(--link)">See the calendar →</a></div></div>';
+        (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") + "</div>";
     }
-    var cs = l.championships || [];
-    h += '<h2 class="sn">Championships</h2>' + (cs.length ? '<div class="cards">' + cs.map(function (c) {
-      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + "</b>" + (c.description ? "<span>" + esc(String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
-    }).join("") + "</div>" : '<p class="msg">No championships have been published yet.</p>');
-    out.innerHTML = h;
+    var ls = l.latest || [];
+    if (ls.length) h += '<h2 class="sn">Latest results</h2>' + ls.map(function (r) {
+      var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
+      return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<div class="line">' + top.map(function (y) { return "<b>" + y.position + ".</b> " + esc(y.driver); }).join(" &nbsp; ") + "</div>" : "") + "</div>";
+    }).join("");
+    h += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
+    return h;
+  }
+  function showLeague(l) {
+    FCMChrome.setLeague(l.league_id);
+    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id), "leagues", l.league_id, "page_published");
+    if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
+    head([l.league]);
+    document.getElementById("sub").textContent = l.tagline || "";
+    var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
+    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml };
+    function draw() {
+      out.innerHTML = '<div class="row" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
+      out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
+        cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
+      }); });
+    }
+    draw();
   }
 
   if (cid) sb.rpc("public_championship", { cid: cid }).then(function (r) {
