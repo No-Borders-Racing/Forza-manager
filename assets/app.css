@@ -76,7 +76,15 @@ a.btn.primary { background:var(--accent); color:var(--accent-ink); border-color:
 a.btn.nav { font-family:var(--display); text-transform:uppercase; letter-spacing:.07em; font-weight:600; font-size:14px; border-radius:4px; }
 .sub { color:var(--muted); font-size:13px; }
 
-/* On phones the nav, sub-nav, tabs and admin shortcuts stay on one swipeable line instead of wrapping into stacks. */
-@media (max-width:600px) { .scrollrow { flex-wrap:nowrap !important; overflow-x:auto; gap:6px !important; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
-  .scrollrow::-webkit-scrollbar { display:none; }
-  .scrollrow > * { flex:0 0 auto !important; white-space:nowrap; padding:7px 11px !important; font-size:13px !important; min-height:0 !important; } }
+/* Phone menu (assets/menu.js): below 600px the nav rows collapse into a hamburger menu in the top bar. */
+.hbtn, .hbp { display:none; }
+@media (max-width:600px) {
+  html.hb header.top { flex-wrap:nowrap; }
+  html.hb header.top h1 { flex:1 1 auto; font-size:17px; }
+  html.hb header.top #who, html.hb .scrollrow { display:none !important; }
+  .hbtn { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:44px; height:44px; padding:0; border-radius:6px; }
+  .hbp:not([hidden]) { display:block; position:absolute; z-index:50; left:0; right:0; top:100%; margin-top:10px; max-height:calc(100vh - 90px); overflow-y:auto; background:var(--card); border:1px solid var(--line); border-top:3px solid var(--accent); border-radius:6px; box-shadow:0 12px 30px rgba(0,0,0,.45); padding:6px 0 8px; }
+  .hbg { font-family:var(--display); text-transform:uppercase; letter-spacing:.1em; font-size:12px; color:var(--muted); padding:12px 16px 4px; }
+  .hbi { display:block; width:100%; text-align:left; background:none; border:0; border-left:3px solid transparent; border-radius:0; padding:12px 16px; min-height:46px; font-family:var(--display); text-transform:uppercase; letter-spacing:.07em; font-weight:600; font-size:15px; color:var(--ink); }
+  .hbi.on { border-left-color:var(--accent); background:var(--bg); color:var(--accent); }
+}
