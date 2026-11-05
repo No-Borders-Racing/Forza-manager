@@ -13,7 +13,7 @@ function loadLeagues(pick) {
     state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
     var dp = state.deep; state.deep = null;
     // From the nav bar on a public page: ?v=home|champs|cars|tracks|results|league
-    if (dp && dp.v && !dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} var VW = { home: goHome, sharing: renderSharing, champs: loadChamps, cars: renderCars, tracks: renderTracks, results: goResults, league: renderLeague }; (VW[dp.v] || startView)(); return; }
+    if (dp && dp.v && !dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} var VW = { home: renderHome, sharing: renderSharing, champs: loadChamps, cars: renderCars, tracks: renderTracks, results: goResults, league: renderLeague }; (VW[dp.v] || startView)(); return; }
     if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
     startView();
   });
@@ -36,7 +36,5 @@ function renderLeaguePicker() {
 }
 /* ---------- home: what needs doing, at a glance ---------- */
 // A per-login choice kept on the login itself (user metadata), so it follows the admin to any device. On unless switched off.
-function homeFirst() { var m = state.user && state.user.user_metadata; return !(m && m.home_first === false); }
-function startView() { if (homeFirst()) goHome(); else loadChamps(); }
+function startView() { renderHome(); }
 // Home is the league's public page (the final product everyone sees). It carries the admin shortcuts for signed-in admins.
-function goHome() { location.assign(pageLink("l", state.league.id)); }

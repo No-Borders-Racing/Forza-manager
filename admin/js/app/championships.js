@@ -36,6 +36,7 @@ function renderChampList() {
     });
   }); });
   bindNav();
+  if (state.focusNew) { state.focusNew = false; var nf = $("#nn"); if (nf) { nf.focus(); try { nf.scrollIntoView({ block: "center" }); } catch (e) {} } }
   if ($("#switchbtn")) $("#switchbtn").addEventListener("click", renderLeaguePicker);
   $("#nadd").addEventListener("click", function () {
     var n = $("#nn").value.trim(); if (!n) { msg($("#nm"), "Type a name first.", "err"); return; }

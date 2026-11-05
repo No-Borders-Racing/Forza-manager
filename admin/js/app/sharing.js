@@ -19,26 +19,17 @@ function renderSharing() {
 function drawSharing(d) {
   var lg = state.league, box = $("#hm"); if (!box) return;
   var rows = [], pub = function (on, url, name, go, id) {
-    return '<div class="row" style="align-items:center;margin:4px 0"><span style="flex:1 1 180px">' + esc(name) + "</span>" + (on ? '<span class="pill">Public</span>' + copyBtnHtml(url) : '<span class="pill">Admin only</span><button type="button" data-hgo="' + go + '"' + (id ? ' data-id="' + esc(id) + '"' : "") + ">Change…</button>") + "</div>";
+    return '<div class="row" style="align-items:center;margin:4px 0"><span style="flex:1 1 180px">' + esc(name) + "</span>" + (on ? copyBtnHtml(url) : '<span class="pill">Admin only</span><button type="button" data-hgo="' + go + '"' + (id ? ' data-id="' + esc(id) + '"' : "") + ">Change…</button>") + "</div>";
   };
   rows.push(pub(!!lg.page_published, pageLink("l", lg.id), "League page", "league"));
   d.champs.forEach(function (c) { rows.push(pub(!!c.page_published, pageLink("c", c.id), c.name + " page", "champ", c.id)); });
   d.seasons.forEach(function (x) { var c = d.champOf[x.championship_id]; rows.push(pub(!!x.calendar_published, calendarLink(x.id), (c ? c.name + " · " : "") + x.name + " calendar", "champ", x.championship_id)); });
   var h = '<p class="muted" style="margin:0 0 8px">Who can view each page, with its link to share.</p>' + rows.join("");
-  h += '<label style="display:flex;align-items:center;gap:8px;margin-top:18px"><input type="checkbox" id="hfirst"' + (homeFirst() ? " checked" : "") + '> Open the league page first when I sign in</label><div class="msg" id="hfm"></div>';
   box.className = ""; box.innerHTML = h;
   box.querySelectorAll("[data-hgo]").forEach(function (b) { b.addEventListener("click", function () {
     if (b.dataset.hgo === "league") { renderLeague(); return; }
     state.wantTab = "settings"; openChamp(b.dataset.id);
   }); });
-  $("#hfirst").addEventListener("change", function () {
-    var v = $("#hfirst").checked, m = $("#hfm"); msg(m, "Saving…");
-    sb.auth.updateUser({ data: { home_first: v } }).then(function (r) {
-      if (r.error) { msg(m, dbError(r.error), "err"); $("#hfirst").checked = !v; return; }
-      state.user.user_metadata = Object.assign({}, state.user.user_metadata, { home_first: v });
-      msg(m, v ? "The league page will open first when you sign in." : "You will go straight to the championship list when you sign in.", "ok");
-    });
-  });
 }
 /* ---------- public championship and league pages ---------- */
 function pageLink(kind, id) { return new URL("../league/?" + kind + "=" + encodeURIComponent(id), location.href).href; }
