@@ -4,7 +4,7 @@
   "use strict";
   function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   var st = { base: "", league: "", signedIn: false };
-  var NAV = [["home", "Home"], ["champs", "Championships"], ["cars", "Cars"], ["tracks", "Tracks"], ["results", "Results"], ["league", "League settings"]];
+  var NAV = [["home", "Home"], ["champs", "Championships"], ["cars", "Cars"], ["tracks", "Track guide"], ["results", "Results"], ["league", "League settings"]];
   function css() {
     if (document.getElementById("fcmnav-css")) return;
     var s = document.createElement("style"); s.id = "fcmnav-css";

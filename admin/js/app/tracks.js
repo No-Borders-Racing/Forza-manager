@@ -1,11 +1,11 @@
-/* Tracks. */
+/* Track guide. */
 /* These files share one global scope; they load in the order listed in admin/index.html. */
 "use strict";
 
 /* Tracks: a read-only reference library of every venue and its layouts. */
 state.tf = state.tf || { q: "", country: "", kind: "" };
 function renderTracks() {
-  app.innerHTML = navHtml("t") + '<div class="card muted">Loading tracks…</div>'; bindNav();
+  app.innerHTML = navHtml("t") + '<div class="card muted">Loading the track guide…</div>'; bindNav();
   Promise.all([sb.from("track_venues").select("*").order("name", { ascending: true }), sb.from("track_layouts").select("id,venue_id,name,length_km,is_reverse").order("name", { ascending: true })]).then(function (rs) {
     var bad = rs.filter(function (r) { return r.error; })[0];
     if (bad) { app.innerHTML = navHtml("t") + '<div class="card err">' + esc(dbError(bad.error)) + " Has migration 016 been run?</div>"; bindNav(); return; }
@@ -45,7 +45,7 @@ function venueDetailHtml(v) {
 }
 function renderTracksBody() {
   var f = state.tf, countries = uniq(state.venues.map(function (v) { return v.country; })).sort(function (a, b) { return (COUNTRY_NAME[a] || a).localeCompare(COUNTRY_NAME[b] || b); });
-  app.innerHTML = navHtml("t") + '<div class="card"><h2 style="font-size:18px;margin:0">Tracks</h2><p class="muted" style="margin:4px 0 10px">Every venue and its layouts, with background where we have it. Lengths follow the league units.</p>' +
+  app.innerHTML = navHtml("t") + '<div class="card"><h2 style="font-size:18px;margin:0">Track guide</h2><p class="muted" style="margin:4px 0 10px">Every venue and its layouts, with background where we have it. Lengths follow the league units.</p>' +
     '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="tq">Search</label><input id="tq" value="' + esc(f.q) + '" placeholder="Venue, place or layout" autocomplete="off"></div>' +
     '<div class="field"><label for="tco">Country</label><select id="tco">' + selOpts(countries.map(function (c) { return [c, COUNTRY_NAME[c] || c]; }), f.country, "Any") + '</select></div>' +
     '<div class="field"><label for="tkd">Type</label><select id="tkd">' + selOpts([["real", "Real circuits"], ["fictional", "Fictional"]], f.kind, "Any") + '</select></div></div>' +
