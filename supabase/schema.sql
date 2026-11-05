@@ -1793,3 +1793,23 @@ alter table public.championships drop column if exists status;
 alter table public.championships drop column if exists visibility;
 
 notify pgrst, 'reload schema';
+
+-- ===== 032: deleting a championship no longer trips the league check =====
+create or replace function public.guard_result_league() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare lid uuid;
+begin
+  lid := public.race_league(new.race_id);
+  if lid is null then
+    return new;
+  end if;
+  if not exists (select 1 from public.drivers where id = new.driver_id and league_id = lid) then
+    raise exception 'That driver belongs to another league';
+  end if;
+  if not public.points_system_fits(new.scored_with_system_id, lid, null) then
+    raise exception 'That points system belongs to another league';
+  end if;
+  return new;
+end $$;
+
+notify pgrst, 'reload schema';
