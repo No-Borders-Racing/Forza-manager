@@ -1,4 +1,4 @@
-/* Phone menu: below 600px the nav, sub-nav, page tabs and admin shortcuts collapse into one hamburger menu in the top bar.
+/* Hamburger menu in the top bar. On every screen it holds the app navigation and Sign out; on phones (under 600px) it also holds the page tabs and shortcuts.
    Nothing is moved or rebuilt: the rows stay in the page (hidden by CSS on phones) and each menu item presses the matching button. */
 (function () {
   "use strict";
@@ -22,7 +22,9 @@
   var APP = { "Championships": "Manage championships", "Results": "Enter results" };
   function build() {
     var h = "", n = 0, seen = {}; items = [];
+    var phone = !mq || mq.matches;
     document.querySelectorAll(".scrollrow").forEach(function (row) {
+      if (!phone && label(row) !== "Menu") return;
       var g = label(row), els = Array.prototype.filter.call(row.children, function (c) {
         return (c.tagName === "BUTTON" || c.tagName === "A") && !(g === "Quick actions" && c.textContent.trim() === "Enter results" && seen["Enter results"]);
       });
@@ -37,7 +39,11 @@
     if (out) { items.push(out); h += '<div class="hbg">' + esc(em ? em.textContent : "Account") + '</div><button type="button" class="hbi" data-i="' + (n++) + '">Sign out</button>'; }
     panel.innerHTML = h || '<div class="hbg">Nothing to show</div>';
   }
-  function setOpen(on) { panel.hidden = !on; btn.setAttribute("aria-expanded", on ? "true" : "false"); if (on) build(); }
+  // The button only shows when there is something in the menu (visitors on a wide screen have nothing).
+  var timer = 0;
+  function sync() { timer = 0; if (!panel.hidden) return; build(); btn.hidden = !items.length; }
+  function later() { if (!timer) timer = setTimeout(sync, 120); }
+  function setOpen(on) { panel.hidden = !on; btn.setAttribute("aria-expanded", on ? "true" : "false"); if (on) build(); else later(); }
   btn.addEventListener("click", function (e) { e.stopPropagation(); setOpen(panel.hidden); });
   panel.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".hbi"); if (!b) return;
@@ -45,5 +51,7 @@
   });
   document.addEventListener("click", function (e) { if (!panel.hidden && !header.contains(e.target)) setOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) { setOpen(false); btn.focus(); } });
-  if (mq && mq.addEventListener) mq.addEventListener("change", function () { setOpen(false); });
+  if (mq && mq.addEventListener) mq.addEventListener("change", function () { setOpen(false); sync(); });
+  btn.hidden = true; sync();
+  if (window.MutationObserver) new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
 })();

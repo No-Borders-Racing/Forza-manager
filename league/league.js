@@ -165,10 +165,7 @@
   }
   function showLeague(l) {
     FCMChrome.setLeague(l.league_id);
-    if (l.can_edit) {
-      var ad = "../admin/?l=" + encodeURIComponent(l.league_id) + "&v=";
-      adminBar("Enter results", ad + "results", l.is_public, [["Add a round", ad + "addround"], ["New championship", ad + "newchamp"]]);
-    }
+    if (l.can_edit) adminBar("Edit league", "../admin/?l=" + encodeURIComponent(l.league_id) + "&v=league", l.is_public);
     if (l.palette) document.documentElement.setAttribute("data-palette", l.palette);
     head([l.league]);
     document.getElementById("sub").textContent = l.tagline || "";

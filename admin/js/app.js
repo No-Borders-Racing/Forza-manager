@@ -143,7 +143,7 @@
       state.league = cur; applyPalette(cur.palette || ""); lsSet("fcm.league", cur.id);
       var dp = state.deep; state.deep = null;
       // From the nav bar on a public page: ?v=home|champs|cars|tracks|results|league
-      if (dp && dp.v && !dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} var VW = { home: goHome, newchamp: function () { state.focusNew = true; loadChamps(); }, addround: addRoundNow, sharing: renderSharing, champs: loadChamps, cars: renderCars, tracks: renderTracks, results: goResults, league: renderLeague }; (VW[dp.v] || startView)(); return; }
+      if (dp && dp.v && !dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} var VW = { home: goHome, sharing: renderSharing, champs: loadChamps, cars: renderCars, tracks: renderTracks, results: goResults, league: renderLeague }; (VW[dp.v] || startView)(); return; }
       if (dp && dp.l === cur.id && dp.c) { try { history.replaceState(null, "", location.pathname); } catch (e) {} openChamp(dp.c, dp.s ? { view: "season", sid: dp.s } : null); return; }
       startView();
     });
@@ -242,14 +242,7 @@
     return h;
   }
   // Results from anywhere: the championship you were last in, or the newest one if you have not opened any.
-  // Opens the newest championship on its Seasons tab, where rounds are added.
-  function addRoundNow() {
-    sb.from("championships").select("id").eq("league_id", state.league.id).order("created_at", { ascending: false }).limit(1).then(function (r) {
-      var c = r.data && r.data[0]; if (!c) { state.focusNew = true; loadChamps(); return; }
-      state.wantTab = "seasons"; openChamp(c.id);
-    });
-  }
-  function goResults() {
+    function goResults() {
     var id = state.lastChamp || (state.champs && state.champs[0] && state.champs[0].id);
     if (id && state.league) { state.wantTab = "results"; state.nav = { view: "champ" }; openChamp(id, { view: "champ" }); return; }
     sb.from("championships").select("id").eq("league_id", state.league.id).order("created_at", { ascending: false }).limit(1).then(function (r) {
@@ -404,7 +397,6 @@
       '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
       '<p class="muted">It starts as a draft. The time zone is filled in from the league settings, or from this browser if the league has none (you can change it on the championship page); every other setting is blank.</p></div>';
     app.querySelectorAll("button.item").forEach(function (b) { b.addEventListener("click", function () { openChamp(b.dataset.id); }); });
-    if (state.focusNew) { state.focusNew = false; var nf = $("#nn"); if (nf) { nf.focus(); try { nf.scrollIntoView({ block: "center" }); } catch (e) {} } }
     app.querySelectorAll("[data-ldel]").forEach(function (b) { b.addEventListener("click", function () {
       var c = state.champs.filter(function (x) { return x.id === b.dataset.ldel; })[0], box = $("#ldelbox");
       box.innerHTML = '<div class="card" style="border-color:var(--err)"><p style="margin:0 0 8px">Permanently delete <b>' + esc(c.name) + '</b> with all of its seasons, rounds, races, points systems, classes and race format? It cannot be undone. Type its name to confirm.</p>' +
