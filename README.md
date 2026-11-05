@@ -14,7 +14,7 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 
 | Path | What it is |
 | --- | --- |
-| `admin/` | The manager app: `index.html`, `js/app.js` (the whole app), `js/schedule.js` and `js/tz.js` (round generation and time zones), `builds/sheet.html` (the custom build sheet; also the public build page when opened with `?pub=<id>`). |
+| `admin/` | The manager app: `index.html`, `js/app/` (the app, one file per section: core, nav, auth, leagues, sharing, leaguesettings, drivers, championships, schedule, seasons, rounds, points, cars, tracks, results, main; they share one global scope and load in the order listed in `index.html`), `js/schedule.js` and `js/tz.js` (round generation and time zones), `builds/sheet.html` (the custom build sheet; also the public build page when opened with `?pub=<id>`). |
 | `league/` | Public league page (`?l=<league id>`) and public championship page (`?c=<championship id>`). |
 | `calendar/` | Public season calendar (`?s=<season id>`). |
 | `assets/` | `app.css` (the one stylesheet for the admin and every public page), `public.css`, `chrome.js` (top bar, nav bar and footer on public pages), `public.js` (helpers shared by the public pages), `menu.js` (the hamburger menu), `og.png` (social preview image). |
