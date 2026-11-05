@@ -18,13 +18,20 @@
     if (row.classList.contains("actrow")) return "Quick actions";
     return "On this page";
   }
+  // The app's own pages and a public page's sections share some names, so in the menu the app pages say what they do.
+  var APP = { "Championships": "Manage championships", "Results": "Enter results" };
   function build() {
-    var h = "", n = 0; items = [];
+    var h = "", n = 0, seen = {}; items = [];
     document.querySelectorAll(".scrollrow").forEach(function (row) {
-      var els = Array.prototype.filter.call(row.children, function (c) { return c.tagName === "BUTTON" || c.tagName === "A"; });
+      var g = label(row), els = Array.prototype.filter.call(row.children, function (c) {
+        return (c.tagName === "BUTTON" || c.tagName === "A") && !(g === "Quick actions" && c.textContent.trim() === "Enter results" && seen["Enter results"]);
+      });
       if (!els.length) return;
-      h += '<div class="hbg">' + esc(label(row)) + "</div>";
-      els.forEach(function (e) { items.push(e); h += '<button type="button" class="hbi' + (e.classList.contains("primary") ? " on" : "") + '" data-i="' + (n++) + '">' + esc(e.textContent.trim()) + "</button>"; });
+      h += '<div class="hbg">' + esc(g === "Menu" ? "Manage" : g) + "</div>";
+      els.forEach(function (e) {
+        var t = e.textContent.trim(); if (g === "Menu") { t = APP[t] || t; seen[t] = 1; }
+        items.push(e); h += '<button type="button" class="hbi' + (e.classList.contains("primary") ? " on" : "") + '" data-i="' + (n++) + '">' + esc(t) + "</button>";
+      });
     });
     var out = document.querySelector("#who button"), em = document.querySelector("#who .wem");
     if (out) { items.push(out); h += '<div class="hbg">' + esc(em ? em.textContent : "Account") + '</div><button type="button" class="hbi" data-i="' + (n++) + '">Sign out</button>'; }
