@@ -92,7 +92,7 @@ function openChamp(id, nav) {
         if (state.wantTab) { state.tab = state.wantTab; state.wantTab = null; }
         state.nav = nav || prev || { view: "champ" };
         if (state.nav.view === "season" && !seasons.some(function (x) { return x.id === state.nav.sid; })) state.nav = { view: "champ" };
-        loadChampCarOpts(id, function (n) { if (!prev && !nav && n === 0) state.tab = "cars"; renderCurrent(); });
+        loadChampCarOpts(id, function () { renderCurrent(); });
       });
     });
   });
