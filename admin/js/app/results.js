@@ -256,10 +256,14 @@ function renderStandings() {
         }).filter(function (r) { return r.races.length; });
         if (!rounds.length) { box.innerHTML = '<p class="muted">No results entered yet. Enter them on the Results tab.</p>'; return; }
         var st = ENG.standings(empty, rounds);
-        box.innerHTML = (noSys ? '<p class="err">Some races have no points system, so they score 0.</p>' : "") + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>#</th><th style="text-align:left">Driver</th><th>Points</th>' +
+        // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
+        var kinds = []; st.raceColumns.forEach(function (c) { if (kinds.indexOf(c.race) < 0) kinds.push(c.race); });
+        if (kinds.length < 2) kinds = [];
+        function kindPts(r, k) { var n = null; st.raceColumns.forEach(function (c) { if (c.race === k && r.perRace[c.key] != null) n = (n || 0) + r.perRace[c.key]; }); return n; }
+        box.innerHTML = (noSys ? '<p class="err">Some races have no points system, so they score 0.</p>' : "") + '<div style="overflow-x:auto"><table class="zebra" style="border-collapse:collapse;width:100%"><thead><tr><th>#</th><th style="text-align:left">Driver</th><th>Total</th>' + kinds.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") +
           st.raceColumns.map(function (c) { return '<th title="' + esc(c.round + " " + c.race) + '">' + esc(c.round + " " + c.race) + "</th>"; }).join("") + "<th>Wins</th><th>Podiums</th><th>Fastest laps</th></tr></thead><tbody>" +
           st.rows.map(function (r) {
-            return '<tr><td style="text-align:center">' + r.rank + "</td><td>" + esc(r.driver) + '</td><td style="text-align:center"><b>' + r.total + "</b></td>" +
+            return '<tr><td style="text-align:center">' + r.rank + "</td><td>" + esc(r.driver) + '</td><td style="text-align:center"><b>' + r.total + "</b></td>" + kinds.map(function (k) { var n = kindPts(r, k); return '<td style="text-align:center">' + (n == null ? "–" : +n.toFixed(2)) + "</td>"; }).join("") +
               st.raceColumns.map(function (c) { return '<td style="text-align:center">' + (r.perRace[c.key] == null ? "–" : r.perRace[c.key]) + "</td>"; }).join("") +
               '<td style="text-align:center">' + r.wins + '</td><td style="text-align:center">' + r.podiums + '</td><td style="text-align:center">' + r.fastestLaps + "</td></tr>";
           }).join("") + "</tbody></table></div>";

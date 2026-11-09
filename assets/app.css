@@ -116,3 +116,6 @@ ol.rk li span { display:flex; gap:10px; min-width:0; overflow-wrap:anywhere; }
 ol.rk li b { font-family:var(--display); color:var(--muted); min-width:1.2em; }
 ol.rk li em { font-style:normal; color:var(--muted); font-variant-numeric:tabular-nums; }
 @media (max-width:760px) { .cols { grid-template-columns:minmax(0,1fr); } }
+
+/* Data tables: every other row is slightly shaded so the eye can follow a row across the page. */
+table.t tbody tr:nth-child(even) td, table.zebra tbody tr:nth-child(even) td { background:rgba(127,127,127,.09); }

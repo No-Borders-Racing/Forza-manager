@@ -66,9 +66,10 @@
   }
   function standingsHtml(c) {
     var h = seasonsWrap(c, function (s) {
-      var by = {}, any = false;
+      var by = {}, any = false, kinds = [];
       (s.rounds || []).forEach(function (r) { (r.races || []).forEach(function (x) { (x.results || []).forEach(function (y) {
-        any = true; var d = by[y.driver] || (by[y.driver] = { driver: y.driver, pts: 0, wins: 0, pod: 0, fl: 0, starts: 0 });
+        any = true; var d = by[y.driver] || (by[y.driver] = { driver: y.driver, pts: 0, wins: 0, pod: 0, fl: 0, starts: 0, kind: {} });
+        var kn = x.name || "Race"; if (kinds.indexOf(kn) < 0) kinds.push(kn); d.kind[kn] = (d.kind[kn] || 0) + (Number(y.points) || 0);
         d.pts += Number(y.points) || 0; d.starts++; if (y.fastest_lap) d.fl++;
         if (isFin(y) && y.position === 1) d.wins++; if (isFin(y) && y.position != null && y.position <= 3) d.pod++;
       }); }); });
@@ -76,8 +77,10 @@
       var rows = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.pts - a.pts || b.wins - a.wins || b.pod - a.pod || (a.driver.toLowerCase() < b.driver.toLowerCase() ? -1 : 1); });
       var rank = 0, prev = null;
       rows.forEach(function (r, i) { var sig = [r.pts, r.wins, r.pod].join("|"); if (sig !== prev) { rank = i + 1; prev = sig; } r.rank = rank; });
-      return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Pts</th><th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
-        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+r.pts.toFixed(2)) + "</b></td><td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+      // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
+      var split = kinds.length > 1 ? kinds : [];
+      return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Total</th>' + split.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + '<th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
+        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+r.pts.toFixed(2)) + "</b></td>" + split.map(function (k) { return "<td>" + (r.kind[k] == null ? "–" : esc(+r.kind[k].toFixed(2))) + "</td>"; }).join("") + "<td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
     });
     return h || '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
