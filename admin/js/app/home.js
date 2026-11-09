@@ -7,7 +7,7 @@ function whenText(iso) {
 }
 function renderHome() {
   var lg = state.league; state.sel = null; state.nav = { view: "champ" };
-  app.innerHTML = navHtml("h") + '<div class="card"><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League") + '</h2><div id="hm" class="muted" style="margin-top:8px">Loading…</div></div>';
+  app.innerHTML = navHtml("h") + '<div class="card"><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League") + '</h2><div id="hm" class="muted" style="margin-top:8px">Loading…</div></div><div id="hcols" class="cols"></div>';
   bindNav();
   var lid = lg.id, now = Date.now();
   sb.from("championships").select("*").eq("league_id", lid).order("created_at", { ascending: false }).then(function (cr) {
@@ -37,7 +37,10 @@ function renderHome() {
             var tP = ids.length ? sb.from("track_layouts").select("id,name,track_venues(name)").in("id", ids) : Promise.resolve({ data: [] });
             tP.then(function (tr) {
               var tn = {}; (tr.data || []).forEach(function (t) { tn[t.id] = (t.track_venues && t.track_venues.name ? t.track_venues.name + " · " : "") + t.name; });
-              drawHome({ champs: champs, seasons: seasons, seasonOf: seasonOf, champOf: champOf, next: next, todo: todo, tn: tn });
+              // Latest results and standings come from the same function the public league page uses, so the two always agree.
+              sb.rpc("public_league", { lid: lid }).then(function (pr) {
+                drawHome({ champs: champs, seasons: seasons, seasonOf: seasonOf, champOf: champOf, next: next, todo: todo, tn: tn, pub: pr.error ? null : pr.data });
+              });
             });
           });
         });
@@ -52,14 +55,30 @@ function drawHome(d) {
   h += d.todo ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
   h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
   if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
-  h += '<h3 style="margin:16px 0 6px">Next race</h3>';
+  var main = '<h3 class="sec">Next race</h3>';
   if (d.next) {
-    var s = d.seasonOf[d.next.season_id];
-    h += '<div class="card" style="margin:0"><div style="font-size:18px;font-weight:700">' + esc(whenText(d.next.starts_at)) + '</div><div>' + esc(label(d.next)) + "</div>" +
+    main += '<div class="card" style="margin:0"><div class="rnd">' + esc(nextHead(d.next)) + '</div><div style="font-size:18px;font-weight:700">' + esc(whenText(d.next.starts_at)) + '</div><div>' + esc(d.tn[d.next.track_layout_id] || "") + "</div>" +
       (d.next.lobby_opens_at ? '<div class="muted">Lobby opens ' + esc(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(d.next.lobby_opens_at))) + "</div>" : "") +
       '<div class="row" style="margin-top:8px"><button type="button" id="hopen">Open this round</button></div></div>';
-  } else h += '<p class="muted" style="margin:0">' + (d.champs.length ? "No upcoming rounds are scheduled." : "No championships yet.") + "</p>";
+  } else main += '<p class="muted" style="margin:0">' + (d.champs.length ? "No upcoming rounds are scheduled." : "No championships yet.") + "</p>";
+  function nextHead(e) { var s = d.seasonOf[e.season_id], c = s && d.champOf[s.championship_id]; return (c ? c.name + " · " : "") + (e.round_number ? "Round " + e.round_number : (e.name || "Round")); }
+  // The sidebar: the top three of the latest round and of the standings, as on the public league page.
+  var side = "", pub = d.pub || {};
+  var latest = pub.latest || [], stand = (pub.standings || []).filter(function (x) { return x.rows && x.rows.length; });
+  function ranked(rows, pts) { var rank = 0, prev = null; return '<ol class="rk">' + rows.map(function (r, i) { var sig = pts ? [r.points, r.wins, r.podiums].join("|") : String(r.position); if (sig !== prev) { rank = i + 1; prev = sig; } return "<li><span><b>" + (pts ? rank : r.position) + "</b>" + esc(r.driver) + "</span>" + (pts ? "<em>" + esc(+Number(r.points).toFixed(2)) + "</em>" : "") + "</li>"; }).join("") + "</ol>"; }
+  if (latest.length) {
+    side += '<h3 class="sec">Latest results</h3>' + latest.map(function (r) {
+      var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
+      return '<div class="card" style="margin:0 0 12px"><div class="rnd">' + esc(r.championship + (r.round ? " · Round " + r.round : "")) + "</div>" + (top.length ? ranked(top, false) : '<span class="muted">No results yet.</span>') + "</div>";
+    }).join("");
+  }
+  if (stand.length) {
+    side += '<h3 class="sec">Standings</h3>' + stand.map(function (x) {
+      return '<div class="card" style="margin:0 0 12px"><div class="rnd">' + esc(x.championship + (x.season ? " · " + x.season : "")) + "</div>" + ranked(x.rows.slice(0, 3), true) + "</div>";
+    }).join("");
+  }
   box.className = ""; box.innerHTML = h;
+  var cols = $("#hcols"); if (cols) cols.innerHTML = '<div class="col">' + main + "</div>" + (side ? '<aside class="col">' + side + "</aside>" : "");
   var newest = d.champs[0] && d.champs[0].id;
   $("#hres").addEventListener("click", function () {
     if (d.todo) { var sn = d.seasonOf[d.todo.ev.season_id]; if (sn) { openChamp(sn.championship_id, { view: "race", rid: d.todo.race.id }); return; } }

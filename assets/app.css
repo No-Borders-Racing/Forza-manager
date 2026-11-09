@@ -103,3 +103,16 @@ html.hb header.top #who, html.hb #fcmnav, html.hb .scrollrow:has([id^="nav-"]) {
   html.hb .scrollrow { display:none !important; }
   .hbp:not([hidden]) { left:0; width:auto; }
 }
+
+/* Home and the public league page: two columns that start on the same line (main on the left, sidebar on the right). */
+.cols { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:0 24px; align-items:start; }
+.cols > .col { min-width:0; }
+h3.sec { font:700 18px/1.2 var(--display); letter-spacing:.06em; text-transform:uppercase; margin:18px 0 4px; color:var(--accent); }
+.rnd { font:600 12px/1.35 var(--display); letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin-bottom:8px; }
+ol.rk { list-style:none; margin:0; padding:0; }
+ol.rk li { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-top:1px solid var(--line); }
+ol.rk li:first-child { border-top:0; padding-top:0; }
+ol.rk li span { display:flex; gap:10px; min-width:0; overflow-wrap:anywhere; }
+ol.rk li b { font-family:var(--display); color:var(--muted); min-width:1.2em; }
+ol.rk li em { font-style:normal; color:var(--muted); font-variant-numeric:tabular-nums; }
+@media (max-width:760px) { .cols { grid-template-columns:minmax(0,1fr); } }

@@ -145,22 +145,24 @@
     if (soc.length) h += '<div class="actrow">' + soc.map(function (o) { return '<a class="btn nav" href="' + esc(safeUrl(L[o[0]])) + '" target="_blank" rel="noopener noreferrer">' + o[1] + "</a>"; }).join("") + "</div>";
     if (l.about) h += '<p class="desc" style="color:var(--ink)">' + richText(l.about) + "</p>";
     if (l.join_text) h += '<div class="notes" style="margin:0 0 12px"><b>How to join</b><br>' + richText(l.join_text) + "</div>";
-    var n = l.next;
+    // Two columns that start on the same line: the next race and the championships, then a sidebar with the latest results and the standings.
+    var n = l.next, main = "", side = "";
     if (n && n.starts_at) {
       var d = new Date(n.starts_at);
-      h += '<h2 class="sn">Next race</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
+      main += '<h2 class="sn">Next race</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
         (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") + "</div>";
     }
+    main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
     var ls = l.latest || [];
-    if (ls.length) h += '<h2 class="sn">Latest results</h2>' + ls.map(function (r) {
+    if (ls.length) side += '<h2 class="sn">Latest results</h2>' + ls.map(function (r) {
       var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
-      return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<div class="line">' + top.map(function (y) { return "<b>" + y.position + ".</b> " + esc(y.driver); }).join(" &nbsp; ") + "</div>" : "") + "</div>";
+      return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<ol class="rk">' + top.map(function (y) { return "<li><span><b>" + y.position + "</b>" + esc(y.driver) + "</span></li>"; }).join("") + "</ol>" : "") + "</div>";
     }).join("");
     var sd = (l.standings || []).filter(function (x) { return x.rows && x.rows.length; });
-    if (sd.length) h += '<h2 class="sn">Standings</h2>' + sd.map(function (x) {
-      return '<div class="round"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><div class="line">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<b>" + r.rank + ".</b> " + esc(r.driver) + " (" + esc(+Number(r.points).toFixed(2)) + ")"; }).join(" &nbsp; ") + "</div></div>";
+    if (sd.length) side += '<h2 class="sn">Standings</h2>' + sd.map(function (x) {
+      return '<div class="round"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><ol class="rk">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + esc(+Number(r.points).toFixed(2)) + "</em></li>"; }).join("") + "</ol></div>";
     }).join("");
-    h += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
+    h += '<div class="cols"><div class="col">' + main + "</div>" + (side ? '<aside class="col">' + side + "</aside>" : "") + "</div>";
     return h;
   }
   function showLeague(l) {
