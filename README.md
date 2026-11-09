@@ -19,7 +19,7 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 | `calendar/` | Public season calendar (`?s=<season id>`). |
 | `assets/` | `app.css` (the one stylesheet for the admin and every public page), `public.css`, `chrome.js` (top bar, nav bar and footer on public pages), `public.js` (helpers shared by the public pages), `menu.js` (the hamburger menu), `og.png` (social preview image). |
 | `results/engine.js` | The scoring engine. Points are worked out in application code and stored on each result. |
-| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 031, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
+| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 033, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
 
 ## How it fits together
 

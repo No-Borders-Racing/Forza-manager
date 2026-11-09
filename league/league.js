@@ -115,8 +115,12 @@
     return rows.map(function (r, i) { var sig = [r.points, r.wins, r.podiums].join("|"); if (sig !== prev) { rank = i + 1; prev = sig; } return Object.assign({ rank: rank }, r); });
   }
   function standingTable(rows) {
-    return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Pts</th><th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
-      rankRows(rows).map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+Number(r.points).toFixed(2)) + "</b></td><td>" + r.wins + "</td><td>" + r.podiums + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+    // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
+    var kinds = []; rows.forEach(function (r) { (r.by_race || []).forEach(function (k) { if (kinds.indexOf(k.name) < 0) kinds.push(k.name); }); });
+    if (kinds.length < 2) kinds = [];
+    function kp(r, k) { var m = (r.by_race || []).filter(function (x) { return x.name === k; })[0]; return m ? "<td>" + esc(+Number(m.points).toFixed(2)) + "</td>" : "<td>–</td>"; }
+    return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Total</th>' + kinds.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + '<th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
+      rankRows(rows).map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+Number(r.points).toFixed(2)) + "</b></td>" + kinds.map(function (k) { return kp(r, k); }).join("") + "<td>" + r.wins + "</td><td>" + r.podiums + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
   }
   function leagueStandingsHtml(l) {
     var ss = l.standings || [];
