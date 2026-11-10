@@ -109,37 +109,41 @@ function renderDivisionEditor() {
 /* The cars card: the cars chosen so far (each with a cross to remove it), then the same search and filters as the Cars tab. */
 function drawDivCars() {
   var E = state.dedit, box = $("#dcars"); if (!box) return;
-  var byCar = {}, has = {}, f = state.vf; state.carsAll.forEach(function (c) { byCar[c.id] = c; }); E.cars.forEach(function (id) { has[id] = 1; });
-  var names = E.cars.map(function (id) { return byCar[id] ? { id: id, n: carName(byCar[id]) } : null; }).filter(Boolean).sort(function (a, b) { return a.n.localeCompare(b.n); });
-  var divs = uniq(state.carsAll.map(function (c) { return c.division; })).sort();
-  var chips = names.map(function (x) { return '<span class="chip">' + esc(x.n) + '<button type="button" data-drm="' + esc(x.id) + '" aria-label="Remove ' + esc(x.n) + '">×</button></span>'; }).join("");
-  box.innerHTML = '<h2 style="font-size:18px;margin:0 0 8px">Eligible cars (' + names.length + ")</h2>" +
-    (names.length ? (names.length > DIV_CARS_SHOWN ? '<details><summary class="muted" style="cursor:pointer">Show the ' + names.length + ' cars</summary><div class="chips" style="margin-top:8px">' + chips + "</div></details>" : '<div class="chips">' + chips + "</div>") : '<p class="muted" style="margin:0">No cars yet. Add them below.</p>') +
-    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><div class="muted" style="margin-bottom:6px">Add cars. Search and filter the same way as the Cars tab, then add one car, a whole game division, or everything that matches.</div>' + carFilterHtml(f, "v") +
-    '<div class="row" style="margin-top:12px;align-items:flex-end"><div class="field grow"><label for="vsel">One car</label><select id="vsel"></select></div><button class="primary" type="button" id="vaddone">Add this car</button></div>' +
-    '<div class="muted" id="vnote" style="margin-top:6px"></div>' +
+  var f = state.vf, divs = uniq(state.carsAll.map(function (c) { return c.division; })).sort();
+  box.innerHTML = '<h2 style="font-size:18px;margin:0 0 8px" id="dctitle"></h2><div id="dchips"></div>' +
+    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><div class="muted" style="margin-bottom:6px">Add cars. Type a car, make, game division or body type and press Search to list every match, then add them one at a time or all together.</div>' + carFilterHtml(f, "v") +
+    '<div id="vres"></div>' +
     '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field grow"><label for="vwdiv">A whole game division</label><select id="vwdiv">' + selOpts(divs, "", "Choose a division") + '</select></div><button type="button" id="vadddiv">Add the whole game division</button></div>' +
-    '<div class="row" style="margin-top:10px"><button type="button" id="vaddall">Add all matching the search and filters</button></div><div class="msg" id="vmsg" role="status"></div></div>';
-  function remaining() { return filterCars(f).filter(function (c) { return !has[c.id]; }); }
-  function repick() {
-    var rows = remaining(), shown = rows.slice(0, PICK_MAX), fav = favSet("car");
-    $("#vsel").innerHTML = shown.length ? shown.map(function (c) { return '<option value="' + esc(c.id) + '">' + (fav[c.id] ? "★ " : "") + esc(carName(c) + " · " + classOf(c.pi) + " " + c.pi) + "</option>"; }).join("") : '<option value="">No cars match</option>';
-    $("#vnote").textContent = rows.length + " car" + (rows.length === 1 ? "" : "s") + " match and " + (rows.length === 1 ? "is" : "are") + " not in the division yet." + (rows.length > shown.length ? " Showing the first " + shown.length + " in the list." : "");
-    $("#vaddall").textContent = "Add all " + rows.length + " matching the search and filters"; $("#vaddall").disabled = !rows.length;
-  }
+    '<div class="msg" id="vmsg" role="status"></div></div>';
+  function has() { var o = {}; E.cars.forEach(function (id) { o[id] = 1; }); return o; }
   function addCars(list, what) {
+    var h = has(); list = list.filter(function (c) { return !h[c.id]; });
     if (!list.length) { msg($("#vmsg"), "Nothing to add: those cars are already in this division.", "err"); return; }
     if (list.length > 25 && !window.confirm("Add " + list.length + " cars" + (what ? " (" + what + ")" : "") + " to this division?")) return;
-    list.forEach(function (c) { E.cars.push(c.id); }); E.dirty = true; drawDivCars();
+    list.forEach(function (c) { E.cars.push(c.id); }); E.dirty = true; drawChips(); drawRes();
     msg($("#vmsg"), "Added " + list.length + " car" + (list.length === 1 ? "" : "s") + ". Press Save division to keep them.", "ok");
   }
-  bindCarFilter(f, "v", repick, drawDivCars); repick();
-  box.querySelectorAll("[data-drm]").forEach(function (x) { x.addEventListener("click", function () { E.cars = E.cars.filter(function (id) { return id !== x.dataset.drm; }); E.dirty = true; drawDivCars(); }); });
-  $("#vaddone").addEventListener("click", function () { var v = $("#vsel").value, c = byCar[v]; if (c) addCars([c], ""); else msg($("#vmsg"), "Pick a car first.", "err"); });
-  $("#vaddall").addEventListener("click", function () { addCars(remaining(), "everything that matches the search and filters"); });
+  function drawChips() {
+    var byCar = {}; state.carsAll.forEach(function (c) { byCar[c.id] = c; });
+    var names = E.cars.map(function (id) { return byCar[id] ? { id: id, n: carName(byCar[id]) } : null; }).filter(Boolean).sort(function (a, b) { return a.n.localeCompare(b.n); });
+    var chips = names.map(function (x) { return '<span class="chip">' + esc(x.n) + '<button type="button" data-drm="' + esc(x.id) + '" aria-label="Remove ' + esc(x.n) + '">×</button></span>'; }).join("");
+    $("#dctitle").textContent = "Eligible cars (" + names.length + ")";
+    $("#dchips").innerHTML = names.length ? (names.length > DIV_CARS_SHOWN ? '<details><summary class="muted" style="cursor:pointer">Show the ' + names.length + ' cars</summary><div class="chips" style="margin-top:8px">' + chips + "</div></details>" : '<div class="chips">' + chips + "</div>") : '<p class="muted" style="margin:0">No cars yet. Add them below.</p>';
+    box.querySelectorAll("[data-drm]").forEach(function (x) { x.addEventListener("click", function () { E.cars = E.cars.filter(function (id) { return id !== x.dataset.drm; }); E.dirty = true; drawChips(); drawRes(); }); });
+  }
+  function drawRes() {
+    var h = has();
+    drawCarResults("v", f, {
+      btn: function (c) { return h[c.id] ? '<button type="button" disabled>Added</button>' : '<button type="button" data-rpick="' + esc(c.id) + '">Add</button>'; },
+      pick: function (id) { var c = state.carsAll.filter(function (x) { return x.id === id; })[0]; if (c) addCars([c], ""); },
+      head: function (rows) { var n = rows.filter(function (c) { return !h[c.id]; }).length; return '<button type="button" id="vaddall"' + (n ? "" : " disabled") + ">Add all " + n + " results</button>"; },
+      after: function (b, rows) { var a = b.querySelector("#vaddall"); if (a) a.addEventListener("click", function () { addCars(rows, "everything that matches the search and filters"); }); }
+    });
+  }
+  bindCarFilter(f, "v", drawRes, drawDivCars); drawChips(); drawRes();
   $("#vadddiv").addEventListener("click", function () {
     var d = $("#vwdiv").value; if (!d) { msg($("#vmsg"), "Choose a division first.", "err"); return; }
-    addCars(state.carsAll.filter(function (c) { return c.division === d && !has[c.id]; }), d);
+    addCars(state.carsAll.filter(function (c) { return c.division === d; }), d);
   });
 }
 function drawDivParts() {
