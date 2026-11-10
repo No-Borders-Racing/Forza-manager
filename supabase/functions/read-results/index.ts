@@ -1,6 +1,6 @@
 // Reads a race results screenshot or photo with Google Gemini and returns the rows for the results page to review.
 // Deploy: Supabase dashboard > Edge Functions > read-results (or `supabase functions deploy read-results`).
-// Secret needed: GEMINI_API_KEY (Edge Functions > Secrets). Optional: GEMINI_MODEL (default gemini-2.5-flash).
+// Secret needed: GEMINI_API_KEY (Edge Functions > Secrets). Optional: GEMINI_MODEL (default gemini-3.8-flash).
 // Only signed-in admins of the league can use it. The key never reaches the browser.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
 
     const key = Deno.env.get("GEMINI_API_KEY");
     if (!key) return reply({ error: "GEMINI_API_KEY has not been set for this function." }, 500);
-    const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
     const names = Array.isArray(body.drivers) ? body.drivers.filter((x: unknown) => typeof x === "string").map((x: string) => x.slice(0, 60)) : [];
 
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
