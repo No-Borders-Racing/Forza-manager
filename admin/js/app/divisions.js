@@ -64,7 +64,7 @@ function bindDivisionRows(box) {
 }
 
 /* ---------- the division editor ---------- */
-function newDivision() { state.dedit = { id: null, name: "", pi: "", wt: "", rules: "", parts: {}, cars: [], saved: [], dirty: false }; state.vf = freshCarFilter(); renderDivisionEditor(); }
+function newDivision() { state.dedit = { id: null, name: "", pi: "", rules: "", parts: {}, cars: [], saved: [], dirty: false }; state.vf = freshCarFilter(); renderDivisionEditor(); }
 function openDivision(id) {
   var d = state.divs.filter(function (x) { return x.id === id; })[0]; if (!d) return;
   var ids = [];
@@ -77,7 +77,7 @@ function openDivision(id) {
   }
   page(0).then(function (err) {
     if (err) { msg($("#cmsg"), dbError(err), "err"); return; }
-    state.dedit = { id: id, name: d.name, pi: d.pi_limit || "", wt: d.min_weight_lb || "", rules: d.other_rules || "", parts: Object.assign({}, d.parts || {}), cars: ids.slice(), saved: ids.slice(), dirty: false };
+    state.dedit = { id: id, name: d.name, pi: d.pi_limit || "", rules: d.other_rules || "", parts: Object.assign({}, d.parts || {}), cars: ids.slice(), saved: ids.slice(), dirty: false };
     state.vf = freshCarFilter(); renderDivisionEditor();
   });
 }
@@ -91,10 +91,10 @@ function renderDivisionEditor() {
     '</div>' +
     '<div class="field" style="margin-top:10px"><label for="drules">Other rules</label><textarea id="drules" rows="3" placeholder="For example: American cars only. No conversions.">' + esc(E.rules) + "</textarea></div></div>" +
     '<div class="card" id="dcars"></div>' +
-    '<div class="card"><h2 style="font-size:18px;margin:0 0 4px">Build requirements</h2><p class="muted" style="margin:0 0 8px">What every car must meet. Set a minimum weight, then for each part choose Open (drivers decide), Stock (no upgrade allowed), or the level every car must have. Open parts are not listed on the public page.</p><div class="field" style="margin-bottom:10px"><label for="dwt">Minimum weight (lbs)</label><input id="dwt" type="number" min="1" value="' + esc(E.wt) + '" style="width:130px"></div><div id="dparts"></div></div>' +
+    '<div class="card"><h2 style="font-size:18px;margin:0 0 4px">Build requirements</h2><p class="muted" style="margin:0 0 8px">What every car must meet. For each part choose Open (drivers decide), Stock (no upgrade allowed), or the level every car must have. Open parts are not listed on the public page.</p><div id="dparts"></div></div>' +
     '<div class="card"><div class="row" style="align-items:center"><button class="primary" type="button" id="dsave">Save division</button>' + (E.id ? '<button class="danger" type="button" id="ddel">Delete division</button>' : "") + '<span class="msg" id="dmsg" role="status"></span></div></div>';
   bindNav(); drawDivCars(); drawDivParts();
-  ["dname", "dpi", "dwt", "drules"].forEach(function (id) { $("#" + id).addEventListener("input", function () { E.dirty = true; }); });
+  ["dname", "dpi", "drules"].forEach(function (id) { $("#" + id).addEventListener("input", function () { E.dirty = true; }); });
   $("#dback").addEventListener("click", function () {
     if (E.dirty && !window.confirm("This division has unsaved changes. Leave without saving?")) return;
     state.dedit = null; renderCars();
@@ -159,11 +159,10 @@ function drawDivParts() {
   }); });
 }
 function saveDivision() {
-  var E = state.dedit, name = $("#dname").value.trim(), wtRaw = $("#dwt").value.trim(), wt = wtRaw ? Math.round(Number(wtRaw)) : null, out = $("#dmsg");
+  var E = state.dedit, name = $("#dname").value.trim(), out = $("#dmsg");
   if (!name) { msg(out, "Give the division a name first.", "err"); return; }
-  if (wtRaw && !(wt > 0)) { msg(out, "The minimum weight must be a number above zero.", "err"); return; }
-  E.name = name; E.pi = $("#dpi").value.trim(); E.wt = wt || ""; E.rules = $("#drules").value.trim();
-  var row = { name: name, pi_limit: E.pi || null, min_weight_lb: wt, other_rules: E.rules || null, parts: E.parts };
+  E.name = name; E.pi = $("#dpi").value.trim(); E.rules = $("#drules").value.trim();
+  var row = { name: name, pi_limit: E.pi || null, other_rules: E.rules || null, parts: E.parts };
   $("#dsave").disabled = true; msg(out, "Saving…");
   var q = E.id ? sb.from("divisions").update(row).eq("id", E.id).select("id").single() : sb.from("divisions").insert(Object.assign({ league_id: state.league.id }, row)).select("id").single();
   q.then(function (r) {
