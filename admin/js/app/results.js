@@ -312,7 +312,14 @@ function readResultsImage(file) {
   }).then(function (x) {
     var r = x.r, err = r.error, data = r.data;
     if (err) {
-      if (err.context && typeof err.context.json === "function") return err.context.json().then(function (j) { throw new Error(j && j.error ? j.error : err.message); }, function () { throw new Error(err.message); });
+      if (err.context && typeof err.context.text === "function") {
+        var st = err.context.status;
+        return err.context.text().then(function (t) {
+          var j = null; try { j = JSON.parse(t); } catch (e) {}
+          var m2 = j && (j.error || j.message) ? (j.error || j.message) : String(t || "").slice(0, 200);
+          throw new Error((m2 || err.message) + (st ? " (status " + st + ")" : ""));
+        }, function () { throw new Error(err.message + (st ? " (status " + st + ")" : "")); });
+      }
       throw new Error(err.message);
     }
     if (!data || data.error) throw new Error(data && data.error ? data.error : "No answer came back.");
