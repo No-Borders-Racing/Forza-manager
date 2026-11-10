@@ -40,22 +40,16 @@ function divSummary(d) {
   var used = usedIn("division", d.id); if (used.length) bits.push("In: " + used.join(", "));
   return bits.join(" · ");
 }
-/* The Divisions card on the Cars page. */
-function divisionsCardHtml() {
-  var h = '<div class="row" style="justify-content:space-between;align-items:center"><h2 style="font-size:18px;margin:0">Divisions (' + state.divs.length + ')</h2><button class="primary" type="button" id="dvnew">New division</button></div>' +
-    '<p class="muted" style="margin:4px 0 8px">A division is a group of cars with rules every car must follow, such as a PI limit and required upgrades. A championship can use a division in place of a single build.</p>';
-  if (state.divErr) return h + '<p class="err">' + esc(state.divErr) + " Has migration 034 been run?</p>";
-  if (!state.divs.length) return h + '<p class="muted">No divisions yet. Press New division to make one.</p>';
-  return h + state.divs.map(function (d) {
-    return '<div class="row" style="align-items:center;margin:4px 0;gap:8px"><div class="grow" style="min-width:220px"><b>' + esc(d.name) + '</b><div class="muted">' + esc(divSummary(d)) + "</div></div>" +
+/* Division rows, shown in the Builds list on the Cars page (a division is saved next to the builds). */
+function divisionRowsHtml(q) {
+  q = (q || "").toLowerCase();
+  return state.divs.filter(function (d) { return !q || d.name.toLowerCase().indexOf(q) >= 0; }).map(function (d) {
+    return '<div class="row" style="align-items:center;margin:4px 0;gap:8px"><div class="grow" style="min-width:220px"><b>' + esc(d.name) + '</b> <span class="pill">Division</span><div class="muted">' + esc(divSummary(d)) + "</div></div>" +
       (state.useChs.length ? '<button type="button" data-usediv="' + esc(d.id) + '">Use in ' + esc(useChName()) + "</button>" : "") +
       '<button type="button" data-opendiv="' + esc(d.id) + '">Open</button><button class="danger" type="button" data-deldiv="' + esc(d.id) + '">Delete</button></div>';
   }).join("");
 }
-function drawDivisionsCard() {
-  var box = $("#dvcard"); if (!box) return;
-  box.innerHTML = divisionsCardHtml();
-  var nw = $("#dvnew"); if (nw) nw.addEventListener("click", function () { newDivision(); });
+function bindDivisionRows(box) {
   box.querySelectorAll("[data-opendiv]").forEach(function (x) { x.addEventListener("click", function () { openDivision(x.dataset.opendiv); }); });
   box.querySelectorAll("[data-usediv]").forEach(function (x) { x.addEventListener("click", function () { useIn("division", x.dataset.usediv); }); });
   box.querySelectorAll("[data-deldiv]").forEach(function (x) { x.addEventListener("click", function () {
@@ -64,7 +58,7 @@ function drawDivisionsCard() {
     armed = null; x.disabled = true;
     sb.from("divisions").delete().eq("id", id).then(function (r) {
       if (r.error) { msg($("#cmsg"), dbError(r.error), "err"); x.disabled = false; return; }
-      state.divs = state.divs.filter(function (d) { return d.id !== id; }); state.useCC = state.useCC.filter(function (y) { return y.division_id !== id; }); drawDivisionsCard();
+      state.divs = state.divs.filter(function (d) { return d.id !== id; }); state.useCC = state.useCC.filter(function (y) { return y.division_id !== id; }); renderCarsBody();
     });
   }); });
 }

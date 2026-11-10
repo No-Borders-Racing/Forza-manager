@@ -62,7 +62,6 @@ function useIn(kind, id) {
     if (!r.error) state.useCC.push(r.data);
     msg($("#cmsg"), r.error ? "Already in " + nm + "." : "Added to " + nm + ".", r.error ? "" : "ok");
     updateCin(); var box = $("#clist"); if (box) { box.innerHTML = buildListHtml(); bindCarList(); }
-    drawDivisionsCard();
   });
 }
 function selOpts(list, cur, blank) { return '<option value="">' + esc(blank) + "</option>" + list.map(function (o) { var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>"; }).join(""); }
@@ -134,9 +133,9 @@ function filterBuilds() {
   return { rows: out, byId: byId };
 }
 function buildListHtml() {
-  var r = filterBuilds(), fav = favSet("build");
-  return '<div class="muted" style="margin:6px 0">' + r.rows.length + " build" + (r.rows.length === 1 ? "" : "s") + "</div>" +
-    (r.rows.length ? r.rows.map(function (b) {
+  var r = filterBuilds(), fav = favSet("build"), dv = (state.bf.cls || state.bf.fav) ? "" : divisionRowsHtml(state.bf.q), nd = dv ? (dv.match(/data-opendiv/g) || []).length : 0;
+  return (state.divErr ? '<p class="err">' + esc(state.divErr) + " Has migration 034 been run?</p>" : "") + '<div class="muted" style="margin:6px 0">' + r.rows.length + " build" + (r.rows.length === 1 ? "" : "s") + (nd ? " and " + nd + " division" + (nd === 1 ? "" : "s") : "") + "</div>" + dv +
+    (r.rows.length || nd ? r.rows.map(function (b) {
       var c = r.byId[b.car_id];
       return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) + '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-cmpbuild="' + esc(b.id) + '"' + (cmpHas("build:" + b.id) ? " checked" : "") + "> Compare</label>" +
         '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc((c ? carFull(c) : "Car no longer in the catalogue") + (usedIn("build", b.id).length ? " · In: " + usedIn("build", b.id).join(", ") : "")) + "</div></div>" +
@@ -216,14 +215,14 @@ function renderCarsBody() {
     '<button type="button" id="caddcmp">Compare +</button><button class="primary" type="button" id="caddbuild">Modify</button></div>' +
     '<div class="muted" id="cpicknote" style="margin-top:6px">' + esc(pk.note) + '</div>' + useRowHtml() + '<div id="cstats"></div>' +
     '<div class="msg" id="cmsg"></div></div>' +
-    '<div id="cmpbox" style="margin:14px 0"></div><div class="card"><h2 style="font-size:18px;margin:0 0 8px">Saved build sheets (' + state.builds.length + ")</h2>" +
+    '<div id="cmpbox" style="margin:14px 0"></div><div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 8px"><h2 style="font-size:18px;margin:0">Builds (' + (state.builds.length + state.divs.length) + ')</h2><div class="row"><button class="primary" type="button" id="dvnew">New division</button><button type="button" id="bnew">New build</button></div></div>' +
     '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="bq">Search</label><input id="bq" value="' + esc(b.q) + '" placeholder="Build name or car" autocomplete="off"></div>' +
     '<div class="field"><label for="bc">Class</label><select id="bc">' + selOpts(clsList, b.cls, "Any") + "</select></div>" +
     '<div class="field"><label for="bsort">Sort by</label><select id="bsort">' + [["name", "Name"], ["pi", "PI"], ["updated", "Last changed"]].map(function (o) { return '<option value="' + o[0] + '"' + (b.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></div>' +
     '<button type="button" id="bdir">' + (b.dir === "desc" ? "Z to A ↓" : "A to Z ↑") + '</button>' +
     '<div class="field"><label for="bfav">Favourites</label><label style="display:flex;gap:6px;align-items:center;padding:7px 0"><input id="bfav" type="checkbox"' + (b.fav ? " checked" : "") + "> Only favourites</label></div></div>" +
-    '<div id="clist">' + buildListHtml() + "</div></div>" + '<div class="card" id="dvcard"></div>';
-  app.innerHTML = h; bindNav(); bindCars(); drawCmp("cars"); drawDivisionsCard();
+    '<div id="clist">' + buildListHtml() + "</div></div>";
+  app.innerHTML = h; bindNav(); bindCars(); drawCmp("cars");
 }
 function bindCars() {
   var f = state.cf, b = state.bf;
@@ -248,6 +247,8 @@ function bindCars() {
     toggleFav("car:" + id, function () { repick(); });
   });
   var bd = $("#bdir"); if (bd) bd.addEventListener("click", function () { b.dir = b.dir === "desc" ? "asc" : "desc"; bd.textContent = b.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; relist(); });
+  $("#dvnew").addEventListener("click", function () { newDivision(); });
+  $("#bnew").addEventListener("click", function () { var c = $("#fq"); if (c) { c.scrollIntoView({ block: "center" }); c.focus(); } });
   bindCarList(); showStats();
 }
 function bindCarList() {
@@ -255,6 +256,7 @@ function bindCarList() {
   app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.addEventListener("change", function () { cmpToggle("build:" + x.dataset.cmpbuild, x.checked); drawCmp("cars"); }); });
   app.querySelectorAll("[data-usebuild]").forEach(function (x) { x.addEventListener("click", function () { useIn("build", x.dataset.usebuild); }); });
   app.querySelectorAll("[data-openbuild]").forEach(function (x) { x.addEventListener("click", function () { openBuild(x.dataset.openbuild); }); });
+  bindDivisionRows(app);
   app.querySelectorAll("[data-delbuild]").forEach(function (x) { x.addEventListener("click", function () { deleteBuildFromList(x); }); });
 }
 function toggleFav(key, after) {
