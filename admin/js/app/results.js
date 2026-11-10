@@ -158,6 +158,8 @@ function drawRace() {
     '<div class="card">' + raceTabs + '<h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
     '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
     '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
+    '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. Nothing is saved until you press Save results.</span></div>' +
+    (rr.shot ? '<details open style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">The image you read from</summary><img src="' + rr.shot + '" alt="Results screenshot" style="max-width:100%;max-height:340px;margin-top:6px;border:1px solid var(--line);border-radius:4px"></details>' : "") +
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
@@ -182,6 +184,8 @@ function drawRace() {
   $("#radd").addEventListener("click", function () { syncRows(); state.rr.rows.push(blankRow()); drawRace(); });
   $("#rarr").addEventListener("click", arrangeGrid);
   $("#rsave").addEventListener("click", saveRace);
+  $("#rimg").addEventListener("click", function () { $("#rimgf").click(); });
+  $("#rimgf").addEventListener("change", function () { var f = this.files && this.files[0]; this.value = ""; if (f) readResultsImage(f); });
   refreshGrid();
 }
 function arrangeGrid() {
@@ -269,5 +273,59 @@ function renderStandings() {
           }).join("") + "</tbody></table></div>";
       }, function (e) { box.innerHTML = '<span class="err">' + esc(dbError(e)) + "</span>"; });
     });
+  });
+}
+
+/* ---------- read a results screenshot or photo (Supabase Edge Function read-results, which calls Gemini) ---------- */
+function normName(n) { return String(n || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+// A driver already in the league whose name or other name matches once case, spaces and punctuation are ignored; otherwise the name as read.
+function matchDriverName(raw) {
+  var k = normName(raw); if (!k) return raw;
+  var d = state.drivers.filter(function (x) { return normName(x.display_name) === k || (x.aliases || []).some(function (a) { return normName(a) === k; }); })[0];
+  return d ? d.display_name : raw;
+}
+// Shrinks the picture (phone photos are huge) and returns { mime, data } with data as base64.
+function shrinkImage(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var max = 1800, sc = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      var data = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(url);
+      resolve({ mime: "image/jpeg", data: data.slice(data.indexOf(",") + 1), preview: data });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("That file could not be opened as an image.")); };
+    img.src = url;
+  });
+}
+function readResultsImage(file) {
+  var rr = state.rr, m = $("#rimgm"), btn = $("#rimg");
+  if (!/^image\//.test(file.type || "")) { msg(m, "Choose an image file.", "err"); return; }
+  syncRows();
+  var filled = rr.rows.filter(function (r) { return r.driver.trim(); }).length;
+  if (filled && !window.confirm("This replaces the " + filled + " row" + (filled === 1 ? "" : "s") + " already typed. Continue?")) return;
+  btn.disabled = true; msg(m, "Reading the image…");
+  shrinkImage(file).then(function (img) {
+    return sb.functions.invoke("read-results", { body: { league_id: state.league.id, image: img.data, mime: img.mime, drivers: state.drivers.map(function (d) { return d.display_name; }) } })
+      .then(function (r) { return { r: r, img: img }; });
+  }).then(function (x) {
+    var r = x.r, err = r.error, data = r.data;
+    if (err) {
+      if (err.context && typeof err.context.json === "function") return err.context.json().then(function (j) { throw new Error(j && j.error ? j.error : err.message); }, function () { throw new Error(err.message); });
+      throw new Error(err.message);
+    }
+    if (!data || data.error) throw new Error(data && data.error ? data.error : "No answer came back.");
+    var rows = (data.rows || []).map(function (o) {
+      return { driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "" };
+    });
+    if (!rows.length) throw new Error("No results were found in that image." + (data.unreadable ? " " + data.unreadable : ""));
+    rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
+    var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
+    drawRace();
+    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : ""), "ok");
+  }).catch(function (e) {
+    var b2 = $("#rimg"); if (b2) b2.disabled = false;
+    msg($("#rimgm"), String(e && e.message || e), "err");
   });
 }
