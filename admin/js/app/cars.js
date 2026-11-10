@@ -72,9 +72,9 @@ function countryList() {
   return top.concat(rest).map(function (c) { return [c, COUNTRY_NAME[c] || c]; });
 }
 function filterCars(f0) {
-  var f = f0 || state.cf, q = f.q.trim().toLowerCase(), fav = favSet("car");
+  var f = f0 || state.cf, qs = f.q.trim().toLowerCase().split(/\s+/).filter(Boolean), fav = favSet("car");
   var out = state.carsAll.filter(function (c) {
-    if (q && (carFull(c) + " " + (c.nickname || "")).toLowerCase().indexOf(q) < 0) return false;
+    if (qs.length) { var hay = (carFull(c) + " " + (c.nickname || "") + " " + (c.division || "")).toLowerCase(); if (qs.some(function (w) { return hay.indexOf(w) < 0; })) return false; }
     if (f.cls && classOf(c.pi) !== f.cls) return false;
     if (f.div && c.division !== f.div) return false;
     if (f.make && c.make !== f.make) return false;
