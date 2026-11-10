@@ -27,9 +27,24 @@
   function isFin(x) { return x.status === "finished" || (x.status === "dnf" && x.position != null); }
 
   /* ----- tabs ----- */
+  function divisionHtml(d) {
+    var parts = d.parts || {}, names = Object.keys(parts), h = '<div class="dv"><h2>' + esc(d.name) + "</h2>";
+    var cars = d.cars || [];
+    h += '<p class="sub">' + (d.pi_limit ? '<span class="pill">PI limit ' + esc(d.pi_limit) + "</span> " : "") + cars.length + " eligible car" + (cars.length === 1 ? "" : "s") + "</p>";
+    var rules = []; if (d.min_weight_lb) rules.push("Minimum weight " + d.min_weight_lb + " lb");
+    String(d.other_rules || "").split(/\r?\n/).forEach(function (x) { x = x.trim(); if (x) rules.push(x); });
+    var stock = names.filter(function (n) { return parts[n] === "Stock"; });
+    var req = names.filter(function (n) { return parts[n] && parts[n] !== "Stock" && parts[n] !== "Open"; });
+    if (rules.length) h += "<h3>Restrictions</h3><ul class=\"ck\">" + rules.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+    if (stock.length) h += "<h3>Not allowed (stock only)</h3><ul class=\"ck\">" + stock.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+    if (req.length) h += "<h3>Required upgrades</h3><ul class=\"ck\">" + req.map(function (x) { return "<li>" + esc(parts[x] + " " + x) + "</li>"; }).join("") + "</ul>";
+    if (cars.length) h += "<h3>Eligible cars</h3><ul class=\"dvc\">" + cars.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+    return h + "</div>";
+  }
   function buildsHtml(c) {
-    var bs = c.builds || []; if (!bs.length) return '<p class="msg">No car builds to show for this championship yet.</p>';
-    return '<div class="cards">' + bs.map(function (b) {
+    var ds = (c.divisions || []).map(divisionHtml).join("");
+    var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
+    return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
       return '<a class="card" href="' + esc("../admin/builds/sheet.html?pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";

@@ -119,3 +119,8 @@ ol.rk li em { font-style:normal; color:var(--muted); font-variant-numeric:tabula
 
 /* Data tables: every other row is slightly shaded so the eye can follow a row across the page. */
 table.t tbody tr:nth-child(even) td, table.zebra tbody tr:nth-child(even) td { background:rgba(127,127,127,.09); }
+
+/* removable chips (division car lists) */
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 10px; border:1px solid var(--line); border-radius:99px; background:var(--card); font-size:13px; }
+.chip button { border:0; background:transparent; padding:0 6px; min-height:0; cursor:pointer; font-size:16px; line-height:1; color:inherit; }

@@ -53,15 +53,23 @@ function carOptLabels(cc, cars, builds) {
   return out.sort(function (a, b) { return a.localeCompare(b); });
 }
 function loadChampCarOpts(cid, done) {
-  sb.from("championship_cars").select("id,car_id,build_id").eq("championship_id", cid).then(function (r) {
+  fetchCC("id,car_id,build_id", function (q) { return q.eq("championship_id", cid); }).then(function (r) {
     var cc = r.data || []; state.sel.ccrows = cc; state.sel.ccopts = [];
     if (r.error || !cc.length) { done(0); return; }
     function chunked(table, cols, ids) {
       var parts = []; for (var i = 0; i < ids.length; i += 100) parts.push(sb.from(table).select(cols).in("id", ids.slice(i, i + 100)));
       return Promise.all(parts).then(function (rs) { var m = {}; rs.forEach(function (x) { (x.data || []).forEach(function (y) { m[y.id] = y; }); }); return m; });
     }
-    var cids = cc.filter(function (x) { return x.car_id; }).map(function (x) { return x.car_id; }), bids = cc.filter(function (x) { return x.build_id; }).map(function (x) { return x.build_id; });
-    Promise.all([chunked("cars", "id,make,model,year,nickname", cids), chunked("build_sheets", "id,name", bids)]).then(function (xs) { state.sel.ccopts = carOptLabels(cc, xs[0], xs[1]); done(cc.length); });
+    var dids = cc.filter(function (x) { return x.division_id; }).map(function (x) { return x.division_id; });
+    // A division adds every car in its list.
+    (dids.length ? sb.from("division_cars").select("car_id").in("division_id", dids) : Promise.resolve({ data: [] })).then(function (dr) {
+      var extra = (dr.data || []).map(function (x) { return x.car_id; });
+      var cids = cc.filter(function (x) { return x.car_id; }).map(function (x) { return x.car_id; }).concat(extra), bids = cc.filter(function (x) { return x.build_id; }).map(function (x) { return x.build_id; });
+      Promise.all([chunked("cars", "id,make,model,year,nickname", cids), chunked("build_sheets", "id,name", bids)]).then(function (xs) {
+        var rows = cc.filter(function (x) { return !x.division_id; }).concat(extra.map(function (id) { return { car_id: id }; }));
+        state.sel.ccopts = carOptLabels(rows, xs[0], xs[1]).filter(function (v, k, a) { return a.indexOf(v) === k; }); done(cc.length);
+      });
+    });
   });
 }
 function openChamp(id, nav) {

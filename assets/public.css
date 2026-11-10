@@ -51,3 +51,13 @@ html.wait body { opacity:0; }
 .actrow button, .actrow a.btn { font-family:var(--display); text-transform:uppercase; letter-spacing:.07em; font-weight:600; font-size:14px; border-radius:4px; }
 .actrow a.btn.primary { box-shadow:0 2px 0 0 var(--accent-ink) inset; }
 #who a.btn { padding:7px 12px; }
+
+.dv { margin:0 0 18px; }
+.dv h3 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; margin:14px 0 4px; }
+.dv .pill { display:inline-block; padding:2px 8px; border-radius:99px; background:var(--accent); color:#fff; font-weight:600; font-size:12px; }
+.dv ul.ck { list-style:none; margin:0; padding:0; }
+.dv ul.ck li { padding:3px 0 3px 22px; position:relative; }
+.dv ul.ck li::before { content:"\2713"; position:absolute; left:0; color:var(--accent); font-weight:700; }
+.dv ul.dvc { margin:0; padding:0; list-style:none; columns:3 220px; column-gap:16px; }
+.dv ul.dvc li { padding:3px 8px; break-inside:avoid; }
+.dv ul.dvc li:nth-child(even) { background:rgba(128,128,128,.12); }

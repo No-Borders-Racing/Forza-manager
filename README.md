@@ -19,7 +19,7 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 | `calendar/` | Public season calendar (`?s=<season id>`). |
 | `assets/` | `app.css` (the one stylesheet for the admin and every public page), `public.css`, `chrome.js` (top bar, nav bar and footer on public pages), `public.js` (helpers shared by the public pages), `menu.js` (the hamburger menu), `og.png` (social preview image). |
 | `results/engine.js` | The scoring engine. Points are worked out in application code and stored on each result. |
-| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 033, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
+| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 034, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
 
 ## How it fits together
 
@@ -28,6 +28,8 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 **Roles.** Site owners (rows in `admins`) create and delete leagues and logins and maintain the shared car and track lists. League admins (`league_admins`) manage their own league. A new login can be created from the app, with a username instead of an email and a forced password change on first sign-in.
 
 **Public pages.** Everything is Public by default. A "Who can view?" setting (Public or Admin only) on a league page, championship page, season calendar or build controls what visitors see. Anonymous visitors cannot read any table directly: they call `security definer` functions (`public_league`, `public_championship`, `public_calendar`, `public_build`) that return exactly what a page shows, and only when that item is Public. A build only shows once it is marked complete. Driver gamertags are never exposed, only display names. Signed-in admins see the app's nav bar on every public page. Admins land on the manager Home (quick actions and the next race, with the latest results and standings in a sidebar); the public league page uses the same two-column layout and opens from the "View league page" button. Who can view each page, with its share link, is under League settings > Sharing.
+
+**Divisions.** A division (Cars page > Divisions) is a named group of cars with rules every car must follow: a PI limit, minimum weight, other rules, and a level (Open, Stock, Street, Sport, Race) for each build-sheet part. Cars are chosen with the same search and filters as builds, including adding a whole game division. A championship adds a division from its Cars tab, and its Car builds tab then shows the rules and the eligible cars. Car names in a division are shown publicly, the same as builds.
 
 **Time zones.** Each round stores an exact instant (`starts_at`) and the IANA zone it was meant in. Public pages show every date and time in the viewer's own zone.
 
