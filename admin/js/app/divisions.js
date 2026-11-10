@@ -88,10 +88,10 @@ function renderDivisionEditor() {
     '<div class="card"><h2 style="font-size:18px;margin:0 0 8px">' + (E.id ? "Division" : "New division") + '</h2>' +
     '<div class="row" style="align-items:flex-end"><div class="field grow"><label for="dname">Division name</label><input id="dname" value="' + esc(E.name) + '" placeholder="For example American Muscle" autocomplete="off"></div>' +
     '<div class="field"><label for="dpi">PI limit</label><input id="dpi" value="' + esc(E.pi) + '" placeholder="For example B600" style="width:110px" autocomplete="off"></div>' +
-    '<div class="field"><label for="dwt">Minimum weight (lbs)</label><input id="dwt" type="number" min="1" value="' + esc(E.wt) + '" style="width:130px"></div></div>' +
+    '</div>' +
     '<div class="field" style="margin-top:10px"><label for="drules">Other rules</label><textarea id="drules" rows="3" placeholder="For example: American cars only. No conversions.">' + esc(E.rules) + "</textarea></div></div>" +
     '<div class="card" id="dcars"></div>' +
-    '<div class="card"><h2 style="font-size:18px;margin:0 0 4px">Parts every car must follow</h2><p class="muted" style="margin:0 0 8px">For each part choose Open (drivers decide), Stock (no upgrade allowed), or the level every car must have. Open parts are not listed on the public page.</p><div id="dparts"></div></div>' +
+    '<div class="card"><h2 style="font-size:18px;margin:0 0 4px">Build requirements</h2><p class="muted" style="margin:0 0 8px">What every car must meet. Set a minimum weight, then for each part choose Open (drivers decide), Stock (no upgrade allowed), or the level every car must have. Open parts are not listed on the public page.</p><div class="field" style="margin-bottom:10px"><label for="dwt">Minimum weight (lbs)</label><input id="dwt" type="number" min="1" value="' + esc(E.wt) + '" style="width:130px"></div><div id="dparts"></div></div>' +
     '<div class="card"><div class="row" style="align-items:center"><button class="primary" type="button" id="dsave">Save division</button>' + (E.id ? '<button class="danger" type="button" id="ddel">Delete division</button>' : "") + '<span class="msg" id="dmsg" role="status"></span></div></div>';
   bindNav(); drawDivCars(); drawDivParts();
   ["dname", "dpi", "dwt", "drules"].forEach(function (id) { $("#" + id).addEventListener("input", function () { E.dirty = true; }); });
