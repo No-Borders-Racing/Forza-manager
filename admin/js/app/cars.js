@@ -184,7 +184,7 @@ function showStats() {
 }
 function carFilterHtml(f, pre) {
   var clsList = PI_CLASSES.map(function (c) { return [c[0], c[0]]; });
-  return '<div id="' + pre + 'filt"><div class="row" style="align-items:flex-end"><div class="field grow"><label for="' + pre + 'q">Search the catalogue</label><input id="' + pre + 'q" value="' + esc(f.q) + '" placeholder="For example Mustang, 1991, NASCAR, GT3, hot hatch" autocomplete="off"></div><button class="primary" type="button" id="' + pre + 'go">Search</button>' +
+  return '<div id="' + pre + 'filt"><div class="row" style="align-items:flex-end"><div class="field grow"><label for="' + pre + 'q">Search the catalogue</label><input id="' + pre + 'q" value="' + esc(f.q) + '" placeholder="For example Mustang, 1991, NASCAR, GT3, hot hatch" autocomplete="off"></div><button class="primary" type="button" id="' + pre + 'go">Search</button><button type="button" id="' + pre + 'clr">Clear</button>' +
     '</div>' + letterChipsHtml(f) +
     '<details style="margin-top:8px"' + (f.cls || f.div || f.make || f.yf || f.yt || f.country || f.drive || f.fav ? " open" : "") + '><summary class="muted" style="cursor:pointer">Filters and sorting</summary>' +
     '<div class="row" style="margin-top:8px;align-items:flex-end"><div class="field"><label for="' + pre + 'c">Class</label><select id="' + pre + 'c">' + selOpts(clsList, f.cls, "Any") + "</select></div>" +
@@ -222,6 +222,8 @@ function bindCarFilter(f, pre, changed, reset) {
   function commit() { f.q = qi.value; f.rn = 0; changed(); }
   if (qi) { qi.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); commit(); } }); qi.addEventListener("input", function () { f.qdraft = qi.value; }); }
   if (go) go.addEventListener("click", commit);
+  var clr = document.getElementById(pre + "clr");
+  if (clr) clr.addEventListener("click", function () { Object.keys(f).forEach(function (k) { delete f[k]; }); Object.assign(f, freshCarFilter("")); reset(); });
   wire("c", "cls", "change"); wire("d", "drive", "change"); wire("fav", "fav", "change"); wire("div", "div", "change"); wire("mk", "make", "change");
   wire("co", "country", "change"); wire("yf", "yf", "input"); wire("yt", "yt", "input"); wire("sort", "sort", "change");
   var root = document.getElementById(pre + "filt"); if (!root) return;
