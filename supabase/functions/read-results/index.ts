@@ -71,17 +71,25 @@ Deno.serve(async (req) => {
     const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
     const names = Array.isArray(body.drivers) ? body.drivers.filter((x: unknown) => typeof x === "string").map((x: string) => x.slice(0, 60)) : [];
 
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: promptFor(names) }, { inlineData: { mimeType: body.mime, data: body.image } }] }],
-        generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
-      }),
+    // Gemini sometimes answers 429 or 503 when it is busy; try again a few times before giving up.
+    const payload = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: promptFor(names) }, { inlineData: { mimeType: body.mime, data: body.image } }] }],
+      generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
     });
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: payload,
+      });
+      if (res.ok || ![429, 500, 503].includes(res.status)) break;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
+    if (!res) return reply({ error: "No answer from the AI service." }, 502);
     if (!res.ok) {
       const t = await res.text();
-      return reply({ error: "The AI service returned an error (" + res.status + "). " + t.slice(0, 200) }, 502);
+      return reply({ error: (res.status === 503 || res.status === 429 ? "The AI service is busy right now. Wait a minute and try again. " : "The AI service returned an error. ") + "(" + res.status + ") " + t.slice(0, 160) }, 502);
     }
     const j = await res.json();
     const text = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "";
