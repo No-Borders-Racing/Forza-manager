@@ -2,7 +2,6 @@
 // Deploy: Supabase dashboard > Edge Functions > read-results (or `supabase functions deploy read-results`).
 // Secret needed: GEMINI_API_KEY (Edge Functions > Secrets). Optional: GEMINI_MODEL (default gemini-3.8-flash).
 // Only signed-in admins of the league can use it. The key never reaches the browser.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -62,9 +61,13 @@ Deno.serve(async (req) => {
     if (!MIMES.includes(body.mime)) return reply({ error: "The image must be a JPEG, PNG or WebP." }, 400);
     if (body.image.length > MAX_IMAGE_CHARS) return reply({ error: "That image is too large. Try a smaller photo." }, 413);
 
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
-    const { data: ok, error: aerr } = await sb.rpc("can_admin_league", { lid: body.league_id });
-    if (aerr || ok !== true) return reply({ error: "Only league admins can read results from an image." }, 403);
+    // Is the caller an admin of this league? One small request to the database as the signed-in user.
+    const adm = await fetch(Deno.env.get("SUPABASE_URL")! + "/rest/v1/rpc/can_admin_league", {
+      method: "POST",
+      headers: { apikey: Deno.env.get("SUPABASE_ANON_KEY")!, Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ lid: body.league_id }),
+    });
+    if (!adm.ok || (await adm.json()) !== true) return reply({ error: "Only league admins can read results from an image." }, 403);
 
     const key = Deno.env.get("GEMINI_API_KEY");
     if (!key) return reply({ error: "GEMINI_API_KEY has not been set for this function." }, 500);
@@ -77,12 +80,20 @@ Deno.serve(async (req) => {
       generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
     });
     let res: Response | null = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: payload,
-      });
+    const started = Date.now();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const left = 100_000 - (Date.now() - started); // stay under the platform's time limit
+      if (left < 15_000) break;
+      try {
+        res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: payload,
+          signal: AbortSignal.timeout(Math.min(left, 70_000)),
+        });
+      } catch {
+        return reply({ error: "The AI service took too long to answer. Try again, or use a smaller or clearer image." }, 504);
+      }
       if (res.ok || ![429, 500, 503].includes(res.status)) break;
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
     }
