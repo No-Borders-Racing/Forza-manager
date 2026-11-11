@@ -82,11 +82,13 @@ Deno.serve(async (req) => {
       generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0, ...(fast ? { thinkingConfig: { thinkingLevel: "low" } } : {}) },
     });
     let fast = true;
+    const trail: string[] = [];
     let res: Response | null = null;
     const started = Date.now();
     for (let attempt = 0; attempt < 4; attempt++) {
       const left = 120_000 - (Date.now() - started); // stay under the platform's time limit
       if (left < 15_000) break;
+      const t1 = Date.now();
       try {
         res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
           method: "POST",
@@ -97,6 +99,7 @@ Deno.serve(async (req) => {
       } catch {
         return reply({ error: "The AI service took too long to answer. Try again, or use a clearer image." }, 504);
       }
+      trail.push(res.status + (fast ? " low" : "") + " " + Math.round((Date.now() - t1) / 1000) + "s");
       if (res.ok) break;
       if (res.status === 400 && fast) { fast = false; continue; }
       if (![429, 500, 503].includes(res.status)) break;
@@ -118,7 +121,7 @@ Deno.serve(async (req) => {
       const pen = typeof o.penalty_seconds === "number" && isFinite(o.penalty_seconds) && o.penalty_seconds > 0 ? o.penalty_seconds : 0;
       return { driver: s(o.driver), status: st, best_lap: s(o.best_lap), race_time: s(o.race_time), penalty_seconds: pen, total_time: s(o.total_time) };
     }).filter((r) => r.driver);
-    return reply({ rows, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "", ms: Date.now() - started });
+    return reply({ rows, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "", ms: Date.now() - started, trail, model });
   } catch (e) {
     return reply({ error: "Something went wrong: " + (e instanceof Error ? e.message : String(e)) }, 500);
   }

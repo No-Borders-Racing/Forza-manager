@@ -367,7 +367,7 @@ function readResultsImage(file) {
     rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
     var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
     drawRace();
-    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : ""), "ok");
+    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : "") + (data.trail && data.trail.length ? " [" + (data.model || "") + ": " + data.trail.join(", ") + "]" : ""), "ok");
   }).catch(function (e) {
     if (reading !== job && String(e && e.message) === "cancelled") return;
     stopReading(job);
