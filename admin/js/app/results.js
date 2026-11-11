@@ -165,7 +165,7 @@ function drawRace() {
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
-    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Discard unsaved changes and the image, and show this race as it was last saved">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
+    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Clear every row and the image">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
     '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
     '<div class="msg" id="rm"></div></div>';
   bindNav();
@@ -188,9 +188,12 @@ function drawRace() {
   $("#rsave").addEventListener("click", saveRace);
   $("#rreset").addEventListener("click", function () {
     syncRows();
-    var typed = state.rr.rows.some(function (r) { return r.driver.trim() && (r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"); });
-    if ((rr.dirty || typed) && !window.confirm("Reset this race? Unsaved changes and the image are discarded, and the race goes back to how it was last saved.")) return;
-    renderRaceResults(race.id);
+    var any = state.rr.rows.some(function (r) { return r.driver.trim() || r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"; });
+    if (!any && !rr.shot) { msg($("#rm"), "The form is already empty.", ""); return; }
+    if (!window.confirm("Clear the whole form? Every driver, time and the image are removed. Nothing is deleted from the database until you press Save results.")) return;
+    state.rr.rows = []; for (var i = 0; i < 6; i++) state.rr.rows.push(blankRow());
+    state.rr.copied = 0; state.rr.shot = null; state.rr.dbl = !!race.double_points; state.rr.dirty = false;
+    drawRace(); msg($("#rm"), "Form cleared.", "ok");
   });
   if (!rr.sys) loadRacePoints();
   $("#rimg").addEventListener("click", function () { $("#rimgf").click(); });
