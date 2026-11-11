@@ -31,7 +31,8 @@ function renderHome() {
           xP.then(function (xr) {
             var scored = {}; (xr.data || []).forEach(function (x) { scored[x.race_id] = true; });
             // The oldest recent round that still has a race without results is the next one to enter.
-            var todo = null;
+            var todo = null, todoBy = {};
+            past.slice().reverse().forEach(function (e) { var sn = seasonOf[e.season_id], r = races.filter(function (q) { return q.event_id === e.id && !scored[q.id]; })[0]; if (r && sn && !todoBy[sn.championship_id]) todoBy[sn.championship_id] = { ev: e, race: r }; });
             past.slice().reverse().some(function (e) { var r = races.filter(function (q) { return q.event_id === e.id && !scored[q.id]; })[0]; if (r) { todo = { ev: e, race: r }; return true; } return false; });
             var ids = []; [next, todo && todo.ev].forEach(function (e) { if (e && e.track_layout_id && ids.indexOf(e.track_layout_id) < 0) ids.push(e.track_layout_id); });
             var tP = ids.length ? sb.from("track_layouts").select("id,name,track_venues(name)").in("id", ids) : Promise.resolve({ data: [] });
@@ -39,7 +40,7 @@ function renderHome() {
               var tn = {}; (tr.data || []).forEach(function (t) { tn[t.id] = (t.track_venues && t.track_venues.name ? t.track_venues.name + " · " : "") + t.name; });
               // Latest results and standings come from the same function the public league page uses, so the two always agree.
               sb.rpc("public_league", { lid: lid }).then(function (pr) {
-                drawHome({ champs: champs, seasons: seasons, seasonOf: seasonOf, champOf: champOf, next: next, todo: todo, tn: tn, pub: pr.error ? null : pr.data });
+                drawHome({ champs: champs, seasons: seasons, seasonOf: seasonOf, champOf: champOf, next: next, todo: todo, todoBy: todoBy, tn: tn, pub: pr.error ? null : pr.data });
               });
             });
           });
@@ -52,8 +53,9 @@ function drawHome(d) {
   var lg = state.league, box = $("#hm"); if (!box) return;
   function label(e) { var s = d.seasonOf[e.season_id], c = s && d.champOf[s.championship_id]; return [e.round_number ? "Round " + e.round_number : (e.name || "Round"), d.tn[e.track_layout_id]].filter(Boolean).join(" · ") + (c ? " — " + c.name + (s ? " · " + s.name : "") : ""); }
   var h = '<div class="row" style="margin:0 0 4px;align-items:stretch">';
-  h += d.todo ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
+  h += d.todo && d.champs.length === 1 ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
   h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
+  h += '<div class="card" id="hpick" hidden style="margin:10px 0 0"></div>';
   if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
   var main = '<h3 class="sec">Next race</h3>';
   if (d.next) {
@@ -79,12 +81,35 @@ function drawHome(d) {
   }
   box.className = ""; box.innerHTML = h;
   var cols = $("#hcols"); if (cols) cols.innerHTML = '<div class="col">' + main + "</div>" + (side ? '<aside class="col">' + side + "</aside>" : "");
-  var newest = d.champs[0] && d.champs[0].id;
+  // With more than one championship, ask which one before going anywhere.
+  function choose(kind) {
+    var pk = $("#hpick"); if (!pk) return;
+    if (pk.dataset.kind === kind && !pk.hidden) { pk.hidden = true; pk.dataset.kind = ""; return; }
+    pk.dataset.kind = kind; pk.hidden = false;
+    pk.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center"><b>' + (kind === "results" ? "Enter results for which championship?" : "Add a round to which championship?") + '</b><button type="button" id="hpickx">Close</button></div>' +
+      d.champs.map(function (c) {
+        var t = d.todoBy[c.id];
+        var sub = kind === "results" ? (t ? label(t.ev).split(" — ")[0] + " needs results" : "All recent rounds have results") : (c.status ? c.status : "");
+        return '<div class="row" style="align-items:center;margin:6px 0;gap:8px"><div class="grow" style="min-width:200px"><b>' + esc(c.name) + "</b>" + (sub ? '<div class="muted">' + esc(sub) + "</div>" : "") + '</div><button type="button"' + (kind === "results" && t ? ' class="primary"' : "") + ' data-pickc="' + esc(c.id) + '">' + (kind === "results" ? (t ? "Enter results" : "Open results") : "Add a round") + "</button></div>";
+      }).join("");
+    $("#hpickx").addEventListener("click", function () { pk.hidden = true; pk.dataset.kind = ""; });
+    pk.querySelectorAll("[data-pickc]").forEach(function (b) { b.addEventListener("click", function () {
+      var id = b.dataset.pickc;
+      if (kind === "results") { var t = d.todoBy[id]; if (t) { openChamp(id, { view: "race", rid: t.race.id }); return; } state.wantTab = "results"; openChamp(id); }
+      else { state.wantTab = "seasons"; openChamp(id); }
+    }); });
+  }
   $("#hres").addEventListener("click", function () {
-    if (d.todo) { var sn = d.seasonOf[d.todo.ev.season_id]; if (sn) { openChamp(sn.championship_id, { view: "race", rid: d.todo.race.id }); return; } }
+    if (d.champs.length > 1) { choose("results"); return; }
+    var only = d.champs[0], t = only && d.todoBy[only.id];
+    if (t) { openChamp(only.id, { view: "race", rid: t.race.id }); return; }
+    if (only) { state.wantTab = "results"; openChamp(only.id); return; }
     goResults();
   });
-  $("#hround").addEventListener("click", function () { if (newest) { state.wantTab = "seasons"; openChamp(newest); } });
+  $("#hround").addEventListener("click", function () {
+    if (d.champs.length > 1) { choose("round"); return; }
+    if (d.champs[0]) { state.wantTab = "seasons"; openChamp(d.champs[0].id); }
+  });
   $("#hchamp").addEventListener("click", function () { state.focusNew = true; loadChamps(); });
   var ho = $("#hopen"); if (ho) ho.addEventListener("click", function () { var sn = d.seasonOf[d.next.season_id]; if (sn) openChamp(sn.championship_id, { view: "season", sid: sn.id }); });
 }
