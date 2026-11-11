@@ -35,9 +35,35 @@ function adminOverview() {
     var box = $("#abody"); if (!box) return;
     if (r.error) { box.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + (/does not exist|schema cache/i.test(r.error.message || "") ? " (has migration 035 been run?)" : "") + "</div>"; return; }
     var rows = r.data || [];
-    box.innerHTML = '<div class="card"><h2>Leagues (' + rows.length + ')</h2><div style="overflow-x:auto"><table class="zebra" style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left">League</th><th>Admins</th><th>Championships</th><th>Drivers</th><th>Results</th><th style="text-align:left">Last activity</th></tr></thead><tbody>' +
-      rows.map(function (x) { return "<tr><td><b>" + esc(x.name) + '</b></td><td style="text-align:center">' + x.admins + '</td><td style="text-align:center">' + x.championships + '</td><td style="text-align:center">' + x.drivers + '</td><td style="text-align:center">' + x.results + "</td><td>" + esc(adminWhen(x.last_activity)) + "</td></tr>"; }).join("") +
-      "</tbody></table></div></div>";
+    box.innerHTML = '<div class="card"><h2>Leagues (' + rows.length + ')</h2><div style="overflow-x:auto"><table class="zebra" style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left">League</th><th>Admins</th><th>Championships</th><th>Drivers</th><th>Results</th><th style="text-align:left">Last activity</th><th></th></tr></thead><tbody>' +
+      rows.map(function (x) { return "<tr><td><b>" + esc(x.name) + '</b></td><td style="text-align:center">' + x.admins + '</td><td style="text-align:center">' + x.championships + '</td><td style="text-align:center">' + x.drivers + '</td><td style="text-align:center">' + x.results + "</td><td>" + esc(adminWhen(x.last_activity)) + '</td><td style="text-align:right"><button class="danger" type="button" data-adel="' + esc(x.league_id) + '">Delete</button></td></tr>'; }).join("") +
+      '</tbody></table></div></div><div id="adelbox"></div>';
+    box.querySelectorAll("[data-adel]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var row = rows.filter(function (x) { return x.league_id === b.dataset.adel; })[0]; if (row) adminDeleteLeague(row);
+      });
+    });
+  });
+}
+
+/* Delete a whole league from the overview. The owner must type the league's name first. */
+function adminDeleteLeague(row) {
+  var box = $("#adelbox"); if (!box) return;
+  box.innerHTML = '<div class="card"><h3 style="margin-top:0">Delete ' + esc(row.name) + '?</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the league with all of its ' + row.championships + ' championship(s), ' + row.drivers + ' driver(s) and ' + row.results + ' result(s), plus its seasons, rounds, races, points systems and builds. Logins are not deleted. It cannot be undone. Type the league name to confirm.</p>' +
+    '<div class="row"><div class="field grow"><label for="adn">League name</label><input id="adn" autocomplete="off"></div><button class="danger" id="adgo" type="button" disabled>Delete league</button><button type="button" id="adno">Cancel</button></div><div class="msg" id="adm"></div></div>';
+  var inp = $("#adn"), go = $("#adgo"); inp.focus();
+  box.scrollIntoView && box.scrollIntoView({ block: "nearest" });
+  inp.addEventListener("input", function () { go.disabled = inp.value.trim() !== row.name; });
+  $("#adno").addEventListener("click", function () { box.innerHTML = ""; });
+  go.addEventListener("click", function () {
+    go.disabled = true; msg($("#adm"), "Deleting…");
+    sb.rpc("delete_league", { lid: row.league_id }).then(function (x) {
+      if (x.error) { msg($("#adm"), dbError(x.error) + (/does not exist|schema cache/i.test(x.error.message || "") ? " (has migration 025 been run?)" : ""), "err"); go.disabled = false; return; }
+      state.leagues = (state.leagues || []).filter(function (l) { return l.id !== row.league_id; });
+      if (state.league && state.league.id === row.league_id) { state.league = null; state.sel = null; try { window.localStorage.removeItem("fcm.league"); } catch (e) {} applyPalette(""); }
+      if (state.adminPage && state.adminPage.lid === row.league_id) state.adminPage.lid = null;
+      adminOverview();
+    });
   });
 }
 
