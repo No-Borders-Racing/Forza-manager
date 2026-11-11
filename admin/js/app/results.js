@@ -290,10 +290,10 @@ function shrinkImage(file) {
   return new Promise(function (resolve, reject) {
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function () {
-      var max = 1800, sc = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      var max = 1600, sc = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");
       c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      var data = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(url);
+      var data = c.toDataURL("image/jpeg", 0.82); URL.revokeObjectURL(url);
       resolve({ mime: "image/jpeg", data: data.slice(data.indexOf(",") + 1), preview: data });
     };
     img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("That file could not be opened as an image.")); };
@@ -366,7 +366,7 @@ function readResultsImage(file) {
     rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
     var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
     drawRace();
-    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : ""), "ok");
+    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : ""), "ok");
   }).catch(function (e) {
     if (reading !== job && String(e && e.message) === "cancelled") return;
     stopReading(job);

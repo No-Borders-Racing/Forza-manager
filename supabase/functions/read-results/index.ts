@@ -74,27 +74,32 @@ Deno.serve(async (req) => {
     const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
     const names = Array.isArray(body.drivers) ? body.drivers.filter((x: unknown) => typeof x === "string").map((x: string) => x.slice(0, 60)) : [];
 
-    // Gemini sometimes answers 429 or 503 when it is busy; try again a few times before giving up.
-    const payload = JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: promptFor(names) }, { inlineData: { mimeType: body.mime, data: body.image } }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
+    // Ask the model to think briefly (much faster for reading a screen); if it does not accept that setting, ask again without it.
+    // Gemini also answers 429 or 503 when busy, so try again a few times before giving up.
+    const contents = [{ role: "user", parts: [{ text: promptFor(names) }, { inlineData: { mimeType: body.mime, data: body.image } }] }];
+    const payloadFor = (fast: boolean) => JSON.stringify({
+      contents,
+      generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0, ...(fast ? { thinkingConfig: { thinkingLevel: "low" } } : {}) },
     });
+    let fast = true;
     let res: Response | null = null;
     const started = Date.now();
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const left = 100_000 - (Date.now() - started); // stay under the platform's time limit
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const left = 120_000 - (Date.now() - started); // stay under the platform's time limit
       if (left < 15_000) break;
       try {
         res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-          body: payload,
-          signal: AbortSignal.timeout(Math.min(left, 70_000)),
+          body: payloadFor(fast),
+          signal: AbortSignal.timeout(Math.min(left, 110_000)),
         });
       } catch {
-        return reply({ error: "The AI service took too long to answer. Try again, or use a smaller or clearer image." }, 504);
+        return reply({ error: "The AI service took too long to answer. Try again, or use a clearer image." }, 504);
       }
-      if (res.ok || ![429, 500, 503].includes(res.status)) break;
+      if (res.ok) break;
+      if (res.status === 400 && fast) { fast = false; continue; }
+      if (![429, 500, 503].includes(res.status)) break;
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
     }
     if (!res) return reply({ error: "No answer from the AI service." }, 502);
@@ -113,7 +118,7 @@ Deno.serve(async (req) => {
       const pen = typeof o.penalty_seconds === "number" && isFinite(o.penalty_seconds) && o.penalty_seconds > 0 ? o.penalty_seconds : 0;
       return { driver: s(o.driver), status: st, best_lap: s(o.best_lap), race_time: s(o.race_time), penalty_seconds: pen, total_time: s(o.total_time) };
     }).filter((r) => r.driver);
-    return reply({ rows, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "" });
+    return reply({ rows, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "", ms: Date.now() - started });
   } catch (e) {
     return reply({ error: "Something went wrong: " + (e instanceof Error ? e.message : String(e)) }, 500);
   }
