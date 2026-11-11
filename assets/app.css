@@ -124,3 +124,8 @@ table.t tbody tr:nth-child(even) td, table.zebra tbody tr:nth-child(even) td { b
 .chips { display:flex; flex-wrap:wrap; gap:6px; }
 .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 10px; border:1px solid var(--line); border-radius:99px; background:var(--card); font-size:13px; }
 .chip button { border:0; background:transparent; padding:0 6px; min-height:0; cursor:pointer; font-size:16px; line-height:1; color:inherit; }
+
+/* progress spinner */
+.spin { flex:none; width:20px; height:20px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:fcmspin .9s linear infinite; }
+@keyframes fcmspin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration:3s; } }

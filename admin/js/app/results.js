@@ -159,6 +159,7 @@ function drawRace() {
     '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
     '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
     '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. Nothing is saved until you press Save results.</span></div>' +
+    '<div id="rprog" class="card" hidden style="margin:0 0 10px" role="status" aria-live="polite"></div>' +
     (rr.shot ? '<details open style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">The image you read from</summary><img src="' + rr.shot + '" alt="Results screenshot" style="max-width:100%;max-height:340px;margin-top:6px;border:1px solid var(--line);border-radius:4px"></details>' : "") +
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
@@ -299,17 +300,51 @@ function shrinkImage(file) {
     img.src = url;
   });
 }
+/* While an image is being read: a progress panel with a timer, a warning if the page is left, and a Cancel after a while. */
+var reading = null;
+function readingGuard(e) {
+  if (!reading) return;
+  var t = e.target && e.target.closest ? e.target.closest("a[href], [id^=nav-], [data-tab], [data-rtab], [data-cancel], .hnav a, .hbi") : null;
+  if (!t || t.closest("#rprog")) return;
+  e.preventDefault(); e.stopPropagation(); var m = $("#rprogwarn"); if (m) m.textContent = "Still reading the image. Please wait here, or press Cancel.";
+}
+function beforeLeave(e) { if (reading) { e.preventDefault(); e.returnValue = ""; return ""; } }
+function startReading() {
+  var box = $("#rprog"), t0 = Date.now(), job = { id: t0, step: "Preparing the image" };
+  reading = job; window.addEventListener("beforeunload", beforeLeave); document.addEventListener("click", readingGuard, true);
+  box.hidden = false;
+  function draw() {
+    if (reading !== job) return;
+    var secs = Math.floor((Date.now() - t0) / 1000), slow = secs >= 45;
+    box.innerHTML = '<div class="row" style="align-items:center;gap:12px"><span class="spin" aria-hidden="true"></span><div class="grow"><b>' + esc(slow ? "Still working. This is taking longer than usual." : job.step + "…") + '</b><div class="muted">Reading the screenshot usually takes 10 to 30 seconds. Keep this page open. <span id="rprogt">' + secs + ' s</span></div></div>' +
+      (slow ? '<button type="button" id="rprogx">Cancel</button>' : "") + '</div><div class="muted" id="rprogwarn" role="status" style="margin-top:6px"></div>';
+    var x = $("#rprogx"); if (x) x.addEventListener("click", function () { stopReading(job); msg($("#rimgm"), "Cancelled. You can try again.", ""); });
+  }
+  draw(); job.timer = setInterval(function () { if (reading !== job) { clearInterval(job.timer); return; } var el = $("#rprogt"), secs = Math.floor((Date.now() - t0) / 1000); if (secs === 45) draw(); else if (el) el.textContent = secs + " s"; }, 1000);
+  job.setStep = function (n) { job.step = n; draw(); };
+  return job;
+}
+function stopReading(job) {
+  if (reading !== job) return; reading = null; clearInterval(job.timer);
+  window.removeEventListener("beforeunload", beforeLeave); document.removeEventListener("click", readingGuard, true);
+  var box = $("#rprog"); if (box) { box.hidden = true; box.innerHTML = ""; } var b = $("#rimg"); if (b) b.disabled = false;
+}
 function readResultsImage(file) {
   var rr = state.rr, m = $("#rimgm"), btn = $("#rimg");
   if (!/^image\//.test(file.type || "")) { msg(m, "Choose an image file.", "err"); return; }
   syncRows();
   var filled = rr.rows.filter(function (r) { return r.driver.trim(); }).length;
   if (filled && !window.confirm("This replaces the " + filled + " row" + (filled === 1 ? "" : "s") + " already typed. Continue?")) return;
-  btn.disabled = true; msg(m, "Reading the image…");
+  btn.disabled = true; msg(m, "");
+  var job = startReading();
   shrinkImage(file).then(function (img) {
+    if (reading !== job) throw new Error("cancelled");
+    job.setStep("Reading the results");
     return sb.functions.invoke("read-results", { body: { league_id: state.league.id, image: img.data, mime: img.mime, drivers: state.drivers.map(function (d) { return d.display_name; }) } })
       .then(function (r) { return { r: r, img: img }; });
   }).then(function (x) {
+    if (reading !== job) throw new Error("cancelled");
+    job.setStep("Filling in the rows");
     var r = x.r, err = r.error, data = r.data;
     if (err) {
       if (err.context && typeof err.context.text === "function") {
@@ -327,12 +362,14 @@ function readResultsImage(file) {
       return { driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "" };
     });
     if (!rows.length) throw new Error("No results were found in that image." + (data.unreadable ? " " + data.unreadable : ""));
+    stopReading(job);
     rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
     var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
     drawRace();
     msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : ""), "ok");
   }).catch(function (e) {
-    var b2 = $("#rimg"); if (b2) b2.disabled = false;
+    if (reading !== job && String(e && e.message) === "cancelled") return;
+    stopReading(job);
     msg($("#rimgm"), String(e && e.message || e), "err");
   });
 }
