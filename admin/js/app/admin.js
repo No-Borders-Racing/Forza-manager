@@ -35,8 +35,8 @@ function adminOverview() {
     var box = $("#abody"); if (!box) return;
     if (r.error) { box.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + (/does not exist|schema cache/i.test(r.error.message || "") ? " (has migration 035 been run?)" : "") + "</div>"; return; }
     var rows = r.data || [];
-    box.innerHTML = '<div class="card"><h2>Leagues (' + rows.length + ')</h2><div style="overflow-x:auto"><table class="zebra" style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left">League</th><th>Admins</th><th>Championships</th><th>Drivers</th><th>Results</th><th style="text-align:left">Last activity</th><th></th></tr></thead><tbody>' +
-      rows.map(function (x) { return "<tr><td><b>" + esc(x.name) + '</b></td><td style="text-align:center">' + x.admins + '</td><td style="text-align:center">' + x.championships + '</td><td style="text-align:center">' + x.drivers + '</td><td style="text-align:center">' + x.results + "</td><td>" + esc(adminWhen(x.last_activity)) + '</td><td style="text-align:right"><button class="danger" type="button" data-adel="' + esc(x.league_id) + '">Delete</button></td></tr>'; }).join("") +
+    box.innerHTML = '<div class="card"><h2>Leagues (' + rows.length + ')</h2><div style="overflow-x:auto"><table class="zebra" style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left">League</th><th>Admins</th><th>Championships</th><th>Drivers</th><th style="text-align:left">Last activity</th><th></th></tr></thead><tbody>' +
+      rows.map(function (x) { return "<tr><td><b>" + esc(x.name) + '</b></td><td style="text-align:center">' + x.admins + '</td><td style="text-align:center">' + x.championships + '</td><td style="text-align:center">' + x.drivers + '</td><td>' + esc(adminWhen(x.last_activity)) + '</td><td style="text-align:right"><button class="danger" type="button" data-adel="' + esc(x.league_id) + '">Delete</button></td></tr>'; }).join("") +
       '</tbody></table></div></div><div id="adelbox"></div>';
     box.querySelectorAll("[data-adel]").forEach(function (b) {
       b.addEventListener("click", function () {
