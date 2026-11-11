@@ -57,6 +57,30 @@ Deno.serve(async (req) => {
   try {
     const auth = req.headers.get("Authorization") || "";
     const body = await req.json().catch(() => null);
+    // Owner's "Run a test": a short text-only request that checks the key and model answer. No image, no league needed.
+    if (body && body.ping === true) {
+      const own = await fetch(Deno.env.get("SUPABASE_URL")! + "/rest/v1/rpc/is_owner", {
+        method: "POST",
+        headers: { apikey: Deno.env.get("SUPABASE_ANON_KEY")!, Authorization: auth, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!own.ok || (await own.json()) !== true) return reply({ error: "Only the site owner can run this test." }, 403);
+      const k = Deno.env.get("GEMINI_API_KEY");
+      if (!k) return reply({ ok: false, error: "GEMINI_API_KEY has not been set for this function." });
+      const m = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash", t0 = Date.now();
+      try {
+        const pr = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": k },
+          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with the single word OK." }] }], generationConfig: { temperature: 0 } }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!pr.ok) return reply({ ok: false, error: "Google answered " + pr.status + ": " + (await pr.text()).slice(0, 160) });
+        return reply({ ok: true, model: m, ms: Date.now() - t0 });
+      } catch {
+        return reply({ ok: false, error: "No answer from Google within 60 seconds." });
+      }
+    }
     if (!body || typeof body.image !== "string" || typeof body.league_id !== "string") return reply({ error: "Send league_id and image." }, 400);
     if (!MIMES.includes(body.mime)) return reply({ error: "The image must be a JPEG, PNG or WebP." }, 400);
     if (body.image.length > MAX_IMAGE_CHARS) return reply({ error: "That image is too large. Try a smaller photo." }, 413);

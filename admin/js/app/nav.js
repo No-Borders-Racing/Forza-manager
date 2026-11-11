@@ -6,7 +6,7 @@
 // General, Points systems, Drivers and Admins.
 function navHtml(active, sub) {
   var h = '<div class="row scrollrow" style="margin-bottom:12px"><button type="button" id="nav-h"' + (active === "h" ? ' class="primary"' : "") + '>Home</button><button type="button" id="nav-c"' + (active === "c" ? ' class="primary"' : "") + '>Championships</button><button type="button" id="nav-k"' + (active === "k" ? ' class="primary"' : "") + '>Cars</button><button type="button" id="nav-t"' + (active === "t" ? ' class="primary"' : "") + '>Track guide</button><button type="button" id="nav-r">Results</button>' +
-    '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
+    (state.owner ? '<button type="button" id="nav-adm"' + (active === "adm" ? ' class="primary"' : "") + '>Admin</button>' : "") + '<button type="button" id="nav-l" style="margin-left:auto"' + (active === "l" ? ' class="primary"' : "") + '>League settings</button></div>';
   if (active === "l") h += '<div class="row scrollrow" style="margin:-4px 0 12px">' + [["g", "General"], ["p", "Points systems"], ["d", "Drivers"], ["a", "Admins"], ["s", "Sharing"]].map(function (t) {
     return '<button type="button" id="sub-' + t[0] + '"' + (t[0] === sub ? ' class="primary"' : "") + ">" + t[1] + "</button>";
   }).join("") + "</div>";
@@ -23,6 +23,6 @@ sb.from("championships").select("id").eq("league_id", state.league.id).order("cr
 });
 }
 function bindNav() {
-var go = { "nav-h": renderHome, "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-r": goResults, "nav-l": renderLeague, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins, "sub-s": renderSharing };
+var go = { "nav-h": renderHome, "nav-c": loadChamps, "nav-k": renderCars, "nav-t": renderTracks, "nav-r": goResults, "nav-l": renderLeague, "nav-adm": function () { renderAdminPage("o"); }, "sub-g": renderLeague, "sub-p": renderLeaguePoints, "sub-d": renderDrivers, "sub-a": renderLeagueAdmins, "sub-s": renderSharing };
 Object.keys(go).forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener("click", go[id]); });
 }
