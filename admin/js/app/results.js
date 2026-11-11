@@ -333,7 +333,8 @@ function readResultsImage(file) {
   var rr = state.rr, m = $("#rimgm"), btn = $("#rimg");
   if (!/^image\//.test(file.type || "")) { msg(m, "Choose an image file.", "err"); return; }
   syncRows();
-  var filled = rr.rows.filter(function (r) { return r.driver.trim(); }).length;
+  // Names copied in from the previous race are only placeholders; ask only when real results (times, penalties or a status) have been typed.
+  var filled = rr.rows.filter(function (r) { return r.driver.trim() && (r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"); }).length;
   if (filled && !window.confirm("This replaces the " + filled + " row" + (filled === 1 ? "" : "s") + " already typed. Continue?")) return;
   btn.disabled = true; msg(m, "");
   var job = startReading();
