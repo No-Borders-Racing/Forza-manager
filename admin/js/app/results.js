@@ -157,6 +157,7 @@ function drawRace() {
   app.innerHTML = champHeadHtml(state.sel.champ, "results") +
     '<div class="card">' + raceTabs + '<h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
     '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
+    (rr.sys ? "" : '<div class="row" id="rpsys" style="margin:0 0 10px;align-items:flex-end"><div class="field grow"><label for="rpsel">Points system for this race only</label><select id="rpsel"><option value="">Loading…</option></select></div><button type="button" id="rpuse" disabled>Use for this race</button><span class="msg" id="rpm" role="status"></span></div>') +
     '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
     '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. Nothing is saved until you press Save results.</span></div>' +
     '<div id="rprog" class="card" hidden style="margin:0 0 10px" role="status" aria-live="polite"></div>' +
@@ -164,7 +165,7 @@ function drawRace() {
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
-    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" data-cancel="back">Cancel</button></div>' +
+    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Discard unsaved changes and the image, and show this race as it was last saved">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
     '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
     '<div class="msg" id="rm"></div></div>';
   bindNav();
@@ -185,6 +186,13 @@ function drawRace() {
   $("#radd").addEventListener("click", function () { syncRows(); state.rr.rows.push(blankRow()); drawRace(); });
   $("#rarr").addEventListener("click", arrangeGrid);
   $("#rsave").addEventListener("click", saveRace);
+  $("#rreset").addEventListener("click", function () {
+    syncRows();
+    var typed = state.rr.rows.some(function (r) { return r.driver.trim() && (r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"); });
+    if ((rr.dirty || typed) && !window.confirm("Reset this race? Unsaved changes and the image are discarded, and the race goes back to how it was last saved.")) return;
+    renderRaceResults(race.id);
+  });
+  if (!rr.sys) loadRacePoints();
   $("#rimg").addEventListener("click", function () { $("#rimgf").click(); });
   $("#rimgf").addEventListener("change", function () { var f = this.files && this.files[0]; this.value = ""; if (f) readResultsImage(f); });
   refreshGrid();
@@ -372,5 +380,35 @@ function readResultsImage(file) {
     if (reading !== job && String(e && e.message) === "cancelled") return;
     stopReading(job);
     msg($("#rimgm"), String(e && e.message || e), "err");
+  });
+}
+
+/* ---------- choose a points system for one race when neither the race nor the championship has one ---------- */
+function loadRacePoints() {
+  var sel = $("#rpsel"), use = $("#rpuse"); if (!sel) return;
+  var C = state.sel.champ, lid = state.league.id;
+  Promise.all([
+    sb.from("points_systems").select("id,name").eq("league_id", lid).is("championship_id", null).order("name", { ascending: true }),
+    sb.from("points_systems").select("id,name").eq("championship_id", C.id).order("name", { ascending: true }),
+    sb.from("points_systems").select("id,name").is("championship_id", null).is("league_id", null).order("name", { ascending: true })
+  ]).then(function (rs) {
+    var bad = rs.filter(function (r) { return r.error; })[0], sel2 = $("#rpsel"); if (!sel2) return;
+    if (bad) { msg($("#rpm"), dbError(bad.error), "err"); sel2.innerHTML = '<option value="">Unavailable</option>'; return; }
+    function grp(label, rows) { return rows.length ? '<optgroup label="' + esc(label) + '">' + rows.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("") + "</optgroup>" : ""; }
+    var h = grp("This league", rs[0].data || []) + grp("This championship", rs[1].data || []) + grp("Ready-made", rs[2].data || []);
+    sel2.innerHTML = h ? '<option value="">Choose a points system</option>' + h : '<option value="">No points systems exist yet</option>';
+    use.disabled = true;
+    sel2.addEventListener("change", function () { use.disabled = !sel2.value; });
+    use.addEventListener("click", function () {
+      var id = sel2.value, race = state.rr.race; if (!id) { msg($("#rpm"), "Choose a points system first.", "err"); return; }
+      use.disabled = true; msg($("#rpm"), "Saving…");
+      sb.from("races").update({ points_system_id: id }).eq("id", race.id).then(function (r) {
+        if (r.error) { use.disabled = false; msg($("#rpm"), dbError(r.error), "err"); return; }
+        race.points_system_id = id;
+        syncRows(); var rows = state.rr.rows; // keep what has been typed or read, only the scoring changes
+        loadSystem(id).then(function (sys) { state.rr.sys = sys; state.rr.rows = rows; drawRace(); msg($("#rm"), "Points system set for this race only: " + sys.name + ".", "ok"); },
+          function (e) { use.disabled = false; msg($("#rpm"), dbError(e), "err"); });
+      });
+    });
   });
 }
