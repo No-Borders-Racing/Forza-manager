@@ -142,14 +142,27 @@ function swapRounds(sid, a, b) {
   if (!ea || !eb) return;
   function take(from, to) {
     var u = { starts_at: from.starts_at, lobby_opens_at: from.lobby_opens_at, timezone: from.timezone, round_number: from.round_number };
-    if (to.series_id && (to.starts_at !== from.starts_at)) u.is_override = true;
+    // The slots are the season's own, so a swap keeps the time of day; it only counts as a hand move when the time of day differs.
+    if (to.series_id && to.timezone && from.starts_at && to.starts_at) {
+      var x = TZ.localText(Date.parse(from.starts_at), from.timezone || to.timezone).time, y = TZ.localText(Date.parse(to.starts_at), to.timezone).time;
+      u.is_override = x !== y;
+    }
     return u;
   }
   var ua = take(eb, ea), ub = take(ea, eb), la = roundLabel(ea), lb = roundLabel(eb);
   Promise.all([sb.from("events").update(ua).eq("id", a), sb.from("events").update(ub).eq("id", b)]).then(function (rs) {
     var e = rs.filter(function (x) { return x.error; })[0];
     if (e) { msg(m, dbError(e.error), "err"); return; }
-    afterRoundMove(sid, "Swapped " + la + " and " + lb + ".", false);
+    renumberSeason(sid).then(function () { afterRoundMove(sid, "Swapped " + la + " and " + lb + ". Rounds renumbered by date.", false); });
+  });
+}
+// Round numbers always follow the dates: the earliest round is Round 1, and so on. Undated rounds go last.
+function renumberSeason(sid) {
+  return sb.from("events").select("id,round_number,starts_at").eq("season_id", sid).then(function (r) {
+    if (r.error || !r.data) return;
+    var evs = r.data.slice().sort(function (a, b) { return String(a.starts_at || "~").localeCompare(String(b.starts_at || "~")) || (a.round_number || 0) - (b.round_number || 0); });
+    var ch = evs.map(function (e, i) { return e.round_number === i + 1 ? null : sb.from("events").update({ round_number: i + 1 }).eq("id", e.id); }).filter(Boolean);
+    return Promise.all(ch).then(function () { return ch.length; });
   });
 }
 function byeWeek(sid) {

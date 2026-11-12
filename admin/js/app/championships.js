@@ -294,8 +294,13 @@ function saveSchedule() {
   if (patch.lobby_local_time && patch.lobby_local_time > patch.race_local_time) { msg(m, "The lobby must open at or before the race start, on the same day.", "err"); return; }
   // A new race or lobby time also applies to rounds that are already made, except rounds that were moved by hand, completed or cancelled.
   var hhmm = function (v) { return v ? String(v).slice(0, 5) : ""; };
-  var nr = hhmm(patch.race_local_time), nl = hhmm(patch.lobby_local_time), changed = nr && (nr !== hhmm(c.race_local_time) || nl !== hhmm(c.lobby_local_time));
-  var targets = changed ? (state.sel.events || []).filter(function (e) { return e.starts_at && e.timezone && !e.is_override && e.status === "scheduled"; }) : [], moves = [], bad = null;
+  var nr = hhmm(patch.race_local_time), nl = hhmm(patch.lobby_local_time);
+  // Every scheduled round whose race or lobby time differs from the new one is brought in line (completed and cancelled rounds never move).
+  var targets = !nr ? [] : (state.sel.events || []).filter(function (e) {
+    if (!e.starts_at || !e.timezone || e.status !== "scheduled") return false;
+    var a = TZ.localText(Date.parse(e.starts_at), e.timezone), lo = e.lobby_opens_at ? TZ.localText(Date.parse(e.lobby_opens_at), e.timezone).time : "";
+    return hhmm(a.time) !== nr || (nl ? hhmm(lo) !== nl : !!e.lobby_opens_at);
+  }), moves = [], bad = null;
   targets.forEach(function (e) {
     var a = TZ.localText(Date.parse(e.starts_at), e.timezone), r = TZ.zonedToInstant(a.date, nr, e.timezone), u = { starts_at: r.instant, lobby_opens_at: null };
     if (r.error) { bad = bad || roundLabel(e) + " (" + a.date + " " + nr + ")"; return; }
@@ -304,15 +309,24 @@ function saveSchedule() {
     moves.push({ id: e.id, upd: u });
   });
   if (bad) { msg(m, "Nothing was changed. " + bad + " would land on a time that does not exist or happens twice because the clocks change. Move that round by hand first.", "err"); return; }
-  var apply = moves.length > 0 && window.confirm("Save the new time and also move the " + moves.length + " scheduled round" + (moves.length === 1 ? "" : "s") + " already made to race " + nr + (nl ? " (lobby " + nl + ")" : "") + "?\n\nOK = move them too.\nCancel = only use the new time for rounds you add later.\n(Rounds you moved by hand, completed or cancelled rounds are never changed.)");
+  var apply = moves.length > 0 && window.confirm("Save the new time and also move the " + moves.length + " scheduled round" + (moves.length === 1 ? "" : "s") + " already made to race " + nr + (nl ? " (lobby " + nl + ")" : "") + "?\n\nOK = move them too.\nCancel = only use the new time for rounds you add later.\n(Completed or cancelled rounds are never changed.)");
   msg(m, "Saving…");
   sb.from("championships").update(patch).eq("id", c.id).select("*").single().then(function (r) {
     if (r.error) { msg(m, dbError(r.error), "err"); return; }
     state.sel.champ = r.data;
-    if (!apply) { renderChamp(); msg($("#schm"), "Saved." + (moves.length ? " Existing rounds were left as they are." : ""), "ok"); return; }
+    // Also tidy the round numbers so they follow the dates.
+    if (!apply) {
+      Promise.all((state.sel.seasons || []).map(function (se) { return renumberSeason(se.id); })).then(function (ns) {
+        var fixed = ns.reduce(function (a, n) { return a + (n || 0); }, 0);
+        if (fixed) openChamp(c.id); else renderChamp();
+        setTimeout(function () { msg($("#schm"), "Saved." + (moves.length ? " Existing rounds were left as they are." : "") + (fixed ? " Round numbers were put back in date order." : ""), "ok"); }, fixed ? 600 : 0);
+      });
+      return;
+    }
     var sids = {}; moves.forEach(function (x) { var ev = targets.filter(function (e) { return e.id === x.id; })[0]; if (ev) sids[ev.season_id] = true; });
     var serP = Object.keys(sids).map(function (sid) { return sb.from("event_series").update({ local_time: nr, lobby_local_time: nl || null }).eq("season_id", sid); });
-    Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); }).concat(serP)).then(function (rs) {
+    Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); }).concat(serP).concat((state.sel.seasons || []).map(function (se) { return renumberSeason(se.id); }))).then(function (rs) {
+      rs = rs.filter(function (x) { return x && typeof x === "object" && !Array.isArray(x) || false; });
       var e2 = rs.filter(function (x) { return x.error; })[0];
       openChamp(c.id);
       setTimeout(function () {
