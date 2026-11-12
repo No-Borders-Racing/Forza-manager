@@ -227,14 +227,14 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   function detailKind(p) {
     if (isBallast(p)) return p.tier === "Installed" ? "weight" : "";
     if (ONLY_TIERS[p.name]) return p.tier === "Upgraded" ? "width" : "";
-    if (p.group === "Conversion") return "";
+    if (p.group === "Conversion") return p.tier === "Upgraded" ? "swap" : "";
     return p.group === "Aero and Appearance" || p.custom ? "text" : "";
   }
   function detailOf(p) { return detailKind(p) ? p.detail : ""; }
   function detailCell(p, i) {
     var k = detailKind(p), a = ' aria-label="' + esc(p.name) + ' detail" data-i="' + i + '" data-k="detail"';
     if (k === "weight") return '<select' + a + '><option value="">Weight</option>' + WEIGHTS.map(function (w) { return '<option value="' + w + '"' + (w === p.detail ? " selected" : "") + ">" + w + "</option>"; }).join("") + "</select>";
-    if (k) return '<input type="text"' + a + ' value="' + esc(p.detail) + '" placeholder="' + (k === "width" ? "Width" : "Detail") + '">';
+    if (k) return '<input type="text"' + a + ' value="' + esc(p.detail) + '" placeholder="' + (k === "width" ? "Width" : k === "swap" ? "Which swap or conversion" : "Detail") + '" maxlength="80">';
     return "<span></span>";
   }
   // Quick build / "Set all to" use the normal tiers; a width only follows when the choice is Stock.
@@ -263,7 +263,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var a = allowed(p);
       if (a.indexOf("") >= 0 || a.indexOf(p.tier) >= 0) return;
       if (isBallast(p)) { var hv = WEIGHTS.indexOf(p.detail) >= 0; p.tier = hv || (p.tier && p.tier !== "Stock") ? "Installed" : "Stock"; if (!hv) p.detail = ""; }
-      else p.tier = (p.tier && p.tier !== "Stock") || (p.detail && p.group !== "Conversion") ? "Upgraded" : "Stock";
+      else p.tier = (p.tier && p.tier !== "Stock") || (p.detail) ? "Upgraded" : "Stock";
     });
   }
   var AXES = [["Speed", "speed"], ["Braking", "braking"], ["Handling", "handling"], ["Accel", "accel"]];
