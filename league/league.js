@@ -59,13 +59,20 @@
     var z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     return h ? '<p class="sub" style="margin:0 0 4px">All times are shown in your local time' + (z ? " (" + esc(z.replace(/_/g, " ")) + ")" : "") + ".</p>" + h : '<p class="msg">No rounds have been scheduled yet.</p>';
   }
-  // The tables for each race of a round: Pos, Driver, Best lap, Pts.
+  // Places gained (green up) or lost (red down) next to a result; blank means not recorded.
+  function placesHtml(n) {
+    if (n == null) return '<span class="pg0">–</span>';
+    n = Number(n);
+    return n > 0 ? '<span class="pgu" title="Gained ' + n + '">▲ ' + n + "</span>" : n < 0 ? '<span class="pgd" title="Lost ' + (-n) + '">▼ ' + (-n) + "</span>" : '<span class="pg0">0</span>';
+  }
+  // The tables for each race of a round: Pos, Driver, Places (when recorded), Best lap, Pts.
   function raceTables(rs) {
     return rs.map(function (x, i) {
+      var pl = x.results.some(function (y) { return y.places_gained != null; }); // only when places gained and lost were recorded for this race
       return (rs.length > 1 ? '<div class="rtitle">' + esc(x.name || "Race " + (i + 1)) + "</div>" : "") +
-        '<div class="wrapx"><table class="t"><thead><tr><th>Pos</th><th>Driver</th><th>Best lap</th><th>Pts</th></tr></thead><tbody>' +
+        '<div class="wrapx"><table class="t"><thead><tr><th>Pos</th><th>Driver</th>' + (pl ? '<th title="Places gained or lost from the start">+/−</th>' : "") + '<th>Best lap</th><th>Pts</th></tr></thead><tbody>' +
         x.results.map(function (y) {
-          return '<tr class="' + (y.position === 1 ? "top1" : "") + '"><td>' + (y.position != null ? y.position : "–") + "</td><td>" + esc(y.driver) + (y.status && y.status !== "finished" ? ' <span class="st">' + esc(y.status) + "</span>" : "") + (y.fastest_lap ? '<span class="fl" title="Fastest lap">FL</span>' : "") + "</td><td>" + esc(ms(y.best_lap_ms)) + "</td><td><b>" + (y.points == null ? "–" : esc(+y.points)) + "</b></td></tr>";
+          return '<tr class="' + (y.position === 1 ? "top1" : "") + '"><td>' + (y.position != null ? y.position : "–") + "</td><td>" + esc(y.driver) + (y.status && y.status !== "finished" ? ' <span class="st">' + esc(y.status) + "</span>" : "") + (y.fastest_lap ? '<span class="fl" title="Fastest lap">FL</span>' : "") + "</td>" + (pl ? "<td>" + placesHtml(y.places_gained) + "</td>" : "") + "<td>" + esc(ms(y.best_lap_ms)) + "</td><td><b>" + (y.points == null ? "–" : esc(+y.points)) + "</b></td></tr>";
         }).join("") + "</tbody></table></div>";
     }).join("");
   }
@@ -123,7 +130,7 @@
   // Plain text with line breaks; web addresses become links.
   function richText(t) { return esc(t).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }); }
   var SOC = [["website", "Website"], ["discord", "Discord"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
-  var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
+  var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"], ["standings", "Standings"], ["stats", "Stats"]];
   // Ranks come from the database order (points, wins, podiums); equal rows share a rank.
   function rankRows(rows) {
     var rank = 0, prev = null;
@@ -194,12 +201,13 @@
     head([l.league]);
     document.getElementById("sub").textContent = l.tagline || "";
     var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
-    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml };
+    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml, stats: function () { return '<div id="statsbox"><p class="msg">Loading stats…</p></div>'; } };
     function draw() {
       out.innerHTML = '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
-        cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
+        cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); ["d", "a", "b", "sc"].forEach(function (k) { u.searchParams.delete(k); }); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });
+      if (cur === "stats" && window.FCMStats) FCMStats.draw(document.getElementById("statsbox"), l, sb);
     }
     draw();
   }

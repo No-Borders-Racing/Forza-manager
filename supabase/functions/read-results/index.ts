@@ -29,11 +29,13 @@ const SCHEMA = {
           race_time: { type: "STRING" },
           penalty_seconds: { type: "NUMBER" },
           total_time: { type: "STRING" },
+          places_gained: { type: "NUMBER", nullable: true },
         },
         required: ["driver", "status"],
       },
     },
     unreadable: { type: "STRING" },
+    race_in_progress: { type: "BOOLEAN" },
   },
   required: ["rows"],
 };
@@ -46,6 +48,8 @@ function promptFor(names: string[]) {
     "status: finished unless the screen says DNF, DNS or DSQ for that driver.",
     "best_lap, race_time, total_time: copy times exactly as shown, as minutes:seconds.thousandths (for example 1:25.876 or 22:14.742). Leave an empty string when the screen does not show that value.",
     "penalty_seconds: time penalty in seconds when shown, otherwise 0.",
+    "places_gained: the number beside the position, positive for a green up arrow and negative for a red down arrow (for example 5 for a green arrow with 5, -2 for a red arrow with 2). 0 when a finisher has no arrow. Leave it out (null) when the screen shows no places column at all, or for a DNF, DNS or DSQ row that has no arrow.",
+    "race_in_progress: true only when the screen shows a banner such as Race in progress or Race ends in, meaning the results are not final. Otherwise false.",
     "Never invent rows or values. If part of the image is cut off or unreadable, leave those values empty and describe the problem in the unreadable field.",
     names.length ? "Names already used in this league, only as spelling hints (still copy what is on screen): " + names.slice(0, 120).join(", ") : "",
   ].filter(Boolean).join("\n");
@@ -136,16 +140,17 @@ Deno.serve(async (req) => {
     }
     const j = await res.json();
     const text = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "";
-    let parsed: { rows?: unknown[]; unreadable?: string };
+    let parsed: { rows?: unknown[]; unreadable?: string; race_in_progress?: boolean };
     try { parsed = JSON.parse(text); } catch { return reply({ error: "The AI service did not return readable results. Try a clearer image." }, 502); }
     const rows = (Array.isArray(parsed.rows) ? parsed.rows : []).slice(0, 60).map((r) => {
       const o = r as Record<string, unknown>;
       const s = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 40) : "");
       const st = typeof o.status === "string" && ["finished", "dnf", "dns", "dsq"].includes(o.status) ? o.status : "finished";
       const pen = typeof o.penalty_seconds === "number" && isFinite(o.penalty_seconds) && o.penalty_seconds > 0 ? o.penalty_seconds : 0;
-      return { driver: s(o.driver), status: st, best_lap: s(o.best_lap), race_time: s(o.race_time), penalty_seconds: pen, total_time: s(o.total_time) };
+      const pg = typeof o.places_gained === "number" && isFinite(o.places_gained) && Math.abs(o.places_gained) < 100 ? Math.round(o.places_gained) : null;
+      return { driver: s(o.driver), status: st, best_lap: s(o.best_lap), race_time: s(o.race_time), penalty_seconds: pen, total_time: s(o.total_time), places_gained: pg };
     }).filter((r) => r.driver);
-    return reply({ rows, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "", ms: Date.now() - started, trail, model });
+    return reply({ rows, provisional: parsed.race_in_progress === true, unreadable: typeof parsed.unreadable === "string" ? parsed.unreadable.slice(0, 300) : "", ms: Date.now() - started, trail, model });
   } catch (e) {
     return reply({ error: "Something went wrong: " + (e instanceof Error ? e.message : String(e)) }, 500);
   }

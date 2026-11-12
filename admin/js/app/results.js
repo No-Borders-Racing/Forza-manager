@@ -80,7 +80,7 @@ function renderRaceResults(rid) {
       if (xs[0].error) { app.innerHTML = '<div class="card err">' + esc(dbError(xs[0].error)) + "</div>"; return; }
       var rows = (xs[0].data || []).slice().sort(function (a, b) { return (a.position == null ? 1e9 : a.position) - (b.position == null ? 1e9 : b.position); }).map(function (r) {
         return { driver: driverName(r.driver_id), status: r.status === "other" ? "dns" : r.status, ranked: r.status === "dnf" && r.position != null,
-          best: fmtMs(r.best_lap_ms), raceT: fmtMs(r.race_time_ms), pen: r.penalty_ms ? String(r.penalty_ms / 1000) : "", total: fmtMs(r.total_time_ms) };
+          best: fmtMs(r.best_lap_ms), raceT: fmtMs(r.race_time_ms), pen: r.penalty_ms ? String(r.penalty_ms / 1000) : "", total: fmtMs(r.total_time_ms), places: r.places_gained == null ? "" : String(r.places_gained) };
       });
       state.rr = { race: race, sys: xs[1], rows: rows, dbl: !!race.double_points };
       if (rows.length) { drawRace(); return; }
@@ -106,14 +106,16 @@ function raceOrder() {
   evs.forEach(function (e) { state.sel.races.filter(function (r) { return r.event_id === e.id; }).sort(function (a, b) { return a.sort_order - b.sort_order; }).forEach(function (r) { out.push(r); }); });
   return out;
 }
-function blankRow() { return { driver: "", status: "finished", ranked: false, best: "", raceT: "", pen: "", total: "" }; }
+// Places gained and lost are recorded only for championships that track them (a hidden setting; off for Friday GTX). Until the database has the setting, the column stays hidden.
+function placesOn() { var c = state.sel && state.sel.champ; return !!c && c.track_places === true; }
+function blankRow() { return { driver: "", status: "finished", ranked: false, best: "", raceT: "", pen: "", total: "", places: "" }; }
 function syncRows() {
   var rr = state.rr; if (!rr) return;
   var trs = app.querySelectorAll("tr[data-ri]"); if (!trs.length) return;
   rr.rows = Array.prototype.map.call(trs, function (tr) {
     var old = rr.rows[Number(tr.dataset.ri)] || blankRow(), st = tr.querySelector("[data-f=status]").value;
     return { driver: tr.querySelector("[data-f=driver]").value, status: st, ranked: st === "dnf" && st === old.status ? old.ranked : false,
-      best: tr.querySelector("[data-f=best]").value, raceT: tr.querySelector("[data-f=raceT]").value, pen: tr.querySelector("[data-f=pen]").value, total: tr.querySelector("[data-f=total]").value };
+      best: tr.querySelector("[data-f=best]").value, raceT: tr.querySelector("[data-f=raceT]").value, pen: tr.querySelector("[data-f=pen]").value, total: tr.querySelector("[data-f=total]").value, places: tr.querySelector("[data-f=places]") ? tr.querySelector("[data-f=places]").value : (old.places || "") };
   });
   var d = $("#rdbl"); if (d) rr.dbl = d.checked;
 }
@@ -148,6 +150,7 @@ function drawRace() {
       '<td><input data-f="raceT" value="' + esc(r.raceT) + '" placeholder="22:14.742" style="width:104px"></td>' +
       '<td><input data-f="pen" type="number" step="any" min="0" value="' + esc(r.pen) + '" style="width:62px"></td>' +
       '<td><input data-f="total" value="' + esc(r.total) + '" placeholder="22:14.742" style="width:104px"></td>' +
+      (placesOn() ? '<td><input data-f="places" type="number" step="1" value="' + esc(r.places) + '" placeholder="blank" aria-label="Places gained (negative if lost)" style="width:70px"></td>' : "") +
       '<td data-pts style="text-align:right"></td>' +
       '<td style="white-space:nowrap"><button type="button" data-up="' + i + '" title="Move up">↑</button><button type="button" data-dn="' + i + '" title="Move down">↓</button><button type="button" data-rm="' + i + '" title="Remove row">✕</button></td></tr>';
   }).join("");
@@ -162,7 +165,7 @@ function drawRace() {
     '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. Nothing is saved until you press Save results.</span></div>' +
     '<div id="rprog" class="card" hidden style="margin:0 0 10px" role="status" aria-live="polite"></div>' +
     (rr.shot ? '<details open style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">The image you read from</summary><img src="' + rr.shot + '" alt="Results screenshot" style="max-width:100%;max-height:340px;margin-top:6px;border:1px solid var(--line);border-radius:4px"></details>' : "") +
-    '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th><th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
+    '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th>' + (placesOn() ? '<th title="Places gained (+) or lost (-) as shown next to the position">Places +/−</th>' : "") + '<th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
     '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Clear every row and the image">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
@@ -188,7 +191,7 @@ function drawRace() {
   $("#rsave").addEventListener("click", saveRace);
   $("#rreset").addEventListener("click", function () {
     syncRows();
-    var any = state.rr.rows.some(function (r) { return r.driver.trim() || r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"; });
+    var any = state.rr.rows.some(function (r) { return r.driver.trim() || r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || (r.places || "").trim() || r.status !== "finished"; });
     if (!any && !rr.shot) { msg($("#rm"), "The form is already empty.", ""); return; }
     if (!window.confirm("Clear the whole form? Every driver, time and the image are removed. Nothing is deleted from the database until you press Save results.")) return;
     state.rr.rows = []; for (var i = 0; i < 6; i++) state.rr.rows.push(blankRow());
@@ -219,7 +222,9 @@ function saveRace() {
     if (seen[key]) err = r.driver.trim() + " appears twice."; seen[key] = true;
     var best = parseMs(r.best), rt = parseMs(r.raceT), tot = parseMs(r.total), pen = r.pen.trim() === "" ? null : Number(r.pen);
     if ([best, rt, tot].some(function (v) { return v !== null && !isFinite(v); }) || (pen !== null && (!isFinite(pen) || pen < 0))) err = "Row " + (i + 1) + " (" + r.driver.trim() + "): a time is not in a readable format. Use 22:14.742.";
-    parsed.push({ best: best, rt: rt, tot: tot, pen: pen });
+    var pl = placesOn() ? String(r.places == null ? "" : r.places).trim() : "";
+    if (pl !== "" && !/^[+-]?\d{1,2}$/.test(pl)) err = "Row " + (i + 1) + " (" + r.driver.trim() + "): places gained must be a whole number such as 3 or -2, or left blank.";
+    parsed.push({ best: best, rt: rt, tot: tot, pen: pen, pl: pl === "" ? null : parseInt(pl, 10) });
   });
   if (err) { msg(m, err, "err"); return; }
   var origRows = rr.rows; rr.rows = rows; var grid = gridResults(); rr.rows = origRows;
@@ -236,6 +241,7 @@ function saveRace() {
       return { race_id: rr.race.id, driver_id: d.id, position: g.position, status: r.status, best_lap_ms: p.best, race_time_ms: p.rt, penalty_ms: p.pen == null ? null : Math.round(p.pen * 1000),
         total_time_ms: p.tot, fastest_lap: !!g.res.fastestLap, points_awarded: g.points, scored_with_system_id: rr.sys ? rr.sys.id : null, scored_at: rr.sys ? now : null };
     });
+    if (placesOn()) out.forEach(function (o, i) { o.places_gained = parsed[i].pl; });
     sb.from("results").delete().eq("race_id", rr.race.id).then(function (x) {
       if (x.error) { fail(x.error); return; }
       sb.from("results").insert(out).then(function (y) {
@@ -371,14 +377,14 @@ function readResultsImage(file) {
     }
     if (!data || data.error) throw new Error(data && data.error ? data.error : "No answer came back.");
     var rows = (data.rows || []).map(function (o) {
-      return { driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "" };
+      return { driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "", places: typeof o.places_gained === "number" && isFinite(o.places_gained) ? String(Math.round(o.places_gained)) : "" };
     });
     if (!rows.length) throw new Error("No results were found in that image." + (data.unreadable ? " " + data.unreadable : ""));
     stopReading(job);
     rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
     var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
     drawRace();
-    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.unreadable ? " The reader said: " + data.unreadable : "") + (data.trail && data.trail.length ? " [" + (data.model || "") + ": " + data.trail.join(", ") + "]" : ""), "ok");
+    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.provisional ? " WARNING: this screen says the race is still in progress, so these may not be the final positions. Read it again once the race has ended." : "") + (data.unreadable ? " The reader said: " + data.unreadable : "") + (data.trail && data.trail.length ? " [" + (data.model || "") + ": " + data.trail.join(", ") + "]" : ""), data.provisional ? "err" : "ok");
   }).catch(function (e) {
     if (reading !== job && String(e && e.message) === "cancelled") return;
     stopReading(job);

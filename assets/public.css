@@ -61,3 +61,5 @@ html.wait body { opacity:0; }
 .dv ul.dvc { margin:0; padding:0; list-style:none; columns:3 220px; column-gap:16px; }
 .dv ul.dvc li { padding:3px 8px; break-inside:avoid; }
 .dv ul.dvc li:nth-child(even) { background:rgba(128,128,128,.12); }
+
+table.t .pgu { color:var(--ok); font-weight:600; white-space:nowrap; } table.t .pgd { color:var(--err); font-weight:600; white-space:nowrap; } table.t .pg0 { color:var(--muted); }
