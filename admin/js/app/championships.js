@@ -211,6 +211,16 @@ function bindAll() {
   on("#cdel", deleteChamp);
   var cdn = $("#cdn"); if (cdn) cdn.addEventListener("input", function () { $("#cdel").disabled = cdn.value.trim() !== state.sel.champ.name; });
   on("[data-rr]", function (b) { state.nav = { view: "race", rid: b.dataset.rr }; renderCurrent(); });
+  on("[data-rclr]", function (b) {
+    var ev = state.sel.events.filter(function (e) { return e.id === b.dataset.rclr; })[0], rids = state.sel.races.filter(function (r) { return r.event_id === b.dataset.rclr; }).map(function (r) { return r.id; });
+    if (!ev || !rids.length) return;
+    if (!window.confirm("Delete ALL saved results for " + roundLabel(ev) + " (every race in the round)?\n\nTheir points leave the standings. This cannot be undone.")) return;
+    b.disabled = true;
+    sb.from("results").delete().in("race_id", rids).then(function (x) {
+      if (x.error) { b.disabled = false; window.alert(dbError(x.error)); return; }
+      state.wantTab = "results"; openChamp(state.sel.champ.id, { view: "champ" });
+    });
+  });
   on("#tolp", function () { renderLeaguePoints(); });
   on("[data-pp]", function (b) { state.pscope = "champ"; state.nav = { view: "points", pid: b.dataset.pp }; renderCurrent(); });
   on("#padd", addPoints);

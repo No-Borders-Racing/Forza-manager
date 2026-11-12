@@ -58,7 +58,7 @@ function resultsTabHtml() {
       if (!rs.length) return; any = true;
       h += '<div class="row" style="align-items:center;margin:4px 0"><span style="min-width:200px">' + esc(roundLabel(e)) + "</span>" + rs.map(function (r) {
         return '<button type="button" data-rr="' + esc(r.id) + '">' + esc(r.name || "Race") + ' <span class="muted" data-rc="' + esc(r.id) + '"></span></button>';
-      }).join("") + "</div>";
+      }).join("") + '<button type="button" class="danger" data-rclr="' + esc(e.id) + '" hidden style="margin-left:auto" title="Delete every saved result in this round">Clear round</button></div>';
     });
   });
   return h + (any ? "" : '<p class="muted">No races yet. Add a season and rounds first.</p>') + "</div>";
@@ -68,6 +68,10 @@ function fillCounts() {
   sb.from("results").select("race_id").in("race_id", ids).then(function (r) {
     var c = {}; (r.data || []).forEach(function (x) { c[x.race_id] = (c[x.race_id] || 0) + 1; });
     app.querySelectorAll("[data-rc]").forEach(function (el) { var n = c[el.dataset.rc]; el.textContent = n ? "✓ " + n : ""; });
+    app.querySelectorAll("[data-rclr]").forEach(function (bt) {
+      var rids = state.sel.races.filter(function (x) { return x.event_id === bt.dataset.rclr; }).map(function (x) { return x.id; });
+      bt.hidden = !rids.some(function (id) { return c[id]; });
+    });
   });
 }
 var STATUSES = [["finished", "Finished"], ["dnf", "DNF"], ["dns", "DNS"], ["dsq", "DSQ"]];
@@ -168,7 +172,7 @@ function drawRace() {
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th>' + (placesOn() ? '<th title="Places gained (+) or lost (-) as shown next to the position">Places +/−</th>' : "") + '<th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
-    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Clear every row and the image">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
+    '<div class="row" style="margin-top:12px"><button type="button" id="rarr">Arrange final grid</button><button class="primary" id="rsave" type="button">Save results</button><button type="button" id="rreset" title="Clear every row and the image. Press Save results afterwards to delete what is saved.">Reset</button><button type="button" data-cancel="back">Cancel</button></div>' +
     '<p class="muted" style="margin:6px 0 0">"Arrange final grid" keeps finishers in the order typed, ranks DNFs after them by best lap when the points system says so (a DNF with no lap time becomes DNS), and marks the fastest lap. You can still move rows before saving.</p>' +
     '<div class="msg" id="rm"></div></div>';
   bindNav();
@@ -193,7 +197,7 @@ function drawRace() {
     syncRows();
     var any = state.rr.rows.some(function (r) { return r.driver.trim() || r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || (r.places || "").trim() || r.status !== "finished"; });
     if (!any && !rr.shot) { msg($("#rm"), "The form is already empty.", ""); return; }
-    if (!window.confirm("Clear the whole form? Every driver, time and the image are removed. Nothing is deleted from the database until you press Save results.")) return;
+    if (!window.confirm("Clear the whole form? Every driver, time and the image are removed. Saved results are only deleted when you then press Save results with the form empty.")) return;
     state.rr.rows = []; for (var i = 0; i < 6; i++) state.rr.rows.push(blankRow());
     state.rr.copied = 0; state.rr.shot = null; state.rr.dbl = !!race.double_points; state.rr.dirty = false;
     drawRace(); msg($("#rm"), "Form cleared.", "ok");
@@ -214,7 +218,17 @@ function arrangeGrid() {
 function saveRace() {
   syncRows();
   var rr = state.rr, m = $("#rm"), rows = rr.rows.filter(function (r) { return r.driver.trim(); });
-  if (!rows.length) { msg(m, "Enter at least one driver first.", "err"); return; }
+  if (!rows.length) {
+    // An empty form means "clear this race": remove every saved result for it, after a confirm.
+    if (!window.confirm("No drivers are entered. Delete ALL saved results for this race?\n\nIts points leave the standings. This cannot be undone.")) return;
+    var $c = $("#rsave"); $c.disabled = true; msg(m, "Clearing…");
+    sb.from("results").delete().eq("race_id", rr.race.id).then(function (x) {
+      if (x.error) { $c.disabled = false; msg(m, dbError(x.error), "err"); return; }
+      openChamp(state.sel.champ.id, { view: "race", rid: rr.race.id });
+      setTimeout(function () { msg($("#rm"), "All saved results for this race were deleted.", "ok"); }, 600);
+    });
+    return;
+  }
   var seen = {}, parsed = [], err = null;
   rows.forEach(function (r, i) {
     var key = r.driver.trim().toLowerCase(), d = driverByName(r.driver);
