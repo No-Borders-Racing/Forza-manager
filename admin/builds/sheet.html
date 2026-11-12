@@ -414,6 +414,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         var segs = ""; for (var n = 0; n < total; n++) segs += '<i' + (n < up ? ' class="on"' : "") + "></i>";
         var head = '<div class="cathead"><h3>' + esc(g) + "</h3>" + (conv ? '<span class="tag done">Do this first</span>' : "") + '<span class="catn">' + (up ? up + " of " + total + " upgraded" : "All stock") + "</span></div>" +
           '<div class="pbar" aria-hidden="true">' + segs + "</div>";
+        if (!up && g === "Wheels") return '<section class="cat none">' + head + '<div class="tiles"><div class="tile st"><span class="tn">Wheels</span><span class="tv">Stock</span></div></div></section>';
         if (!up) return '<section class="cat none">' + head + "</section>";
         return '<section class="cat' + (conv ? " first" : "") + '">' + head + (conv ? '<p class="sub" style="margin:0 0 6px">Fit these before any other upgrade. The game can reset parts to stock when a conversion is fitted.</p>' : "") +
           '<div class="tiles">' + tiles.map(function (t) { return '<div class="tile ' + (t.up ? "up" : "st") + '">' + (t.icon || "") + '<span class="tn">' + esc(t.n) + '</span><span class="tv">' + esc(t.up ? t.v : "Stock") + "</span></div>"; }).join("") + "</div></section>";
