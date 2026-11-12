@@ -400,9 +400,10 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         var tiles = [], total, up;
         if (g === "Wheels") {
           var wu = b.wheelState === "Upgraded";
-          if (wu) { [["Wheel group", b.wheelGroup], ["Wheel style", b.wheelStyle], ["Wheel note", b.wheelNote], ["Front rim size", b.rimF], ["Rear rim size", b.rimR]].forEach(function (r) { var v = String(r[1] || "").trim(); if (v && v.toLowerCase() !== "stock") tiles.push({ n: r[0], v: v, up: true }); }); }
-          total = wu ? Math.max(tiles.length, 1) : 1; up = wu ? Math.max(tiles.length, 1) : 0;
-          if (wu && !tiles.length) tiles.push({ n: "Wheels", v: "Upgraded", up: true });
+          if (wu) { [["Wheel group", b.wheelGroup, 0], ["Wheel style", b.wheelStyle, 1], ["Wheel note", b.wheelNote, 0], ["Front rim size", b.rimF, 1], ["Rear rim size", b.rimR, 1]].forEach(function (r) { var v = String(r[1] || "").trim(), st = !v || v.toLowerCase() === "stock"; if (!st) tiles.push({ n: r[0], v: v, up: true }); else if (r[2]) tiles.push({ n: r[0], v: "Stock", up: false }); }); }
+          up = tiles.filter(function (t) { return t.up; }).length; total = wu ? Math.max(tiles.length, 1) : 1; if (!wu) up = 0;
+          tiles.sort(function (a, z) { return (z.up ? 1 : 0) - (a.up ? 1 : 0); });
+          if (wu && !up) { tiles.unshift({ n: "Wheels", v: "Upgraded", up: true }); up = 1; total = tiles.length; }
         } else {
           var ps = b.parts.filter(function (p) { return p.group === g; });
           total = ps.length;
