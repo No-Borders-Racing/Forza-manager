@@ -200,7 +200,13 @@ function saveSeason(id) {
     });
     if (bad) { msg(m, "Nothing was changed. " + bad + " would land on a time that does not exist or happens twice because the clocks change. Move that round by hand first, or pick a different start date.", "err"); return; }
   }
-  sb.from("seasons").update({ name: name, starts_on: ns }).eq("id", id).then(function (r) {
+  // The end date moves with the start date; if it would land before the start (or there are no rounds to move) it is cleared, and is set again when rounds are added.
+  var upd = { name: name, starts_on: ns };
+  if (old.ends_on) {
+    var ne = delta ? shiftDate(old.ends_on, delta) : old.ends_on;
+    upd.ends_on = ns && ne < ns ? null : ne;
+  }
+  sb.from("seasons").update(upd).eq("id", id).then(function (r) {
     if (r.error) { msg(m, dbError(r.error), "err"); return; }
     Promise.all(moves.map(function (x) { return sb.from("events").update(x.upd).eq("id", x.id); })).then(function (rs) {
       var e2 = rs.filter(function (x) { return x.error; })[0];
