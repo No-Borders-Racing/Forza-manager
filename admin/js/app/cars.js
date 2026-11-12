@@ -145,8 +145,8 @@ function buildListHtml() {
       var c = r.byId[b.car_id];
       return '<div class="row" style="align-items:center;margin:4px 0;gap:8px">' + starBtn("build", b.id, !!fav[b.id]) + '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-cmpbuild="' + esc(b.id) + '"' + (cmpHas("build:" + b.id) ? " checked" : "") + "> Compare</label>" +
         '<div class="grow" style="min-width:220px"><b>' + esc(b.name) + '</b><div class="muted">' + esc((c ? carFull(c) : "Car no longer in the catalogue") + (usedIn("build", b.id).length ? " · In: " + usedIn("build", b.id).join(", ") : "")) + "</div></div>" +
-        '<div class="muted" style="min-width:110px">' + esc((b.class_letter || "") + " " + (b.pi || "")).trim() + '</div><span class="pill">' + esc(b.status) + "</span>" +
-        (state.useChs.length ? '<button type="button" data-usebuild="' + esc(b.id) + '">Use in ' + esc(useChName()) + "</button>" : "") + '<button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
+        '<div class="muted" style="min-width:110px">' + esc((b.class_letter || "") + " " + (b.pi || "")).trim() + '</div>' +
+        (state.useChs.length ? '<button type="button" data-usebuild="' + esc(b.id) + '">Use in ' + esc(useChName()) + "</button>" : "") + '<button type="button" data-copybuild="' + esc(b.id) + '">Copy link</button><button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
     }).join("") : '<p class="muted">No saved builds yet. Open the Stock cars tab, find a car and press Build this car.</p>');
 }
 function renderCars() { state.dedit = null; loadCarsData(function () { loadDivisions(renderCarsBody); }); }
@@ -295,6 +295,10 @@ function bindCarList() {
   app.querySelectorAll("[data-star]").forEach(function (x) { x.addEventListener("click", function () { toggleFav(x.dataset.star); }); });
   app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.addEventListener("change", function () { cmpToggle("build:" + x.dataset.cmpbuild, x.checked); drawCmp("cars"); }); });
   app.querySelectorAll("[data-usebuild]").forEach(function (x) { x.addEventListener("click", function () { useIn("build", x.dataset.usebuild); }); });
+  app.querySelectorAll("[data-copybuild]").forEach(function (x) { x.addEventListener("click", function () {
+    var u = buildLink(x.dataset.copybuild), done = function () { var o = x.textContent; x.textContent = "Link copied"; setTimeout(function () { x.textContent = o; }, 1800); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(done, function () { window.prompt("Copy this link", u); }); else window.prompt("Copy this link", u);
+  }); });
   app.querySelectorAll("[data-openbuild]").forEach(function (x) { x.addEventListener("click", function () { openBuild(x.dataset.openbuild); }); });
   app.querySelectorAll("[data-delbuild]").forEach(function (x) { x.addEventListener("click", function () { deleteBuildFromList(x); }); });
 }
@@ -439,7 +443,7 @@ function buildLink(id) { return new URL("builds/sheet.html?pub=" + encodeURIComp
 function saveBuild(m, post) {
   var E = state.editor, d = m.data || {}, name = String(m.name || "").trim();
   if (!name) { post({ fcm: "error", message: "Give the build a name first." }); return; }
-  var row = { name: name, status: d.done ? "completed" : "draft", class_letter: /^[A-Z]$/.test(d.cls || "") ? d.cls : null, pi: d.pi ? Math.max(0, Math.min(999, Math.round(Number(d.pi)))) : null, data: d };
+  var row = { name: name, status: "completed", class_letter: /^[A-Z]$/.test(d.cls || "") ? d.cls : null, pi: d.pi ? Math.max(0, Math.min(999, Math.round(Number(d.pi)))) : null, data: d };
   var q = (m.copy || !E.buildId) ? sb.from("build_sheets").insert(Object.assign({ league_id: state.league.id, car_id: E.carId }, row)).select("id,published").single()
     : sb.from("build_sheets").update(row).eq("id", E.buildId).select("id,published").single();
   q.then(function (r) {

@@ -311,13 +311,12 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     return t === 100 ? "" : "Front and rear should add up to 100 (this adds up to " + t + ").";
   }
   function partVal(p) { return [p.tier, detailOf(p)].filter(Boolean).join(" · ") || "—"; }
-  var PUB = new URLSearchParams(location.search).get("pub"), pubState = { on: true, url: "" }, pubDraft = false;
+  var PUB = new URLSearchParams(location.search).get("pub"), pubState = { on: true, url: "" };
   if (PUB) document.documentElement.className += " pub";
   // Publish state: the admin's Publish build button and the link shown under it.
   function drawPub() {
-    document.querySelectorAll("[data-viewsel]").forEach(function (x) { x.value = pubState.on ? "public" : "admin"; });
     document.querySelectorAll("[data-pubbox]").forEach(function (x) {
-      x.innerHTML = pubState.on ? '<div class="row2" style="margin-top:8px;align-items:center"><span class="lbl">Public link</span><input type="text" readonly data-publink value="' + esc(pubState.url) + '" style="flex:1 1 260px" aria-label="Public link"><button class="btn" type="button" data-pubcopy>Copy link</button><a class="btn" href="' + esc(pubState.url) + '" target="_blank" rel="noopener">Open</a></div><div class="sub" data-pubmsg>' + (pubDraft ? "Visitors can see this build once you mark the build sheet complete." : "Anyone with this link can see this build, read-only.") + '</div>' : '<div class="sub" style="margin-top:6px" data-pubmsg>Only league admins who are signed in can open this build.</div>';
+      x.innerHTML = pubState.url ? '<div class="row2" style="margin-top:8px;align-items:center"><span class="lbl">Share link</span><input type="text" readonly data-publink value="' + esc(pubState.url) + '" style="flex:1 1 260px" aria-label="Share link"><button class="btn" type="button" data-pubcopy>Copy link</button><a class="btn" href="' + esc(pubState.url) + '" target="_blank" rel="noopener">Open</a></div><div class="sub" data-pubmsg>Anyone with this link can see this build, read-only.</div>' : '<div class="sub" style="margin-top:6px" data-pubmsg>Save the build to get its share link.</div>';
     });
   }
   function badge(b) { return ((b.cls || "") + " " + (b.pi || "")).trim(); }
@@ -391,7 +390,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       '<div class="field"><label for="ds' + bi + '">Distribution</label><input type="text" id="ds' + bi + '" data-f="dist" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="xx/xx" value="' + esc(b.dist) + '"><div class="sub bad" data-distwarn>' + esc(distWarn(b.dist)) + '</div></div></div>' +
       '<h3>Parts</h3><div class="two"><div class="field"><label for="qb' + bi + '">Quick build</label><select id="qb' + bi + '" data-qb><option value="">Set every part to…</option>' + tierOpts("") + '</select></div></div>' +
       '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
-      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button><span data-viewrow style="display:inline-flex;align-items:center;gap:6px"><label class="lbl" style="margin:0">Who can view?</label><select data-viewsel aria-label="Who can view this build" style="width:auto"><option value="public">Public</option><option value="admin">Admin only</option></select></span><span class="sub">Draft.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     // Published/completed view of the parts: one card per category, a bar with a segment per part
     // (filled = upgraded), upgraded parts as bright tiles, stock parts dimmed.
@@ -435,7 +434,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         '<div class="legend"><span><span class="sw"></span>Built</span><span><span class="sw d"></span>Stock</span></div>' +
         '<h3>Final specs</h3><p class="note" style="margin:0 0 6px">Entered by hand, not calculated. Update after any change to the build.</p><div class="specs">' + spec("Class", b.cls || "—") + spec("PI", b.pi || "—") + spec("Engine", b.engine || "—") + spec("Power", num(toDisp("hp", b.hp), " " + UN[unitSys].hp)) + spec("Torque", num(toDisp("tq", b.tq), " " + UN[unitSys].tq)) + spec("Weight", num(toDisp("lb", b.lb), " " + UN[unitSys].lb)) + spec("Ratio", ratioTxt(b) || "—") + spec("Distribution", distTxt(b.dist) || "—") + "</div>" +
         partsView(order, convFirst) +
-        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span data-viewrow style="display:inline-flex;align-items:center;gap:6px"><label class="lbl" style="margin:0">Who can view?</label><select data-viewsel aria-label="Who can view this build" style="width:auto"><option value="public">Public</option><option value="admin">Admin only</option></select></span><span class="sub">Completed.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Completed.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     function addPart(g) {
       var inp = c.querySelector('[data-addname="' + g + '"]'), n = inp.value.trim();
@@ -453,7 +452,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
       var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
     }
-    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); pubDraft = !b.done; if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-pubbox],[data-delbar]").forEach(function (x) { x.remove(); }); else drawPub(); }
+    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-pubbox],[data-delbar]").forEach(function (x) { x.remove(); }); else drawPub(); }
     c.addEventListener("input", function (e) {
       var t = e.target;
       if (t.dataset.g) {
@@ -476,7 +475,6 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     c.addEventListener("focusout", function (e) { var t = e.target; if (t.dataset && t.dataset.f === "dist") { var w = c.querySelector("[data-distwarn]"); if (w) w.textContent = distWarn(b.dist); } });
     c.addEventListener("change", function (e) {
       var t = e.target;
-      if (t.hasAttribute && t.hasAttribute("data-viewsel")) { send({ fcm: "publish", on: t.value === "public" }); return; }
       if (t.dataset.f === "wheelState") {
         saveOpen(); open.Wheels = true; b.wheelState = t.value;
         if (t.value === "Upgraded") ["wheelStyle", "rimF", "rimR"].forEach(function (k) { if (String(b[k] || "").trim().toLowerCase() === "stock") b[k] = ""; });
@@ -565,7 +563,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     var m = e.data; if (!m || typeof m !== "object") return;
     if (m.fcm === "new" && m.car) { pubState = { on: true, url: "" }; var b = carToBuild(m.car); show(b); bname.value = m.name || b.title; dirty = false; status("New build. Not saved yet.", "dirty"); }
     else if (m.fcm === "load" && m.data) { pubState = { on: !!m.published, url: m.url || "" }; show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
-    else if (m.fcm === "published") { pubState = { on: !!m.on, url: m.url || "" }; drawPub(); var pm2 = document.querySelector("[data-pubmsg]"); if (pm2 && m.on) pm2.textContent = pubDraft ? "Visitors can see this build once you mark the build sheet complete." : "Anyone with this link can see this build, read-only."; }
+    else if (m.fcm === "published") { pubState = { on: true, url: m.url || "" }; drawPub(); }
     else if (m.fcm === "saved") { dirty = false; if (m.name) bname.value = m.name; if (m.url) { pubState = { on: !!m.published, url: m.url }; drawPub(); } status("Saved.", "ok"); }
     else if (m.fcm === "error") { status(m.message || "Could not save.", "dirty"); }
   });
