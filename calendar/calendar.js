@@ -41,6 +41,7 @@
     var z = ""; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     document.getElementById("sub").textContent = "All times are shown in your local time" + (z ? " (" + z.replace(/_/g, " ") + ")" : "") + ".";
     var rs = c.rounds || [];
-    out.innerHTML = rs.length ? rs.map(roundHtml).join("") : '<p class="msg">No rounds have been scheduled yet.</p>';
+    var ov = c.description ? '<div class="notes" style="margin:0 0 14px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "";
+    out.innerHTML = ov + (rs.length ? rs.map(roundHtml).join("") : '<p class="msg">No rounds have been scheduled yet.</p>');
   });
 })();

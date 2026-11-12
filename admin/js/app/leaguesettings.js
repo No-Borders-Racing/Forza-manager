@@ -152,7 +152,7 @@ function profileCardHtml(lg) {
   var L = lg.links || {};
   return '<div class="card"><h2>League profile</h2><p class="muted" style="margin:0 0 8px">Shown on the public league page. Everything here is optional; blank items are left out.</p>' +
     '<div class="field"><label for="lptag">Tagline</label><input id="lptag" maxlength="120" placeholder="Eg Sunday night GT racing, all skill levels" value="' + esc(lg.tagline || "") + '"></div>' +
-    '<div class="field" style="margin-top:8px"><label for="lpabout">About the league</label><textarea id="lpabout" rows="4" maxlength="2000">' + esc(lg.about || "") + '</textarea></div>' +
+    '<div class="field" style="margin-top:8px"><label for="lpabout">League overview (the front page pitch)</label><textarea id="lpabout" rows="8" maxlength="2000">' + esc(lg.about || "") + '</textarea></div>' +
     '<div class="field" style="margin-top:8px"><label for="lpjoin">How to join</label><textarea id="lpjoin" rows="3" maxlength="1000" placeholder="Eg Join our Discord, then add the gamertag NBR Admin">' + esc(lg.join_text || "") + '</textarea></div>' +
     '<div class="field" style="margin-top:8px"><label for="lpban">Banner image link</label><input id="lpban" type="url" autocapitalize="none" placeholder="https://… (a wide image, shown at the top of the page)" value="' + esc(lg.banner_url || "") + '"></div>' +
     '<div class="two" style="margin-top:8px">' + SOCIALS.map(function (o) { return '<div class="field"><label for="lps-' + o[0] + '">' + o[1] + '</label><input id="lps-' + o[0] + '" type="url" autocapitalize="none" placeholder="https://…" value="' + esc(L[o[0]] || "") + '"></div>'; }).join("") + "</div>" +

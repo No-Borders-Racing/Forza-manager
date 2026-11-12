@@ -117,7 +117,7 @@
     if (c.league_published) sub.innerHTML = '<a href="?l=' + encodeURIComponent(c.league_id) + '" style="color:var(--link)">← All ' + esc(c.league) + " championships</a>"; else sub.textContent = "";
     var want = qs.get("t"), cur = TABS.some(function (t) { return t[0] === want; }) ? want : "calendar";
     function draw() {
-      out.innerHTML = (c.description ? '<p class="desc">' + esc(c.description) + "</p>" : "") +
+      out.innerHTML = (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
         '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         TABS.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {

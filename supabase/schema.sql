@@ -1534,6 +1534,7 @@ language sql stable security definer set search_path = '' as $$
     'league', l.name,
     'palette', l.palette,
     'championship', c.name,
+    'description', c.description,
     'season', s.name,
     'rounds', coalesce((
       select jsonb_agg(jsonb_build_object(

@@ -139,7 +139,7 @@ function renderChamp() {
       '<span class="err">Not set.</span> <button type="button" id="cusetz">Use the league time zone (' + esc(leagueZone() || "none found") + ")</button>";
     h += '<div class="card">' +
       '<p style="margin:10px 0 0"><span class="lbl">Time zone</span><br>' + tzNote + "</p>" +
-      '<div class="field" style="margin-top:8px"><label for="cd">Description</label><textarea id="cd">' + esc(c.description || "") + "</textarea></div>" +
+      '<div class="field" style="margin-top:8px"><label for="cd">Championship overview</label><textarea id="cd" rows="6" placeholder="What racers need to know about every round: cars, format, qualifying, grid rules. Shown at the top of the public calendar and championship page.">' + esc(c.description || "") + "</textarea></div>" +
       '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
       '<div id="renamebox"></div></div>';
