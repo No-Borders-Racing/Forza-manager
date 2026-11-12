@@ -314,10 +314,25 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   var PUB = new URLSearchParams(location.search).get("pub"), pubState = { on: true, url: "" };
   if (PUB) document.documentElement.className += " pub";
   // Publish state: the admin's Publish build button and the link shown under it.
+  // Share: one button near the top. Phones and Windows get the system share sheet; otherwise a small menu of sites.
+  function shareUrl() { return PUB ? location.href.split("#")[0] : pubState.url; }
+  function shareTitle() { var h = document.querySelector(".head h2"); return (h ? h.textContent : "Forza build") + " | Forza build sheet"; }
   function drawPub() {
     document.querySelectorAll("[data-pubbox]").forEach(function (x) {
-      x.innerHTML = pubState.url ? '<div class="row2" style="margin-top:8px;align-items:center"><span class="lbl">Share link</span><input type="text" readonly data-publink value="' + esc(pubState.url) + '" style="flex:1 1 260px" aria-label="Share link"><button class="btn" type="button" data-pubcopy>Copy link</button><a class="btn" href="' + esc(pubState.url) + '" target="_blank" rel="noopener">Open</a></div><div class="sub" data-pubmsg>Anyone with this link can see this build, read-only.</div>' : '<div class="sub" style="margin-top:6px" data-pubmsg>Save the build to get its share link.</div>';
+      var u = shareUrl();
+      x.innerHTML = '<div class="row2" style="margin:8px 0 4px;align-items:center"><button class="btn primary" type="button" data-share' + (u ? "" : " disabled") + '>Share</button><span class="sub" data-sharemsg>' + (u ? "" : "Save the build to get its share link.") + '</span></div><div class="row2" data-sharemenu hidden style="gap:6px;flex-wrap:wrap"></div>';
     });
+  }
+  function shareMenu() {
+    var u = shareUrl(), t = shareTitle(), eu = encodeURIComponent(u), et = encodeURIComponent(t), mob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var L = [["Facebook", "https://www.facebook.com/sharer/sharer.php?u=" + eu], ["Messenger", mob ? "fb-messenger://share/?link=" + eu : ""], ["Discord", ""], ["WhatsApp", "https://wa.me/?text=" + et + "%20" + eu],
+      ["Telegram", "https://t.me/share/url?url=" + eu + "&text=" + et], ["X", "https://twitter.com/intent/tweet?url=" + eu + "&text=" + et], ["Reddit", "https://www.reddit.com/submit?url=" + eu + "&title=" + et],
+      ["Email", "mailto:?subject=" + et + "&body=" + eu], ["Copy link", ""]];
+    return L.map(function (x) { return x[1] ? '<a class="btn" href="' + esc(x[1]) + '" target="_blank" rel="noopener noreferrer">' + x[0] + "</a>" : '<button class="btn" type="button" data-sharecopy="' + esc(x[0]) + '">' + x[0] + "</button>"; }).join("");
+  }
+  function copyShare(kind) {
+    var u = shareUrl(), m = document.querySelector("[data-sharemsg]"), say = function (ok) { if (m) m.textContent = ok ? (kind === "Copy link" ? "Link copied." : "Link copied. Paste it into " + kind + ".") : "Could not copy. Open the build and copy the address bar."; };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(function () { say(true); }, function () { say(false); }); else { var ta = document.createElement("textarea"); ta.value = u; document.body.appendChild(ta); ta.select(); var ok = document.execCommand("copy"); ta.remove(); say(ok); } } catch (er) { say(false); }
   }
   function badge(b) { return ((b.cls || "") + " " + (b.pi || "")).trim(); }
   function render(b, bi) {
@@ -390,7 +405,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       '<div class="field"><label for="ds' + bi + '">Distribution</label><input type="text" id="ds' + bi + '" data-f="dist" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="xx/xx" value="' + esc(b.dist) + '"><div class="sub bad" data-distwarn>' + esc(distWarn(b.dist)) + '</div></div></div>' +
       '<h3>Parts</h3><div class="two"><div class="field"><label for="qb' + bi + '">Quick build</label><select id="qb' + bi + '" data-qb><option value="">Set every part to…</option>' + tierOpts("") + '</select></div></div>' +
       '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
-      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     // Published/completed view of the parts: one card per category, a bar with a segment per part
     // (filled = upgraded), upgraded parts as bright tiles, stock parts dimmed.
@@ -434,7 +449,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         '<div class="legend"><span><span class="sw"></span>Built</span><span><span class="sw d"></span>Stock</span></div>' +
         '<h3>Final specs</h3><p class="note" style="margin:0 0 6px">Entered by hand, not calculated. Update after any change to the build.</p><div class="specs">' + spec("Class", b.cls || "—") + spec("PI", b.pi || "—") + spec("Engine", b.engine || "—") + spec("Power", num(toDisp("hp", b.hp), " " + UN[unitSys].hp)) + spec("Torque", num(toDisp("tq", b.tq), " " + UN[unitSys].tq)) + spec("Weight", num(toDisp("lb", b.lb), " " + UN[unitSys].lb)) + spec("Ratio", ratioTxt(b) || "—") + spec("Distribution", distTxt(b.dist) || "—") + "</div>" +
         partsView(order, convFirst) +
-        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Completed.</span></div><div data-pubbox></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+        '<div class="row2"><button class="btn" type="button" data-reopen>Reopen to edit</button><button class="btn" type="button" data-export>Export build</button><span class="sub">Completed.</span></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     function addPart(g) {
       var inp = c.querySelector('[data-addname="' + g + '"]'), n = inp.value.trim();
@@ -452,7 +467,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
       var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
     }
-    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-pubbox],[data-delbar]").forEach(function (x) { x.remove(); }); else drawPub(); }
+    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-delbar]").forEach(function (x) { x.remove(); }); var hd = c.querySelector(".head"); if (hd) { hd.insertAdjacentHTML("afterend", "<div data-pubbox></div>"); drawPub(); } }
     c.addEventListener("input", function (e) {
       var t = e.target;
       if (t.dataset.g) {
@@ -503,10 +518,11 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta2.value).then(function () { done(true); }, function () { done(document.execCommand("copy")); }); else done(document.execCommand("copy")); } catch (err) { done(false); }
         return;
       }
-      if (e.target.closest("[data-pubcopy]")) {
-        var pi = document.querySelector("[data-publink]"), pm = document.querySelector("[data-pubmsg]"); if (!pi) return; pi.select();
-        var pd = function (ok) { if (pm) pm.textContent = ok ? "Link copied." : "Press Ctrl+C to copy the selected link."; };
-        try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pi.value).then(function () { pd(true); }, function () { pd(document.execCommand("copy")); }); else pd(document.execCommand("copy")); } catch (er) { pd(false); }
+      if (e.target.closest("[data-sharecopy]")) { copyShare(e.target.closest("[data-sharecopy]").dataset.sharecopy); return; }
+      if (e.target.closest("[data-share]")) {
+        var menu = document.querySelector("[data-sharemenu]"), u = shareUrl(); if (!u || !menu) return;
+        var openMenu = function () { menu.innerHTML = shareMenu(); menu.hidden = !menu.hidden; };
+        if (navigator.share && !/Firefox/i.test(navigator.userAgent)) { navigator.share({ title: shareTitle(), text: shareTitle(), url: u }).catch(function (er) { if (!er || er.name !== "AbortError") openMenu(); }); } else openMenu();
         return;
       }
       if (e.target.closest("[data-done]")) { b.done = true; draw(); }
