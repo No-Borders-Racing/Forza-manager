@@ -482,20 +482,22 @@ function drawChampCars() {
     (custom.length ? custom.map(function (x) { var b = byBuild[x.build_id], c = b && byCar[b.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(b ? b.name : "Unknown build") + '</b> <span class="muted">' + esc((c ? carFull(c) : "") + (b && b.pi ? " · " + (b.class_letter || "") + " " + b.pi : "")) + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") : '<p class="muted">None yet.</p>') +
     '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><div class="muted" style="margin-bottom:6px">Add stock cars. Search and filter the same way as the Cars tab, then add one car or everything that matches.</div>' + carFilterHtml(f, "g") +
     '<div id="gres"></div>' +
+    '<div class="row" style="margin-top:12px;align-items:center"><div class="grow" id="cselname"></div><button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">☆</button><button type="button" id="caddcmp">Compare +</button><button class="primary" type="button" id="ccaddsel">Add to championship</button></div>' +
+    '<div id="cstats"></div><div class="msg" id="cmsg"></div><div id="cmpbox" style="margin:14px 0"></div>' +
     '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field grow"><label for="ccdiv">A whole division</label><select id="ccdiv">' + selOpts(divs, "", "Choose a division") + '</select></div><button type="button" id="ccadddiv">Add the whole division</button></div>' +
     '</div>' +
     '<div class="row" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);align-items:flex-end"><div class="field grow"><label for="ccb">Add a custom build</label><select id="ccb">' + (avail.length ? selOpts(avail.map(function (b) { return [b.id, (favB[b.id] ? "★ " : "") + b.name]; }), "", "Choose a build") : '<option value="">No more builds to add</option>') + '</select></div><button type="button" id="ccbadd">Add</button></div>' +
     (dvAll.length ? '<div class="row" style="margin-top:12px;align-items:flex-end"><div class="field grow"><label for="ccdv">Add a division</label><select id="ccdv">' + (dvAvail.length ? selOpts(dvAvail.map(function (d) { return [d.id, d.name]; }), "", "Choose a division") : '<option value="">No more divisions to add</option>') + '</select></div><button type="button" id="ccdvadd">Add</button></div>' : "") + '<div class="msg" id="ccm"></div>';
 
   function remaining() { return filterCars(f).filter(function (c) { return !inStock[c.id]; }); }
-  function repickCC() {
+  var repickCC = function () {
     drawCarResults("g", f, {
-      btn: function (c) { return inStock[c.id] ? '<button type="button" disabled>Added</button>' : '<button type="button" data-rpick="' + esc(c.id) + '">Add</button>'; },
-      pick: function (id) { add({ car_id: id }); },
+      btn: function (c) { return '<button type="button" data-rpick="' + esc(c.id) + '"' + (c.id === state.cpick ? ' class="primary"' : "") + ">" + (c.id === state.cpick ? "Selected" : "Select") + "</button>" + (inStock[c.id] ? ' <span class="muted">In championship</span>' : ""); },
+      pick: function (id) { state.cpick = id; repickCC(); },
       head: function (rows) { var n = rows.filter(function (c) { return !inStock[c.id]; }).length; return '<button type="button" id="ccaddall"' + (n ? "" : " disabled") + ">Add all " + n + " results</button>"; },
       after: function (bx, rows) { var a = bx.querySelector("#ccaddall"); if (a) a.addEventListener("click", function () { bulk(rows.filter(function (c) { return !inStock[c.id]; }), "everything that matches the search and filters"); }); }
     });
-  }
+  };
   function bulk(list, what) {
     if (!list.length) { msg($("#ccm"), "Nothing to add: those cars are already in this championship.", "err"); return; }
     if (list.length > 25 && !window.confirm("Add " + list.length + " cars" + (what ? " (" + what + ")" : "") + " to this championship?")) return;
@@ -508,7 +510,18 @@ function drawChampCars() {
     });
   }
   function add(row) { msg($("#ccm"), "Adding…"); sb.from("championship_cars").insert(Object.assign({ championship_id: state.sel.champ.id }, row)).select(row.division_id ? "id,car_id,build_id,division_id" : "id,car_id,build_id").single().then(function (r) { if (r.error) { msg($("#ccm"), r.error.code === "23505" ? "That car is already in this championship." : dbError(r.error), "err"); return; } state.cc.push(r.data); drawChampCars(); }); }
-  bindCarFilter(f, "g", repickCC, drawChampCars); repickCC();
+  function selPanel() {
+    var cur = state.carsAll.filter(function (c) { return c.id === state.cpick; })[0], ad = $("#ccaddsel");
+    $("#cselname").innerHTML = cur ? "<b>" + esc(carName(cur)) + '</b> <span class="muted">' + esc(carFull(cur)) + (inStock[cur.id] ? " · already in this championship" : "") + "</span>" : '<span class="muted">No car selected. Search above and press Select on a car.</span>';
+    $("#cfavsel").textContent = favSet("car")[state.cpick] ? "★" : "☆";
+    ad.disabled = !cur || !!inStock[state.cpick]; ad.textContent = cur && inStock[cur.id] ? "Added" : "Add to championship";
+    showStats();
+  }
+  var rp = repickCC; repickCC = function () { rp(); selPanel(); };
+  bindCarFilter(f, "g", repickCC, drawChampCars); repickCC(); drawCmp("cars");
+  $("#ccaddsel").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } add({ car_id: state.cpick }); });
+  $("#caddcmp").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } cmpToggle("car:" + state.cpick, true); drawCmp("cars"); });
+  $("#cfavsel").addEventListener("click", function () { if (!state.cpick) return; toggleFav("car:" + state.cpick, function () { repickCC(); }); });
   box.querySelectorAll("[data-ccrm]").forEach(function (x) { x.addEventListener("click", function () { sb.from("championship_cars").delete().eq("id", x.dataset.ccrm).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } state.cc = state.cc.filter(function (y) { return y.id !== x.dataset.ccrm; }); drawChampCars(); }); }); });
   var ra = $("#ccrmall"); if (ra) ra.addEventListener("click", function () {
     if (!window.confirm("Remove all " + stock.length + " stock cars from this championship? Custom builds stay.")) return;
