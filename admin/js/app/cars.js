@@ -407,7 +407,7 @@ function drawCmp(mode) {
 function syncCmpChecks() { app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.checked = cmpHas("build:" + x.dataset.cmpbuild); }); }
 function renderBuildEditor() {
   var E = state.editor;
-  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113f" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
+  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113g" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
   bindNav(); drawCmp("editor");
   $("#bback").addEventListener("click", function () {
     if (E.dirty && !window.confirm("This build has unsaved changes. Leave without saving?")) return;
