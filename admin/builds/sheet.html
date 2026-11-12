@@ -405,7 +405,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       '<div class="field"><label for="ds' + bi + '">Distribution</label><input type="text" id="ds' + bi + '" data-f="dist" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="xx/xx" value="' + esc(b.dist) + '"><div class="sub bad" data-distwarn>' + esc(distWarn(b.dist)) + '</div></div></div>' +
       '<h3>Parts</h3><div class="two"><div class="field"><label for="qb' + bi + '">Quick build</label><select id="qb' + bi + '" data-qb><option value="">Set every part to…</option>' + tierOpts("") + '</select></div></div>' +
       '<p class="sub" style="margin:6px 0">Every part starts as Stock. Use Quick build for the whole car or "Set all to…" for one category, then open a category to change single parts or add detail.</p><div data-parts>' + partsHtml() + '</div>' +
-      '<div class="row2"><button class="btn primary" type="button" data-done>Mark build sheet complete</button><button class="btn" type="button" data-export>Export build</button></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
+      '<div class="row2"><button class="btn" type="button" data-export>Export build</button></div>' + '<div class="row2" data-delbar><button class="btn danger" type="button" data-del>Delete build sheet…</button></div>';
     }
     // Published/completed view of the parts: one card per category, a bar with a segment per part
     // (filled = upgraded), upgraded parts as bright tiles, stock parts dimmed.
@@ -467,7 +467,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
       var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
     }
-    function draw() { c.innerHTML = b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-delbar]").forEach(function (x) { x.remove(); }); var hd = c.querySelector(".head"); if (hd) { hd.insertAdjacentHTML("afterend", "<div data-pubbox></div>"); drawPub(); } }
+    function draw() { c.innerHTML = PUB && b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-delbar]").forEach(function (x) { x.remove(); }); var hd = c.querySelector(".head"); if (hd) { hd.insertAdjacentHTML("afterend", "<div data-pubbox></div>"); drawPub(); } }
     c.addEventListener("input", function (e) {
       var t = e.target;
       if (t.dataset.g) {
