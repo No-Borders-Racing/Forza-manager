@@ -320,7 +320,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   function drawPub(root) {
     (root || document).querySelectorAll("[data-pubbox]").forEach(function (x) {
       var u = shareUrl();
-      x.innerHTML = '<div class="row2" style="margin:8px 0 4px;align-items:center"><button class="btn primary" type="button" data-share' + (u ? "" : " disabled") + '>Share</button><span class="sub" data-sharemsg>' + (u ? "" : "Save the build to get its share link.") + '</span></div><div class="row2" data-sharemenu hidden style="gap:6px;flex-wrap:wrap"></div>';
+      x.innerHTML = '<div class="row2" style="margin:8px 0 4px;align-items:center"><button class="btn primary" type="button" data-share' + (u ? "" : " disabled") + '>Share</button><span class="sub" data-sharemsg>' + (u ? "" : "Save to share.") + '</span></div><div class="row2" data-sharemenu hidden style="gap:6px;flex-wrap:wrap"></div>';
     });
   }
   function shareMenu() {
@@ -610,4 +610,4 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     }); });
   } else send({ fcm: "ready" });
 })();
-</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113i</div></body></html>
+</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113j</div></body></html>
