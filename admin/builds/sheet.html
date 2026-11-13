@@ -311,7 +311,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     return t === 100 ? "" : "Front and rear should add up to 100 (this adds up to " + t + ").";
   }
   function partVal(p) { return [p.tier, detailOf(p)].filter(Boolean).join(" · ") || "—"; }
-  var PUB = new URLSearchParams(location.search).get("pub"), pubState = { on: true, url: "" };
+  var PUB = new URLSearchParams(location.search).get("pub"), pubState = { url: "" };
   if (PUB) document.documentElement.className += " pub";
   // Publish state: the admin's Publish build button and the link shown under it.
   // Share: one button near the top. Phones and Windows get the system share sheet; otherwise a small menu of sites.
@@ -525,7 +525,6 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         if (navigator.share && !/Firefox/i.test(navigator.userAgent)) { navigator.share({ title: shareTitle(), text: shareTitle(), url: u }).catch(function (er) { if (!er || er.name !== "AbortError") openMenu(); }); } else openMenu();
         return;
       }
-      if (e.target.closest("[data-done]")) { b.done = true; draw(); }
       if (e.target.closest("[data-reopen]")) { b.done = false; draw(); }
     });
     c._redraw = function () { saveOpen(); draw(); };
@@ -577,10 +576,9 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;
     var m = e.data; if (!m || typeof m !== "object") return;
-    if (m.fcm === "new" && m.car) { pubState = { on: true, url: "" }; var b = carToBuild(m.car); show(b); bname.value = m.name || b.title; dirty = false; status("New build. Not saved yet.", "dirty"); }
-    else if (m.fcm === "load" && m.data) { pubState = { on: !!m.published, url: m.url || "" }; show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
-    else if (m.fcm === "published") { pubState = { on: true, url: m.url || "" }; drawPub(); }
-    else if (m.fcm === "saved") { dirty = false; if (m.name) bname.value = m.name; if (m.url) { pubState = { on: !!m.published, url: m.url }; drawPub(); } status("Saved.", "ok"); }
+    if (m.fcm === "new" && m.car) { pubState = { url: "" }; var b = carToBuild(m.car); show(b); bname.value = m.name || b.title; dirty = false; status("New build. Not saved yet.", "dirty"); }
+    else if (m.fcm === "load" && m.data) { pubState = { url: m.url || "" }; show(m.data); bname.value = m.name || ""; dirty = false; status(""); }
+    else if (m.fcm === "saved") { dirty = false; if (m.name) bname.value = m.name; if (m.url) { pubState = { url: m.url }; drawPub(); } status("Saved.", "ok"); }
     else if (m.fcm === "error") { status(m.message || "Could not save.", "dirty"); }
   });
   var lastH = 0;
@@ -604,10 +602,9 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         if (r.data.palette) document.documentElement.setAttribute("data-palette", r.data.palette);
         document.title = r.data.name + " · " + r.data.league;
         var b = r.data.data; b.done = true; show(b);
-        if (r.data.is_public === false) host.insertAdjacentHTML("afterbegin", '<div class="card"><p class="sub" style="margin:0">Admin only: visitors cannot see this build yet. It becomes public once it is marked complete and set to Public.</p></div>');
         var ft = document.getElementById("ftloc"); if (ft) ft.textContent = r.data.league || ""; ready();
       });
     }); });
   } else send({ fcm: "ready" });
 })();
-</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113l</div></body></html>
+</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113m</div></body></html>

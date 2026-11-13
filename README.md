@@ -19,7 +19,7 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 | `calendar/` | Public season calendar (`?s=<season id>`). |
 | `assets/` | `app.css` (the one stylesheet for the admin and every public page), `public.css`, `chrome.js` (top bar, nav bar and footer on public pages), `public.js` (helpers shared by the public pages), `menu.js` (the hamburger menu), `og.png` (social preview image). |
 | `results/engine.js` | The scoring engine. Points are worked out in application code and stored on each result. |
-| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 036, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
+| `supabase/` | `schema.sql` (the full schema, for a fresh project), `migrations/` (001 to 038, each change in order, for an existing project), `points_library.sql` (real-world points tables, run once after the schema). |
 
 ## How it fits together
 
@@ -27,7 +27,9 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 
 **Roles.** Site owners (rows in `admins`) create and delete leagues and logins and maintain the shared car and track lists. League admins (`league_admins`) manage their own league. A new login can be created from the app, with a username instead of an email and a forced password change on first sign-in.
 
-**Public pages.** Everything is Public by default. A "Who can view?" setting (Public or Admin only) on a league page, championship page, season calendar or build controls what visitors see. Anonymous visitors cannot read any table directly: they call `security definer` functions (`public_league`, `public_championship`, `public_calendar`, `public_build`) that return exactly what a page shows, and only when that item is Public. A build only shows once it is marked complete. Driver gamertags are never exposed, only display names. Signed-in admins see the app's nav bar on every public page. Admins land on the manager Home (quick actions and the next race, with the latest results and standings in a sidebar); the public league page uses the same two-column layout and opens from the "View league page" button. Who can view each page, with its share link, is under League settings > Sharing.
+**Overviews.** A league and each championship have an overview text, shown at the top of the public league page, championship page and season calendar (migration 037).
+
+**Public pages.** Everything is Public by default. A "Who can view?" setting (Public or Admin only) on a league page, championship page or season calendar controls what visitors see. Build sheets are always public by link (migration 038), with a Share button for social apps. Anonymous visitors cannot read any table directly: they call `security definer` functions (`public_league`, `public_championship`, `public_calendar`, `public_build`) that return exactly what a page shows, and only when that item is Public. Driver gamertags are never exposed, only display names. Signed-in admins see the app's nav bar on every public page. Admins land on the manager Home (quick actions and the next race, with the latest results and standings in a sidebar); the public league page uses the same two-column layout and opens from the "View league page" button. Who can view each page, with its share link, is under League settings > Sharing.
 
 **Owner Admin page.** The site owner (the account in `owners`) gets an Admin button in the menu with three tabs: Site overview (per league: admins, championships, drivers, results, last activity; counts only, no names or emails), Admins and logins (the same tools as League settings, for any league), and Health and usage (database size against the 500 MB free limit with an 80% warning, row counts, and a "Run a test" for the screenshot reader). Data comes from `owner_site_overview()` and `owner_db_stats()` (migration 035), both refused for anyone but the owner.
 
@@ -43,7 +45,7 @@ Live site: https://no-borders-racing.github.io/Forza-manager/ (admin at `/admin/
 
 **Results and points.** Drivers are per league. Results are typed from the game's results screen. Each championship has named points systems (copyable from the library), chosen per race. Standings are the sum of the points stored on the results.
 
-**Cars and builds.** The Cars page holds the stock catalogue and the league's saved custom builds. A build is a build sheet saved under its own name, so one car can have several versions.
+**Cars and builds.** The Cars page holds the stock catalogue and the league's saved custom builds. A build is a build sheet saved under its own name, so one car can have several versions. A championship's Cars tab is the same Search / Builds / Divisions page plus an "In this championship" list of the cars it allows.
 
 **Palettes.** Each league picks a colour palette (`data-palette` on `<html>`). The admin, the public pages and the build sheet all follow it.
 
@@ -60,6 +62,5 @@ An existing project is updated by running any migrations it is missing, in order
 ## Not done yet
 
 - A real sign-up flow with email confirmation and password reset (today, an owner creates logins).
-- The AI results scan (reading results from a screenshot).
 - The licence of the FM23Data car and track files has not been checked, and imported values are unverified community data. For that reason the `cars` and `track_*` tables are admin-only; visitors see cars by name only through builds.
 - Deliberately left out: anything that lists or controls Forza's lobby settings. Race conditions go in the event notes.

@@ -151,13 +151,6 @@ function buildListHtml() {
     }).join("") : '<p class="muted">No saved builds yet. Open the Stock cars tab, find a car and press Build this car.</p>');
 }
 function renderCars() { state.dedit = null; state.champCtx = null; loadCarsData(function () { loadDivisions(renderCarsBody); }); }
-var PICK_MAX = 300;
-function pickOptsHtml() {
-  var rows = filterCars(), fav = favSet("car"), shown = rows.slice(0, PICK_MAX);
-  if (!state.cpick || !shown.some(function (c) { return c.id === state.cpick; })) state.cpick = shown.length ? shown[0].id : "";
-  return { html: shown.length ? shown.map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === state.cpick ? " selected" : "") + ">" + (fav[c.id] ? "★ " : "") + esc(carName(c) + " · " + classOf(c.pi) + " " + c.pi) + "</option>"; }).join("") : '<option value="">No cars match</option>',
-    note: rows.length + " car" + (rows.length === 1 ? " matches" : "s match") + (rows.length > shown.length ? ". Showing the first " + shown.length + ", keep typing or add a filter to narrow it down." : ".") };
-}
 // The selected car's stats, from the full catalogue row (fetched once per car).
 function statsHtml(c) {
   var met = isMetric(), num = function (v, d) { return v == null || v === "" ? "—" : Number(v).toFixed(d == null ? 0 : d).replace(/\.0+$/, ""); };
@@ -416,7 +409,7 @@ function drawCmp(mode) {
 function syncCmpChecks() { app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.checked = cmpHas("build:" + x.dataset.cmpbuild); }); }
 function renderBuildEditor() {
   var E = state.editor;
-  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113l" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
+  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113m" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
   bindNav(); drawCmp("editor");
   $("#bback").addEventListener("click", function () {
     if (E.dirty && !window.confirm("This build has unsaved changes. Leave without saving?")) return;
@@ -432,14 +425,6 @@ window.addEventListener("message", function (e) {
   else if (m.fcm === "height" && m.h) fr.style.height = Math.max(400, Math.min(m.h + 24, 20000)) + "px";
   else if (m.fcm === "dirty") E.dirty = true;
   else if (m.fcm === "save") saveBuild(m, post);
-  else if (m.fcm === "publish") {
-    if (!E.buildId) { post({ fcm: "error", message: "Save the build first, then choose who can view it." }); return; }
-    var on = !!m.on;
-    sb.from("build_sheets").update({ published: on }).eq("id", E.buildId).then(function (r) {
-      if (r.error) { post({ fcm: "error", message: dbError(r.error) + (/published|schema cache/i.test(r.error.message || "") ? " (has migration 030 been run?)" : "") }); return; }
-      E.published = on; post({ fcm: "published", on: on, url: buildLink(E.buildId) });
-    });
-  }
   else if (m.fcm === "delete") {
     if (!E.buildId) { state.editor = null; renderCars(); return; }
     sb.from("build_sheets").delete().eq("id", E.buildId).then(function (r) {
@@ -511,78 +496,4 @@ function drawChampList() {
     if (!window.confirm("Remove all " + stock.length + " stock cars from this championship? Custom builds stay.")) return;
     sb.from("championship_cars").delete().eq("championship_id", state.sel.champ.id).not("car_id", "is", null).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } champRefresh(); });
   });
-}
-state.ccf = state.ccf || freshCarFilter();
-function drawChampCars() {
-  var box = $("#cc"); if (!box) return;
-  var byCar = {}, byBuild = {}; state.carsAll.forEach(function (c) { byCar[c.id] = c; }); state.builds.forEach(function (b) { byBuild[b.id] = b; });
-  var stock = state.cc.filter(function (x) { return x.car_id; }), custom = state.cc.filter(function (x) { return x.build_id; }), dvrows = state.cc.filter(function (x) { return x.division_id; });
-  var byDiv = {}, dvAll = state.ccdivs || [], dvInUse = {}; dvAll.forEach(function (d) { byDiv[d.id] = d; }); dvrows.forEach(function (x) { dvInUse[x.division_id] = 1; });
-  var dvAvail = dvAll.filter(function (d) { return !dvInUse[d.id]; });
-  var usedBuild = {}, inStock = {}; custom.forEach(function (x) { usedBuild[x.build_id] = 1; }); stock.forEach(function (x) { inStock[x.car_id] = 1; });
-  var avail = state.builds.filter(function (b) { return !usedBuild[b.id]; });
-  var favB = favSet("build"), f = state.ccf; state.sel.ccopts = carOptLabels(state.cc, byCar, byBuild);
-  avail.sort(function (a, b) { return (favB[b.id] ? 1 : 0) - (favB[a.id] ? 1 : 0) || a.name.localeCompare(b.name); });
-  stock.sort(function (x, y) { var a = byCar[x.car_id], b = byCar[y.car_id]; return a && b ? (a.make + " " + a.model).localeCompare(b.make + " " + b.model) || a.year - b.year : 0; });
-  var divs = uniq(state.carsAll.map(function (c) { return c.division; })).sort();
-  box.className = "";
-  box.innerHTML = '<div><div class="muted" style="margin-bottom:6px">Search the catalogue and pick a car to see its stats, then add it to the championship. Add everything that matches, or a whole division, in one go.</div>' + carFilterHtml(f, "g") +
-    '<div id="gres"></div>' +
-    '<div class="row" style="margin-top:12px;align-items:center"><div class="grow" id="cselname"></div><button type="button" id="cfavsel" aria-label="Favourite this car" style="min-width:40px;font-size:18px">☆</button><button type="button" id="caddcmp">Compare +</button><button class="primary" type="button" id="ccaddsel">Add to championship</button></div>' +
-    '<div id="cstats"></div><div class="msg" id="cmsg"></div><div id="cmpbox" style="margin:14px 0"></div>' +
-    '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field grow"><label for="ccdiv">A whole division</label><select id="ccdiv">' + selOpts(divs, "", "Choose a division") + '</select></div><button type="button" id="ccadddiv">Add the whole division</button></div>' +
-    '</div>' +
-    '<div class="row" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);align-items:flex-end"><div class="field grow"><label for="ccb">Add a custom build</label><select id="ccb">' + (avail.length ? selOpts(avail.map(function (b) { return [b.id, (favB[b.id] ? "★ " : "") + b.name]; }), "", "Choose a build") : '<option value="">No more builds to add</option>') + '</select></div><button type="button" id="ccbadd">Add</button></div>' +
-    (dvAll.length ? '<div class="row" style="margin-top:12px;align-items:flex-end"><div class="field grow"><label for="ccdv">Add a division</label><select id="ccdv">' + (dvAvail.length ? selOpts(dvAvail.map(function (d) { return [d.id, d.name]; }), "", "Choose a division") : '<option value="">No more divisions to add</option>') + '</select></div><button type="button" id="ccdvadd">Add</button></div>' : "") + '<div class="msg" id="ccm"></div>' +
-    '<h3 style="margin-top:22px;padding-top:12px;border-top:1px solid var(--line)">Stock unmodified (' + stock.length + ")</h3>" +
-    (stock.length ? '<details' + (stock.length <= 12 ? " open" : "") + '><summary class="muted" style="cursor:pointer">Show the ' + stock.length + ' stock cars</summary>' + stock.map(function (x) { var c = byCar[x.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(c ? carName(c) : "Unknown car") + '</b> <span class="muted">' + esc(c ? carFull(c) + " · " + classOf(c.pi) + " " + c.pi : "") + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") + '<div style="margin-top:8px"><button type="button" class="danger" id="ccrmall">Remove all stock cars</button></div></details>' : '<p class="muted">None yet.</p>') +
-    '<h3>Divisions (' + dvrows.length + ")</h3>" +
-    (dvrows.length ? dvrows.map(function (x) { var d = byDiv[x.division_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(d ? d.name : "Unknown division") + '</b> <span class="muted">' + esc(d && d.pi_limit ? "PI limit " + d.pi_limit : "") + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") : '<p class="muted" style="margin:4px 0">No divisions. A division lets any car in its list race, as long as it follows the division\'s rules. Make one on the Cars page.</p>') +
-    '<h3>Custom built (' + custom.length + ")</h3>" +
-    (custom.length ? custom.map(function (x) { var b = byBuild[x.build_id], c = b && byCar[b.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(b ? b.name : "Unknown build") + '</b> <span class="muted">' + esc((c ? carFull(c) : "") + (b && b.pi ? " · " + (b.class_letter || "") + " " + b.pi : "")) + '</span></div><button type="button" data-ccrm="' + esc(x.id) + '">Remove</button></div>'; }).join("") : '<p class="muted">None yet.</p>');
-
-  function remaining() { return filterCars(f).filter(function (c) { return !inStock[c.id]; }); }
-  var repickCC = function () {
-    drawCarResults("g", f, {
-      btn: function (c) { return '<button type="button" data-rpick="' + esc(c.id) + '"' + (c.id === state.cpick ? ' class="primary"' : "") + ">" + (c.id === state.cpick ? "Selected" : "Select") + "</button>" + (inStock[c.id] ? ' <span class="muted">In championship</span>' : ""); },
-      pick: function (id) { state.cpick = id; repickCC(); },
-      head: function (rows) { var n = rows.filter(function (c) { return !inStock[c.id]; }).length; return '<button type="button" id="ccaddall"' + (n ? "" : " disabled") + ">Add all " + n + " results</button>"; },
-      after: function (bx, rows) { var a = bx.querySelector("#ccaddall"); if (a) a.addEventListener("click", function () { bulk(rows.filter(function (c) { return !inStock[c.id]; }), "everything that matches the search and filters"); }); }
-    });
-  };
-  function bulk(list, what) {
-    if (!list.length) { msg($("#ccm"), "Nothing to add: those cars are already in this championship.", "err"); return; }
-    if (list.length > 25 && !window.confirm("Add " + list.length + " cars" + (what ? " (" + what + ")" : "") + " to this championship?")) return;
-    msg($("#ccm"), "Adding " + list.length + "…");
-    var chunks = [], i; for (i = 0; i < list.length; i += 200) chunks.push(list.slice(i, i + 200));
-    var added = [], err = null;
-    chunks.reduce(function (p, ch) { return p.then(function () { if (err) return; return sb.from("championship_cars").insert(ch.map(function (c) { return { championship_id: state.sel.champ.id, car_id: c.id }; })).select("id,car_id,build_id").then(function (r) { if (r.error) err = r.error; else added = added.concat(r.data || []); }); }); }, Promise.resolve()).then(function () {
-      state.cc = state.cc.concat(added); drawChampCars();
-      msg($("#ccm"), err ? "Added " + added.length + " then stopped: " + dbError(err) : "Added " + added.length + " car" + (added.length === 1 ? "" : "s") + ".", err ? "err" : "ok");
-    });
-  }
-  function add(row) { msg($("#ccm"), "Adding…"); sb.from("championship_cars").insert(Object.assign({ championship_id: state.sel.champ.id }, row)).select(row.division_id ? "id,car_id,build_id,division_id" : "id,car_id,build_id").single().then(function (r) { if (r.error) { msg($("#ccm"), r.error.code === "23505" ? "That car is already in this championship." : dbError(r.error), "err"); return; } state.cc.push(r.data); drawChampCars(); }); }
-  function selPanel() {
-    var cur = state.carsAll.filter(function (c) { return c.id === state.cpick; })[0], ad = $("#ccaddsel");
-    $("#cselname").innerHTML = cur ? "<b>" + esc(carName(cur)) + '</b> <span class="muted">' + esc(carFull(cur)) + (inStock[cur.id] ? " · already in this championship" : "") + "</span>" : '<span class="muted">No car selected. Search above and press Select on a car.</span>';
-    $("#cfavsel").textContent = favSet("car")[state.cpick] ? "★" : "☆";
-    ad.disabled = !cur || !!inStock[state.cpick]; ad.textContent = cur && inStock[cur.id] ? "Added" : "Add to championship";
-    showStats();
-  }
-  var rp = repickCC; repickCC = function () { rp(); selPanel(); };
-  bindCarFilter(f, "g", repickCC, drawChampCars); repickCC(); drawCmp("cars");
-  $("#ccaddsel").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } add({ car_id: state.cpick }); });
-  $("#caddcmp").addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } cmpToggle("car:" + state.cpick, true); drawCmp("cars"); });
-  $("#cfavsel").addEventListener("click", function () { if (!state.cpick) return; toggleFav("car:" + state.cpick, function () { repickCC(); }); });
-  box.querySelectorAll("[data-ccrm]").forEach(function (x) { x.addEventListener("click", function () { sb.from("championship_cars").delete().eq("id", x.dataset.ccrm).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } state.cc = state.cc.filter(function (y) { return y.id !== x.dataset.ccrm; }); drawChampCars(); }); }); });
-  var ra = $("#ccrmall"); if (ra) ra.addEventListener("click", function () {
-    if (!window.confirm("Remove all " + stock.length + " stock cars from this championship? Custom builds stay.")) return;
-    sb.from("championship_cars").delete().eq("championship_id", state.sel.champ.id).not("car_id", "is", null).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } state.cc = state.cc.filter(function (y) { return !y.car_id; }); drawChampCars(); });
-  });
-  $("#ccadddiv").addEventListener("click", function () {
-    var d = $("#ccdiv").value; if (!d) { msg($("#ccm"), "Choose a division first.", "err"); return; }
-    bulk(state.carsAll.filter(function (c) { return c.division === d && !inStock[c.id]; }), d);
-  });
-  $("#ccbadd").addEventListener("click", function () { var v = $("#ccb").value; if (v) add({ build_id: v }); });
-  var dva = $("#ccdvadd"); if (dva) dva.addEventListener("click", function () { var v = $("#ccdv").value; if (v) add({ division_id: v }); else msg($("#ccm"), "Choose a division first.", "err"); });
 }
