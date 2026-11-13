@@ -62,6 +62,7 @@ function useIn(kind, id) {
     if (!r.error) state.useCC.push(r.data);
     msg($("#cmsg"), r.error ? "Already in " + nm + "." : "Added to " + nm + ".", r.error ? "" : "ok");
     updateCin(); var box = $("#clist"); if (box) { box.innerHTML = buildListHtml(); bindCarList(); }
+    if (state.champCtx) champRefresh();
   });
 }
 function selOpts(list, cur, blank) { return '<option value="">' + esc(blank) + "</option>" + list.map(function (o) { var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>"; }).join(""); }
@@ -149,7 +150,7 @@ function buildListHtml() {
         (state.useChs.length ? '<button type="button" data-usebuild="' + esc(b.id) + '">Use in ' + esc(useChName()) + "</button>" : "") + '<button type="button" data-copybuild="' + esc(b.id) + '">Copy link</button><button type="button" data-openbuild="' + esc(b.id) + '">Open</button><button class="danger" type="button" data-delbuild="' + esc(b.id) + '">Delete</button></div>';
     }).join("") : '<p class="muted">No saved builds yet. Open the Stock cars tab, find a car and press Build this car.</p>');
 }
-function renderCars() { state.dedit = null; loadCarsData(function () { loadDivisions(renderCarsBody); }); }
+function renderCars() { state.dedit = null; state.champCtx = null; loadCarsData(function () { loadDivisions(renderCarsBody); }); }
 var PICK_MAX = 300;
 function pickOptsHtml() {
   var rows = filterCars(), fav = favSet("car"), shown = rows.slice(0, PICK_MAX);
@@ -235,9 +236,9 @@ function bindCarFilter(f, pre, changed, reset) {
 function renderCarsBody() {
   var f = state.cf, b = state.bf, fav = favSet("car");
   var clsList = PI_CLASSES.map(function (c) { return [c[0], c[0]]; });
-  var cv = state.cview || "s";
+  var inCh = !!state.champCtx, cv = state.cview || "s"; if (!inCh && cv === "c") cv = "s";
   function subBtn(v, label) { return '<button type="button" data-cview="' + v + '" aria-pressed="' + (cv === v ? "true" : "false") + '" class="' + (cv === v ? "primary" : "") + '">' + label + "</button>"; }
-  var h = navHtml("k") + '<div class="row" role="group" aria-label="Cars" style="margin:0 0 12px;gap:8px">' + subBtn("s", "Search") + subBtn("b", "Builds") + subBtn("d", "Divisions") + '</div>' +
+  var h = (inCh ? "" : navHtml("k")) + '<div class="row" role="group" aria-label="Cars" style="margin:0 0 12px;gap:8px">' + subBtn("s", "Search") + subBtn("b", "Builds") + subBtn("d", "Divisions") + (inCh ? subBtn("c", "In this championship (" + (state.cc || []).length + ")") : "") + '</div>' +
     '<div id="cv-s"' + (cv === "s" ? "" : " hidden") + '><div class="card"><h2 style="font-size:18px;margin:0">Cars</h2><p class="muted" style="margin:4px 0 10px">Search the catalogue and pick a car to see its stats. Press Modify to start a build sheet for it. It starts as a draft with the car\'s stock class, PI, engine, power, torque and weight filled in and every part on Stock.</p>' +
     carFilterHtml(f, "f") +
     '<div id="fres"></div>' +
@@ -256,14 +257,21 @@ function renderCarsBody() {
     '<div id="clist">' + buildListHtml() + "</div></div></div>" +
     '<div id="cv-d"' + (cv === "d" ? "" : " hidden") + '><div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 8px"><h2 style="font-size:18px;margin:0">Divisions (' + state.divs.length + ')</h2><button class="primary" type="button" id="dvnew">New division</button></div>' +
     '<p class="muted" style="margin:0 0 8px">A division is a group of cars with rules every car must follow.</p>' + (state.divErr ? '<p class="err">' + esc(state.divErr) + " Has migration 034 been run?</p>" : "") +
-    (state.divs.length ? divisionRowsHtml("") : '<p class="muted">No divisions yet. Press New division to make one.</p>') + "</div></div>";
-  app.innerHTML = h; bindNav(); bindCars(); drawCmp("cars");
+    (state.divs.length ? divisionRowsHtml("") : '<p class="muted">No divisions yet. Press New division to make one.</p>') + "</div></div>" +
+    (inCh ? '<div id="cv-c"' + (cv === "c" ? "" : " hidden") + '><div class="card" id="ccl"></div></div>' : "");
+  (inCh ? $("#cc") : app).innerHTML = h; if (!inCh) bindNav(); bindCars(); drawCmp("cars"); if (inCh) drawChampList();
 }
 function bindCars() {
   var f = state.cf, b = state.bf;
   function pickCar(id) { state.cpick = id; repick(); }
   function repick() {
-    drawCarResults("f", f, { btn: function (c) { return '<button type="button" data-rpick="' + esc(c.id) + '"' + (c.id === state.cpick ? ' class="primary"' : "") + ">" + (c.id === state.cpick ? "Selected" : "Select") + "</button>"; }, pick: pickCar });
+    var inCh = !!state.champCtx, inSt = {}; if (inCh) (state.cc || []).forEach(function (x) { if (x.car_id) inSt[x.car_id] = 1; });
+    var o = { btn: function (c) { return '<button type="button" data-rpick="' + esc(c.id) + '"' + (c.id === state.cpick ? ' class="primary"' : "") + ">" + (c.id === state.cpick ? "Selected" : "Select") + "</button>" + (inSt[c.id] ? ' <span class="muted">In championship</span>' : ""); }, pick: pickCar };
+    if (inCh) {
+      o.head = function (rows) { var n = rows.filter(function (c) { return !inSt[c.id]; }).length; return '<button type="button" id="ccaddall"' + (n ? "" : " disabled") + ">Add all " + n + " results</button>"; };
+      o.after = function (bx, rows) { var a = bx.querySelector("#ccaddall"); if (a) a.addEventListener("click", function () { champBulk(rows.filter(function (c) { return !inSt[c.id]; })); }); };
+    }
+    drawCarResults("f", f, o);
     var cur = state.carsAll.filter(function (c) { return c.id === state.cpick; })[0];
     $("#cselname").innerHTML = cur ? "<b>" + esc(carName(cur)) + '</b> <span class="muted">' + esc(carFull(cur)) + "</span>" : '<span class="muted">No car selected. Search above and press Select on a car.</span>';
     $("#cfavsel").textContent = favSet("car")[state.cpick] ? "★" : "☆"; showStats();
@@ -273,6 +281,7 @@ function bindCars() {
     var el = document.getElementById(id); if (!el) return;
     el.addEventListener(kind || "input", function () { obj[key] = el.type === "checkbox" ? el.checked : el.value; after(); });
   }
+  state.repickFn = repick;
   bindCarFilter(f, "f", repick, renderCarsBody);
   wire("bq", b, "q", "input", relist); wire("bc", b, "cls", "change", relist); wire("bsort", b, "sort", "change", relist); wire("bfav", b, "fav", "change", relist);
   var ub = $("#cusebtn"); if (ub) ub.addEventListener("click", function () { if (!state.cpick) { msg($("#cmsg"), "Pick a car first.", "err"); return; } useIn("car", state.cpick); });
@@ -286,7 +295,7 @@ function bindCars() {
   var bd = $("#bdir"); if (bd) bd.addEventListener("click", function () { b.dir = b.dir === "desc" ? "asc" : "desc"; bd.textContent = b.dir === "desc" ? "Z to A ↓" : "A to Z ↑"; relist(); });
   $("#dvnew").addEventListener("click", function () { newDivision(); });
   $("#bnew").addEventListener("click", function () { showCview("s"); var c = $("#fq"); if (c) { c.scrollIntoView({ block: "center" }); c.focus(); } });
-  function showCview(v) { state.cview = v; ["s", "b", "d"].forEach(function (k) { var sec = document.getElementById("cv-" + k); if (sec) sec.hidden = k !== v; }); app.querySelectorAll("[data-cview]").forEach(function (x) { var on = x.dataset.cview === v; x.setAttribute("aria-pressed", on ? "true" : "false"); x.className = on ? "primary" : ""; }); }
+  function showCview(v) { state.cview = v; ["s", "b", "d", "c"].forEach(function (k) { var sec = document.getElementById("cv-" + k); if (sec) sec.hidden = k !== v; }); app.querySelectorAll("[data-cview]").forEach(function (x) { var on = x.dataset.cview === v; x.setAttribute("aria-pressed", on ? "true" : "false"); x.className = on ? "primary" : ""; }); }
   app.querySelectorAll("[data-cview]").forEach(function (x) { x.addEventListener("click", function () { showCview(x.dataset.cview); }); });
   bindDivisionRows(app);
   bindCarList(); repick();
@@ -407,7 +416,7 @@ function drawCmp(mode) {
 function syncCmpChecks() { app.querySelectorAll("[data-cmpbuild]").forEach(function (x) { x.checked = cmpHas("build:" + x.dataset.cmpbuild); }); }
 function renderBuildEditor() {
   var E = state.editor;
-  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113k" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
+  app.innerHTML = navHtml("k") + '<p><button type="button" id="bback">← Cars</button></p><iframe id="bsframe" allow="web-share" title="Build sheet" src="builds/sheet.html?v=20261113l" style="width:100%;height:700px;border:0;background:transparent"></iframe><div id="cmpbox" style="margin-top:14px"></div>';
   bindNav(); drawCmp("editor");
   $("#bback").addEventListener("click", function () {
     if (E.dirty && !window.confirm("This build has unsaved changes. Leave without saving?")) return;
@@ -452,16 +461,55 @@ function saveBuild(m, post) {
   });
 }
 /* A championship's cars: stock (catalogue) and custom (saved builds) */
-function champCarsHtml() { return '<div class="card"><h2>Cars</h2><p class="muted" style="margin:0 0 8px">The cars racers can use in this championship. Stock cars are unmodified. Custom builds come from the league\'s Cars page.</p><div id="cc" class="muted">Loading…</div></div>'; }
+function champCarsHtml() { return '<div id="cc" class="muted">Loading…</div>'; }
+function fetchChampRows() { return fetchCC("id,car_id,build_id,division_id", function (q) { return q.eq("championship_id", state.sel.champ.id); }); }
+/* The championship's Cars tab IS the Cars page (same Search / Builds / Divisions), with "Use in" fixed to this championship and a fourth tab listing what is already in it. */
 function fillChampCars() {
-  var cid = state.sel.champ.id, lid = state.league.id, box = $("#cc"); if (!box) return;
-  var catP = state.carsAll ? Promise.resolve({ data: state.carsAll }) : fetchAllCars();
-  Promise.all([catP, fetchCC("id,car_id,build_id", function (q) { return q.eq("championship_id", cid); }), sb.from("build_sheets").select("id,name,status,class_letter,pi,car_id").eq("league_id", lid).order("name", { ascending: true }),
-    sb.from("league_favourites").select("id,car_id,build_id").eq("league_id", lid), sb.from("divisions").select("id,name,pi_limit").eq("league_id", lid).order("name", { ascending: true })]).then(function (rs) {
-    var bad = rs.slice(0, 4).filter(function (r) { return r.error; })[0];
-    if (bad) { box.className = "err"; box.textContent = dbError(bad.error) + " Has migration 014 been run?"; return; }
-    state.carsAll = rs[0].data || []; state.cc = rs[1].data || []; state.builds = rs[2].data || []; state.favs = rs[3].data || []; state.ccdivs = rs[4].error ? [] : (rs[4].data || []);
-    drawChampCars();
+  var champ = state.sel.champ, box = $("#cc"); if (!box) return;
+  state.champCtx = champ.id; state.dedit = null;
+  loadCarsData(function () { loadDivisions(function () {
+    state.useChs = state.useChs.filter(function (c) { return c.id === champ.id; }); if (!state.useChs.length) state.useChs = [{ id: champ.id, name: champ.name }]; state.useCh = champ.id;
+    fetchChampRows().then(function (r) {
+      if (r.error) { box.className = "err"; box.textContent = dbError(r.error) + " Has migration 014 been run?"; return; }
+      state.cc = r.data || []; box.className = ""; renderCarsBody();
+    });
+  }); });
+}
+function champRefresh() {
+  fetchChampRows().then(function (r) {
+    if (r.error) return; state.cc = r.data || [];
+    var tb = app.querySelector('[data-cview="c"]'); if (tb) tb.textContent = "In this championship (" + state.cc.length + ")";
+    drawChampList(); if (state.repickFn) state.repickFn();
+  });
+}
+function champBulk(list) {
+  var m = $("#cmsg");
+  if (!list.length) { msg(m, "Nothing to add: those cars are already in this championship.", "err"); return; }
+  if (list.length > 25 && !window.confirm("Add " + list.length + " cars (everything that matches the search and filters) to this championship?")) return;
+  msg(m, "Adding " + list.length + "…");
+  var chunks = [], i; for (i = 0; i < list.length; i += 200) chunks.push(list.slice(i, i + 200));
+  var n = 0, err = null;
+  chunks.reduce(function (p, ch) { return p.then(function () { if (err) return; return sb.from("championship_cars").insert(ch.map(function (c) { return { championship_id: state.sel.champ.id, car_id: c.id }; })).select("id").then(function (r) { if (r.error) err = r.error; else n += (r.data || []).length; }); }); }, Promise.resolve()).then(function () {
+    champRefresh(); msg($("#cmsg"), err ? "Added " + n + " then stopped: " + dbError(err) : "Added " + n + " car" + (n === 1 ? "" : "s") + ".", err ? "err" : "ok");
+  });
+}
+function drawChampList() {
+  var box = $("#ccl"); if (!box) return;
+  var byCar = {}, byBuild = {}, byDiv = {}; state.carsAll.forEach(function (c) { byCar[c.id] = c; }); state.builds.forEach(function (b) { byBuild[b.id] = b; }); (state.divs || []).forEach(function (d) { byDiv[d.id] = d; });
+  var stock = state.cc.filter(function (x) { return x.car_id; }), custom = state.cc.filter(function (x) { return x.build_id; }), dvrows = state.cc.filter(function (x) { return x.division_id; });
+  stock.sort(function (x, y) { var a = byCar[x.car_id], b = byCar[y.car_id]; return a && b ? (a.make + " " + a.model).localeCompare(b.make + " " + b.model) || a.year - b.year : 0; });
+  var rm = function (x) { return '<button type="button" data-ccrm="' + esc(x.id) + '">Remove</button>'; };
+  box.innerHTML = '<h2 style="font-size:18px;margin:0">In this championship</h2><p class="muted" style="margin:4px 0 8px">The cars racers can use. Add more from the Search, Builds and Divisions tabs.</p>' +
+    '<h3 style="margin-top:12px">Stock unmodified (' + stock.length + ")</h3>" +
+    (stock.length ? '<details' + (stock.length <= 12 ? " open" : "") + '><summary class="muted" style="cursor:pointer">Show the ' + stock.length + ' stock cars</summary>' + stock.map(function (x) { var c = byCar[x.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(c ? carName(c) : "Unknown car") + '</b> <span class="muted">' + esc(c ? carFull(c) + " · " + classOf(c.pi) + " " + c.pi : "") + "</span></div>" + rm(x) + "</div>"; }).join("") + '<div style="margin-top:8px"><button type="button" class="danger" id="ccrmall">Remove all stock cars</button></div></details>' : '<p class="muted">None yet.</p>') +
+    "<h3>Divisions (" + dvrows.length + ")</h3>" +
+    (dvrows.length ? dvrows.map(function (x) { var d = byDiv[x.division_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(d ? d.name : "Unknown division") + '</b> <span class="muted">' + esc(d && d.pi_limit ? "PI limit " + d.pi_limit : "") + "</span></div>" + rm(x) + "</div>"; }).join("") : '<p class="muted">None yet.</p>') +
+    "<h3>Custom built (" + custom.length + ")</h3>" +
+    (custom.length ? custom.map(function (x) { var b = byBuild[x.build_id], c = b && byCar[b.car_id]; return '<div class="row" style="align-items:center;margin:4px 0"><div class="grow"><b>' + esc(b ? b.name : "Unknown build") + '</b> <span class="muted">' + esc((c ? carFull(c) : "") + (b && b.pi ? " · " + (b.class_letter || "") + " " + b.pi : "")) + "</span></div>" + rm(x) + "</div>"; }).join("") : '<p class="muted">None yet.</p>') + '<div class="msg" id="ccm"></div>';
+  box.querySelectorAll("[data-ccrm]").forEach(function (x) { x.addEventListener("click", function () { sb.from("championship_cars").delete().eq("id", x.dataset.ccrm).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } champRefresh(); }); }); });
+  var ra = $("#ccrmall"); if (ra) ra.addEventListener("click", function () {
+    if (!window.confirm("Remove all " + stock.length + " stock cars from this championship? Custom builds stay.")) return;
+    sb.from("championship_cars").delete().eq("championship_id", state.sel.champ.id).not("car_id", "is", null).then(function (r) { if (r.error) { msg($("#ccm"), dbError(r.error), "err"); return; } champRefresh(); });
   });
 }
 state.ccf = state.ccf || freshCarFilter();
