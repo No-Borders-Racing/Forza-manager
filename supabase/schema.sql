@@ -1,1087 +1,38 @@
 -- Forza Championship Manager: database schema (Supabase / PostgreSQL 15+)
 --
+-- This file is the complete, current structure of the database, for a NEW project.
+-- An existing project does not need it: apply the files in supabase/migrations/ instead.
+--
 -- HOW TO RUN
 --   1. Supabase dashboard > SQL Editor > paste this whole file > Run.
 --   2. Create your admin account in Authentication > Users, then run:
 --        insert into public.admins (user_id)
 --        select id from auth.users where email = 'YOUR-ADMIN-EMAIL';
---      Only people listed in public.admins can edit anything.
+--      The people in public.admins are the site owners. Everyone else is a league admin
+--      (public.league_admins) and can only manage their own league.
+--   3. Optional: run supabase/points_library.sql for ready-made points tables.
 --
 -- RULES THIS SCHEMA ENFORCES
---   * No implicit defaults: championship settings are nullable and start blank.
---     The only defaults are system states (scheduled, unverified), never
---     rules, scoring, cars, tracks, distances or schedule values.
+--   * No implicit defaults: championship settings start blank. The only defaults are
+--     system states (scheduled, unverified), never rules, scoring, cars or schedules.
 --   * Anonymous visitors cannot read any table. Public pages call the public_*
---     functions at the end of this file, which return a page's content only when
---     it is set to Public ("Who can view?"). The imported car and track tables
---     are admin-only.
+--     functions, which return a page's content only when it is set to Public.
+--   * The imported car and track tables are admin only.
+--   * Build sheets are always public by link.
+
+set check_function_bodies = false;
+
 
 -- ---------------------------------------------------------------------------
--- Helpers
+-- FUNCTIONS
 -- ---------------------------------------------------------------------------
 
-create or replace function public.set_updated_at() returns trigger
-language plpgsql as $$
-begin
-  new.updated_at = now();
-  return new;
-end $$;
-
-create or replace function public.is_valid_timezone(tz text) returns boolean
-language sql stable set search_path = pg_catalog as $$
-  select tz is not null and exists (select 1 from pg_timezone_names where name = tz)
-$$;
-
-create table public.admins (
-  user_id uuid primary key references auth.users (id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-
-create or replace function public.is_admin() returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.admins where user_id = auth.uid())
-$$;
-
--- ---------------------------------------------------------------------------
--- Championship > Season > Event > Race
--- ---------------------------------------------------------------------------
-
-create table public.championships (
-  id uuid primary key default gen_random_uuid(),
-  name text not null check (length(btrim(name)) > 0),
-  description text,
-  status text not null default 'draft' check (status in ('draft', 'published', 'archived')),
-  visibility text check (visibility in ('public', 'private')),
-  -- IANA name such as 'Australia/Sydney'. Blank until the admin chooses one.
-  intended_timezone text check (intended_timezone is null or public.is_valid_timezone(intended_timezone)),
-  -- The schedule pattern every season and round inherits. Blank until the admin sets it.
-  schedule_every_weeks integer check (schedule_every_weeks is null or schedule_every_weeks between 1 and 4),
-  lobby_local_time time,                -- optional: when the lobby opens, in intended_timezone
-  race_local_time time,                 -- race start, in intended_timezone
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table public.seasons (
-  id uuid primary key default gen_random_uuid(),
-  championship_id uuid not null references public.championships (id) on delete cascade,
-  name text not null check (length(btrim(name)) > 0),
-  starts_on date,
-  ends_on date,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check (starts_on is null or ends_on is null or ends_on >= starts_on)
-);
-create index seasons_championship_idx on public.seasons (championship_id);
-
--- The recurrence rule. Events are generated from it and stored as real rows,
--- so each one can be edited, moved or cancelled on its own.
-create table public.event_series (
-  id uuid primary key default gen_random_uuid(),
-  season_id uuid not null references public.seasons (id) on delete cascade,
-  name text,
-  pattern text check (pattern in ('weekly', 'fortnightly', 'monthly', 'custom')),
-  -- Used by 'custom' (for example every 3 weeks). Weekly and fortnightly imply 1 and 2 weeks.
-  interval_count integer check (interval_count is null or interval_count > 0),
-  interval_unit text check (interval_unit in ('day', 'week', 'month')),
-  monthly_mode text check (monthly_mode in ('day_of_month', 'nth_weekday')),
-  first_local_date date,
-  local_time time,                      -- the race start, in the series' time zone
-  lobby_local_time time,                -- optional: when the lobby opens, same local day
-  timezone text check (timezone is null or public.is_valid_timezone(timezone)),
-  end_type text check (end_type in ('on_date', 'after_count')),
-  until_date date,
-  occurrence_count integer check (occurrence_count is null or occurrence_count > 0),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check (end_type is distinct from 'on_date' or until_date is not null),
-  check (end_type is distinct from 'after_count' or occurrence_count is not null)
-);
-create index event_series_season_idx on public.event_series (season_id);
-
-create table public.events (
-  id uuid primary key default gen_random_uuid(),
-  season_id uuid not null references public.seasons (id) on delete cascade,
-  series_id uuid references public.event_series (id) on delete set null,
-  -- The local calendar date the series rule generated. With series_id it identifies
-  -- the occurrence, so regenerating a series can never create a duplicate.
-  occurrence_date date,
-  name text,
-  round_number integer check (round_number is null or round_number > 0),
-  -- A well-defined instant plus the zone it was meant in. Viewers see it converted.
-  starts_at timestamptz,                -- the race start
-  lobby_opens_at timestamptz,           -- optional: when the lobby opens
-  timezone text check (timezone is null or public.is_valid_timezone(timezone)),
-  -- What the series rule produced. Differs from starts_at once the event is moved.
-  original_starts_at timestamptz,
-  is_override boolean not null default false,
-  status text not null default 'scheduled' check (status in ('scheduled', 'cancelled', 'completed')),
-  notes text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check ((starts_at is null) = (timezone is null)),
-  constraint events_lobby_before_start check (lobby_opens_at is null or (starts_at is not null and lobby_opens_at <= starts_at))
-);
-create index events_season_idx on public.events (season_id);
-create unique index events_series_occurrence_uq on public.events (series_id, occurrence_date)
-  where series_id is not null;
-
--- ---------------------------------------------------------------------------
--- Tracks (imported from community data, unverified until an admin verifies them)
--- ---------------------------------------------------------------------------
-
-create table public.track_venues (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  location text,
-  country text,
-  created_at timestamptz not null default now()
-);
-
-create table public.track_layouts (
-  id uuid primary key default gen_random_uuid(),
-  venue_id uuid not null references public.track_venues (id) on delete cascade,
-  name text not null,
-  length_km numeric not null check (length_km > 0),
-  length_mi numeric generated always as (round(length_km / 1.609344, 3)) stored,
-  is_reverse boolean not null,
-  imported_ordinal integer unique,
-  verified boolean not null default false,
-  verified_at timestamptz,
-  notes text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (venue_id, name)
-);
-
--- A round (stored in events) is held at one track layout; its races share it.
-alter table public.events
-  add column track_layout_id uuid references public.track_layouts (id) on delete restrict,
-  add column is_bonus boolean not null default false;
-
--- ---------------------------------------------------------------------------
--- Scoring (points are calculated by application code from these rules, never by AI)
--- ---------------------------------------------------------------------------
-
-create table public.points_systems (
-  id uuid primary key default gen_random_uuid(),
-  -- Null for the reference library; set for a system a championship actually uses.
-  championship_id uuid references public.championships (id) on delete cascade,
-  name text not null check (length(btrim(name)) > 0),
-  -- For library entries copied from a real series: which series, season/version, source.
-  source_series text,
-  source_version text,
-  source_url text,
-  copied_from uuid references public.points_systems (id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table public.points_table_entries (
-  points_system_id uuid not null references public.points_systems (id) on delete cascade,
-  position integer not null check (position > 0),
-  points numeric not null,
-  primary key (points_system_id, position)
-);
-
--- What each non-finishing status scores. A missing row means "not set", not zero.
-create table public.points_status_rules (
-  points_system_id uuid not null references public.points_systems (id) on delete cascade,
-  status text not null check (status in ('dnf', 'dns', 'dsq', 'other')),
-  points numeric not null,
-  primary key (points_system_id, status)
-);
-
-create table public.points_bonuses (
-  id uuid primary key default gen_random_uuid(),
-  points_system_id uuid not null references public.points_systems (id) on delete cascade,
-  name text not null,
-  kind text not null check (kind in ('bonus', 'penalty')),
-  points numeric not null,
-  description text
-);
-
--- A DNF scores 0 unless the admin changes it. This is a deliberate exception to "blank stays blank",
--- requested by the league admin. The admin can edit or clear it. DNS and DSQ stay unset.
-create or replace function public.default_dnf_rule() returns trigger
-language plpgsql as $$
-begin
-  insert into public.points_status_rules (points_system_id, status, points)
-  values (new.id, 'dnf', 0) on conflict do nothing;
-  return new;
-end $$;
-
-drop trigger if exists points_systems_default_dnf on public.points_systems;
-create trigger points_systems_default_dnf
-after insert on public.points_systems
-for each row execute function public.default_dnf_rule();
-
--- ---------------------------------------------------------------------------
--- Cars (imported catalogue, kept separate from championship builds)
--- ---------------------------------------------------------------------------
-
-create table public.cars (
-  id uuid primary key default gen_random_uuid(),
-  ordinal integer not null unique,
-  make text not null,
-  model text not null,
-  year integer not null,
-  nickname text,
-  division text not null,               -- the official Forza division, as imported
-  country text,
-  pi integer not null check (pi > 0),
-  speed numeric, braking numeric, handling numeric, acceleration numeric,
-  power_kw numeric, power_ps numeric, power_hp numeric,
-  mass_kg numeric, mass_lb numeric,
-  torque_nm numeric, torque_ftlb numeric,
-  drivetrain text check (drivetrain in ('RWD', 'AWD', 'FWD')),
-  engine_position text, displacement_l numeric, engine_layout text,
-  cylinders integer, induction text,
-  model_type text, steering_position text,
-  verified boolean not null default false,
-  verified_at timestamptz,
-  imported_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index cars_make_idx on public.cars (make);
-create index cars_division_idx on public.cars (division);
-
--- Administrator-defined categories (NASCAR, GTX, vintage...). Separate from divisions.
-create table public.categories (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique check (length(btrim(name)) > 0)
-);
-create table public.car_categories (
-  car_id uuid not null references public.cars (id) on delete cascade,
-  category_id uuid not null references public.categories (id) on delete cascade,
-  primary key (car_id, category_id)
-);
-
--- ---------------------------------------------------------------------------
--- Classes and eligibility
--- ---------------------------------------------------------------------------
-
-create table public.classes (
-  id uuid primary key default gen_random_uuid(),
-  championship_id uuid not null references public.championships (id) on delete cascade,
-  name text not null check (length(btrim(name)) > 0),
-  description text,
-  sort_order integer,
-  unique (championship_id, name)
-);
-
--- A class is a set of rules, so "all NASCAR cars" needs one row, not one per car.
-create table public.class_rules (
-  id uuid primary key default gen_random_uuid(),
-  class_id uuid not null references public.classes (id) on delete cascade,
-  rule_type text not null check (rule_type in (
-    'include_division', 'exclude_division',
-    'include_category', 'exclude_category',
-    'include_car', 'exclude_car')),
-  division text,
-  category_id uuid references public.categories (id) on delete cascade,
-  car_id uuid references public.cars (id) on delete cascade,
-  check (
-    (rule_type in ('include_division', 'exclude_division') and division is not null and category_id is null and car_id is null) or
-    (rule_type in ('include_category', 'exclude_category') and category_id is not null and division is null and car_id is null) or
-    (rule_type in ('include_car', 'exclude_car') and car_id is not null and division is null and category_id is null)
-  )
-);
-create index class_rules_class_idx on public.class_rules (class_id);
-
--- Precedence, most specific first:
---   1. exclude_car   -> not eligible
---   2. include_car   -> eligible
---   3. exclude_division / exclude_category match -> not eligible
---   4. include_division / include_category match -> eligible
---   5. otherwise not eligible
--- So "all GTX except two specific cars" and "only these two GTX cars" both work.
-
-create or replace function public.class_is_public(cid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (
-    select 1 from public.classes cl
-    join public.championships ch on ch.id = cl.championship_id
-    where cl.id = cid and ch.status = 'published' and ch.visibility = 'public')
-$$;
-
-create or replace function public.class_eligible_cars(p_class uuid) returns setof uuid
-language sql stable security definer set search_path = '' as $$
-  select c.id
-  from public.cars c
-  where (public.is_admin() or public.class_is_public(p_class))
-    and case
-      when exists (select 1 from public.class_rules r
-                   where r.class_id = p_class and r.rule_type = 'exclude_car' and r.car_id = c.id) then false
-      when exists (select 1 from public.class_rules r
-                   where r.class_id = p_class and r.rule_type = 'include_car' and r.car_id = c.id) then true
-      when exists (select 1 from public.class_rules r
-                   where r.class_id = p_class and r.rule_type = 'exclude_division' and r.division = c.division)
-        or exists (select 1 from public.class_rules r
-                   join public.car_categories cc on cc.category_id = r.category_id
-                   where r.class_id = p_class and r.rule_type = 'exclude_category' and cc.car_id = c.id) then false
-      else exists (select 1 from public.class_rules r
-                   where r.class_id = p_class and r.rule_type = 'include_division' and r.division = c.division)
-        or exists (select 1 from public.class_rules r
-                   join public.car_categories cc on cc.category_id = r.category_id
-                   where r.class_id = p_class and r.rule_type = 'include_category' and cc.car_id = c.id)
-    end
-$$;
-
--- ---------------------------------------------------------------------------
--- Races (individual sessions inside an event) and which classes run in each
--- ---------------------------------------------------------------------------
-
-create table public.races (
-  id uuid primary key default gen_random_uuid(),
-  event_id uuid not null references public.events (id) on delete cascade,
-  name text,
-  sort_order integer not null,
-  session_type text,                    -- free text, for example "Sprint" or "Feature"
-  starts_at timestamptz,
-  laps integer check (laps is null or laps > 0),
-  target_distance_km numeric check (target_distance_km is null or target_distance_km > 0),
-  duration_minutes integer check (duration_minutes is null or duration_minutes > 0),
-  points_system_id uuid references public.points_systems (id) on delete set null,
-  -- Ticked by the admin when results are uploaded for this race. The scoring code doubles points.
-  double_points boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index races_event_idx on public.races (event_id);
-
--- The races every new round starts with, set once on the championship. Existing rounds are not
--- rewritten when this changes. Classes belong to the championship, not to a race.
-create table public.race_templates (
-  id uuid primary key default gen_random_uuid(),
-  championship_id uuid not null references public.championships (id) on delete cascade,
-  sort_order integer not null,
-  name text not null check (length(btrim(name)) > 0),
-  laps integer check (laps is null or laps > 0),
-  points_system_id uuid references public.points_systems (id) on delete set null,
-  unique (championship_id, sort_order)
-);
-
--- ---------------------------------------------------------------------------
--- Build specifications (per championship, separate from the car catalogue)
--- ---------------------------------------------------------------------------
-
--- The list of upgrade fields. Starts with the in-game Upgrade Shop tabs and parts
--- (see the seed at the end of this file); the admin can add, rename or remove fields.
-create table public.spec_fields (
-  id uuid primary key default gen_random_uuid(),
-  group_name text not null,
-  name text not null,
-  sort_order integer not null,
-  is_builtin boolean not null default false,
-  unique (group_name, name)
-);
-
-create table public.build_specs (
-  id uuid primary key default gen_random_uuid(),
-  championship_id uuid not null references public.championships (id) on delete cascade,
-  car_id uuid not null references public.cars (id) on delete restrict,
-  class_id uuid references public.classes (id) on delete set null,
-  name text,
-  build_type text check (build_type in ('stock', 'custom', 'approved')),
-  pi_limit integer check (pi_limit is null or pi_limit > 0),
-  power_kw numeric, torque_nm numeric, weight_kg numeric,
-  -- Independent of build_type: a custom build does not imply a tune policy.
-  tune_policy text check (tune_policy in ('drivers_own', 'prescribed')),
-  prescribed_tune text,                 -- free text: a share code or the values
-  notes text,
-  -- Wheels differ from the other parts: stock wheels, or an aftermarket wheel picked by
-  -- category then style, which also opens a rim size.
-  wheel_source text check (wheel_source in ('stock', 'aftermarket')),
-  wheel_category text,                  -- as listed in the game, free text
-  wheel_style text,
-  rim_size text,                        -- only meaningful when wheel_source is aftermarket
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index build_specs_championship_idx on public.build_specs (championship_id);
-
--- One row per field the admin has actually set. No row means not set.
-create table public.build_spec_values (
-  build_spec_id uuid not null references public.build_specs (id) on delete cascade,
-  field_id uuid not null references public.spec_fields (id) on delete restrict,
-  rule text not null check (rule in ('allowed', 'prohibited', 'required', 'note')),
-  -- Part tier. For 'allowed' it is the highest tier permitted; for 'required' it is
-  -- the tier that must be fitted. Not every car offers every tier.
-  tier text check (tier in ('stock', 'street', 'sport', 'race')),
-  value text,
-  primary key (build_spec_id, field_id)
-);
-
--- Every part starts as Required, Stock tier (a stock car), as in the game's upgrade
--- shop, and the manager then changes the parts that may be upgraded. This is a
--- deliberate exception to "blank stays blank", requested by the league admin.
-create or replace function public.default_build_values() returns trigger
-language plpgsql as $$
-begin
-  update public.build_specs set wheel_source = 'stock' where id = new.id and wheel_source is null;
-  insert into public.build_spec_values (build_spec_id, field_id, rule, tier)
-  select new.id, f.id, 'required', 'stock' from public.spec_fields f
-  on conflict do nothing;
-  return new;
-end $$;
-
-create trigger build_specs_default_values
-after insert on public.build_specs
-for each row execute function public.default_build_values();
-
--- A part added later reaches existing build specs as stock too.
-create or replace function public.default_field_values() returns trigger
-language plpgsql as $$
-begin
-  insert into public.build_spec_values (build_spec_id, field_id, rule, tier)
-  select b.id, new.id, 'required', 'stock' from public.build_specs b
-  on conflict do nothing;
-  return new;
-end $$;
-
-create trigger spec_fields_default_values
-after insert on public.spec_fields
-for each row execute function public.default_field_values();
-
--- ---------------------------------------------------------------------------
--- Drivers and results
--- ---------------------------------------------------------------------------
-
-create table public.drivers (
-  id uuid primary key default gen_random_uuid(),
-  display_name text not null check (length(btrim(display_name)) > 0),
-  gamertag text,
-  created_at timestamptz not null default now()
-);
-
-create table public.results (
-  id uuid primary key default gen_random_uuid(),
-  race_id uuid not null references public.races (id) on delete cascade,
-  driver_id uuid not null references public.drivers (id) on delete restrict,
-  class_id uuid references public.classes (id) on delete set null,
-  car_id uuid references public.cars (id) on delete set null,
-  build_spec_id uuid references public.build_specs (id) on delete set null,
-  position integer check (position is null or position > 0),
-  status text not null check (status in ('finished', 'dnf', 'dns', 'dsq', 'other')),
-  laps_completed integer check (laps_completed is null or laps_completed >= 0),
-  total_time_ms bigint check (total_time_ms is null or total_time_ms >= 0),
-  adjustment_points numeric,
-  adjustment_reason text,
-  -- Written by the scoring code, which records which rules it used.
-  points_awarded numeric,
-  scored_with_system_id uuid references public.points_systems (id) on delete set null,
-  scored_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (race_id, driver_id)
-);
-create index results_race_idx on public.results (race_id);
-
--- Every change to a result is kept, so amendments can be reviewed.
-create table public.results_audit (
-  id bigint generated always as identity primary key,
-  result_id uuid not null,
-  action text not null,
-  changed_at timestamptz not null default now(),
-  changed_by uuid,
-  before_row jsonb,
-  after_row jsonb
-);
-
-create or replace function public.audit_results() returns trigger
-language plpgsql security definer set search_path = '' as $$
-begin
-  if tg_op = 'DELETE' then
-    insert into public.results_audit (result_id, action, changed_by, before_row)
-    values (old.id, 'delete', auth.uid(), to_jsonb(old));
-    return old;
-  elsif tg_op = 'UPDATE' then
-    insert into public.results_audit (result_id, action, changed_by, before_row, after_row)
-    values (new.id, 'update', auth.uid(), to_jsonb(old), to_jsonb(new));
-    return new;
-  else
-    insert into public.results_audit (result_id, action, changed_by, after_row)
-    values (new.id, 'insert', auth.uid(), to_jsonb(new));
-    return new;
-  end if;
-end $$;
-
-create trigger results_audit_trg
-after insert or update or delete on public.results
-for each row execute function public.audit_results();
-
--- ---------------------------------------------------------------------------
--- Publishing guard
--- ---------------------------------------------------------------------------
-
-create or replace function public.championship_missing(cid uuid, vis text, tz text) returns text[]
-language plpgsql stable as $$
-declare
-  m text[] := '{}';
-begin
-  if vis is null then m := m || 'visibility'::text; end if;
-  if tz is null then m := m || 'intended time zone'::text; end if;
-  if not exists (select 1 from public.seasons where championship_id = cid) then
-    m := m || 'at least one season'::text;
-  end if;
-  if exists (select 1 from public.seasons where championship_id = cid and (starts_on is null or ends_on is null)) then
-    m := m || 'season start and end dates'::text;
-  end if;
-  if exists (select 1 from public.events e join public.seasons s on s.id = e.season_id
-             where s.championship_id = cid and e.status <> 'cancelled' and e.starts_at is null) then
-    m := m || 'a date and time for every event'::text;
-  end if;
-  return m;
-end $$;
-revoke all on function public.championship_missing(uuid, text, text) from public, anon, authenticated;
-
-create or replace function public.guard_publish() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare
-  m text[];
-begin
-  if new.status = 'published' then
-    m := public.championship_missing(new.id, new.visibility, new.intended_timezone);
-    if coalesce(array_length(m, 1), 0) > 0 then
-      raise exception 'Cannot publish: missing %', array_to_string(m, ', ') using errcode = '23514';
-    end if;
-  end if;
-  return new;
-end $$;
-
-create trigger championships_guard_publish
-before insert or update on public.championships
-for each row execute function public.guard_publish();
-
--- Lets the admin screen list what is still missing before pressing Publish.
-create or replace function public.championship_missing_items(cid uuid) returns text[]
-language plpgsql stable security definer set search_path = '' as $$
-declare
-  c public.championships;
-begin
-  if not public.is_admin() then
-    raise exception 'Not allowed' using errcode = '42501';
-  end if;
-  select * into c from public.championships where id = cid;
-  if not found then
-    return array['championship not found'];
-  end if;
-  return public.championship_missing(c.id, c.visibility, c.intended_timezone);
-end $$;
-
--- ---------------------------------------------------------------------------
--- updated_at triggers
--- ---------------------------------------------------------------------------
-
-do $$
-declare t text;
-begin
-  foreach t in array array['championships', 'seasons', 'event_series', 'events', 'track_layouts',
-                           'points_systems', 'cars', 'races', 'build_specs', 'results']
-  loop
-    execute format('create trigger %I before update on public.%I for each row execute function public.set_updated_at()',
-                   t || '_set_updated_at', t);
-  end loop;
-end $$;
-
--- ---------------------------------------------------------------------------
--- Access rules (row level security)
--- ---------------------------------------------------------------------------
-
-create or replace function public.championship_is_public(cid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.championships
-                 where id = cid and status = 'published' and visibility = 'public')
-$$;
-
-create or replace function public.season_is_public(sid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.seasons s join public.championships c on c.id = s.championship_id
-                 where s.id = sid and c.status = 'published' and c.visibility = 'public')
-$$;
-
-create or replace function public.event_is_public(eid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.events e
-                 join public.seasons s on s.id = e.season_id
-                 join public.championships c on c.id = s.championship_id
-                 where e.id = eid and c.status = 'published' and c.visibility = 'public')
-$$;
-
-create or replace function public.race_is_public(rid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.races r
-                 join public.events e on e.id = r.event_id
-                 join public.seasons s on s.id = e.season_id
-                 join public.championships c on c.id = s.championship_id
-                 where r.id = rid and c.status = 'published' and c.visibility = 'public')
-$$;
-
-create or replace function public.points_system_is_public(pid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.points_systems p
-                 join public.championships c on c.id = p.championship_id
-                 where p.id = pid and c.status = 'published' and c.visibility = 'public')
-$$;
-
-create or replace function public.build_spec_is_public(bid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.build_specs b
-                 join public.championships c on c.id = b.championship_id
-                 where b.id = bid and c.status = 'published' and c.visibility = 'public')
-$$;
-
-create or replace function public.driver_is_public(did uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.results r where r.driver_id = did and public.race_is_public(r.race_id))
-$$;
-
-do $$
-declare t text;
-begin
-  foreach t in array array['admins', 'championships', 'seasons', 'event_series', 'events', 'track_venues',
-    'track_layouts', 'points_systems', 'points_table_entries', 'points_status_rules', 'points_bonuses',
-    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_templates',
-    'spec_fields', 'build_specs', 'build_spec_values', 'drivers', 'results', 'results_audit']
-  loop
-    execute format('alter table public.%I enable row level security', t);
-  end loop;
-
-  -- Admins can do everything on every table except the admins list itself.
-  foreach t in array array['championships', 'seasons', 'event_series', 'events', 'track_venues',
-    'track_layouts', 'points_systems', 'points_table_entries', 'points_status_rules', 'points_bonuses',
-    'cars', 'categories', 'car_categories', 'classes', 'class_rules', 'races', 'race_templates',
-    'spec_fields', 'build_specs', 'build_spec_values', 'drivers', 'results', 'results_audit']
-  loop
-    execute format('create policy %I on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())',
-                   t || '_admin_all', t);
-  end loop;
-end $$;
-
--- The championship's own points system (same as migrations/007_championship_points.sql).
-alter table public.championships
-  add column if not exists points_system_id uuid references public.points_systems (id) on delete set null;
-
--- League settings and admin management (same as migrations/006_league.sql).
-create table if not exists public.league (
-  id boolean primary key default true check (id),
-  name text check (name is null or length(btrim(name)) > 0),
-  timezone text check (timezone is null or public.is_valid_timezone(timezone)),
-  updated_at timestamptz not null default now()
-);
-alter table public.league enable row level security;
-drop policy if exists league_admin_all on public.league;
-create policy league_admin_all on public.league for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
-
-create or replace function public.list_admins()
-returns table (user_id uuid, email text, created_at timestamptz)
-language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not public.is_admin() then raise exception 'Admins only'; end if;
-  return query select a.user_id, u.email::text, a.created_at
-    from public.admins a join auth.users u on u.id = a.user_id order by a.created_at;
-end $$;
-
-create or replace function public.add_admin(admin_email text)
-returns void
-language plpgsql security definer set search_path = '' as $$
-declare uid uuid;
-begin
-  if not public.is_admin() then raise exception 'Admins only'; end if;
-  select id into uid from auth.users where lower(email) = lower(btrim(admin_email));
-  if uid is null then
-    raise exception 'No login with that email. Create it in Supabase under Authentication > Users first, then add it here.';
-  end if;
-  insert into public.admins (user_id) values (uid) on conflict do nothing;
-end $$;
-
-create or replace function public.remove_admin(uid uuid)
-returns void
-language plpgsql security definer set search_path = '' as $$
-begin
-  if not public.is_admin() then raise exception 'Admins only'; end if;
-  if uid = auth.uid() then raise exception 'You cannot remove yourself.'; end if;
-  delete from public.admins where user_id = uid;
-end $$;
-
-revoke all on function public.list_admins() from public, anon;
-revoke all on function public.add_admin(text) from public, anon;
-revoke all on function public.remove_admin(uuid) from public, anon;
-grant execute on function public.list_admins() to authenticated;
-grant execute on function public.add_admin(text) to authenticated;
-grant execute on function public.remove_admin(uuid) to authenticated;
-
--- Public read access: published and public championships only.
-create policy championships_public_read on public.championships for select to anon, authenticated
-  using (status = 'published' and visibility = 'public');
-create policy seasons_public_read on public.seasons for select to anon, authenticated
-  using (public.championship_is_public(championship_id));
-create policy events_public_read on public.events for select to anon, authenticated
-  using (public.season_is_public(season_id));
-create policy races_public_read on public.races for select to anon, authenticated
-  using (public.event_is_public(event_id));
-create policy classes_public_read on public.classes for select to anon, authenticated
-  using (public.championship_is_public(championship_id));
-create policy points_systems_public_read on public.points_systems for select to anon, authenticated
-  using (championship_id is not null and public.championship_is_public(championship_id));
-create policy points_table_public_read on public.points_table_entries for select to anon, authenticated
-  using (public.points_system_is_public(points_system_id));
-create policy points_status_public_read on public.points_status_rules for select to anon, authenticated
-  using (public.points_system_is_public(points_system_id));
-create policy points_bonuses_public_read on public.points_bonuses for select to anon, authenticated
-  using (public.points_system_is_public(points_system_id));
-create policy spec_fields_public_read on public.spec_fields for select to anon, authenticated
-  using (true);
-create policy build_specs_public_read on public.build_specs for select to anon, authenticated
-  using (public.championship_is_public(championship_id));
-create policy build_spec_values_public_read on public.build_spec_values for select to anon, authenticated
-  using (public.build_spec_is_public(build_spec_id));
-create policy drivers_public_read on public.drivers for select to anon, authenticated
-  using (public.driver_is_public(id));
-create policy results_public_read on public.results for select to anon, authenticated
-  using (public.race_is_public(race_id));
-
--- ---------------------------------------------------------------------------
--- Public views: only what a visitor needs, only for published public championships.
--- These run with the view owner's rights on purpose, so they can expose a few
--- columns of the admin-only car and track tables without opening the tables.
--- ---------------------------------------------------------------------------
-
-create view public.public_class_cars as
-select cl.id as class_id, cl.championship_id, c.id as car_id, c.year, c.make, c.model, c.nickname
-from public.classes cl
-join public.championships ch on ch.id = cl.championship_id
- and ch.status = 'published' and ch.visibility = 'public'
-cross join lateral public.class_eligible_cars(cl.id) as e(car_id)
-join public.cars c on c.id = e.car_id;
-
-create view public.public_races as
-select r.id as race_id, r.event_id, r.name, r.session_type, r.sort_order, r.starts_at,
-       r.double_points, e.is_bonus, r.laps, r.target_distance_km, r.duration_minutes,
-       v.name as venue, l.name as layout, l.length_km, l.length_mi, l.is_reverse, l.verified as length_verified
-from public.races r
-join public.events e on e.id = r.event_id
-join public.seasons s on s.id = e.season_id
-join public.championships ch on ch.id = s.championship_id
- and ch.status = 'published' and ch.visibility = 'public'
-left join public.track_layouts l on l.id = e.track_layout_id
-left join public.track_venues v on v.id = l.venue_id;
-
-create view public.public_build_specs as
-select b.id as build_spec_id, b.championship_id, b.class_id, b.name, b.build_type, b.pi_limit,
-       b.power_kw, b.torque_nm, b.weight_kg, b.tune_policy, b.prescribed_tune, b.notes,
-       b.wheel_source, b.wheel_category, b.wheel_style, b.rim_size,
-       c.year, c.make, c.model, c.nickname
-from public.build_specs b
-join public.championships ch on ch.id = b.championship_id
- and ch.status = 'published' and ch.visibility = 'public'
-join public.cars c on c.id = b.car_id;
-
-grant select on public.public_class_cars, public.public_races, public.public_build_specs to anon, authenticated;
-
--- ---------------------------------------------------------------------------
--- Starting set of build fields
--- Taken from screenshots of the in-game Upgrade Shop (Forza Motorsport 2023), using
--- the game's own tab and part names. Not every car offers every part. Editable.
--- ---------------------------------------------------------------------------
-
-insert into public.spec_fields (group_name, name, sort_order, is_builtin) values
-  ('Fuel and Air', 'Fuel System', 110, true),
-  ('Fuel and Air', 'Ignition', 120, true),
-  ('Fuel and Air', 'Exhaust', 130, true),
-  ('Fuel and Air', 'Air Filter', 140, true),
-  ('Fuel and Air', 'Intake Manifold and Throttle Body', 150, true),
-  ('Engine', 'Camshaft', 210, true),
-  ('Engine', 'Valves', 220, true),
-  ('Engine', 'Displacement', 230, true),
-  ('Engine', 'Pistons and Compression', 240, true),
-  ('Engine', 'Flywheel', 250, true),
-  ('Engine', 'Oil and Cooling', 260, true),
-  ('Platform and Handling', 'Brakes', 310, true),
-  ('Platform and Handling', 'Spring and Dampers', 320, true),
-  ('Platform and Handling', 'Front Anti-roll Bars', 330, true),
-  ('Platform and Handling', 'Rear Anti-roll Bars', 340, true),
-  ('Platform and Handling', 'Weight Reduction', 350, true),
-  ('Platform and Handling', 'Chassis Reinforcement and Roll Cage', 360, true),
-  ('Platform and Handling', 'Ballast', 370, true),
-  ('Tires', 'Tire Compound', 410, true),
-  ('Tires', 'Front Tire Width', 420, true),
-  ('Tires', 'Rear Tire Width', 430, true),
-  ('Drivetrain', 'Clutch', 610, true),
-  ('Drivetrain', 'Transmission', 620, true),
-  ('Drivetrain', 'Driveline', 630, true),
-  ('Drivetrain', 'Differential', 640, true),
-  ('Aero and Appearance', 'Rear Wing', 710, true),
-  ('Aero and Appearance', 'Front Bumper', 720, true),
-  ('Aero and Appearance', 'Rear Bumper', 730, true),
-  ('Aero and Appearance', 'Hood', 740, true),
-  ('Conversion', 'Engine Swap', 810, true),
-  ('Conversion', 'Drivetrain Swap', 820, true),
-  ('Conversion', 'Aspiration Conversion', 830, true)
-on conflict (group_name, name) do nothing;
-
--- ---------------------------------------------------------------------------
--- Separate leagues (same as migrations/008_leagues.sql)
--- ---------------------------------------------------------------------------
--- Separate leagues ("folders"): every league has its own championships, drivers, points systems
--- and admins, and cannot see or change another league's data. Run once in the SQL editor.
--- No DO blocks, so it runs in the Supabase editor. Safe to run again.
--- Site owners (rows in public.admins) can create leagues; league admins (public.league_admins) run one.
-
--- 1. Leagues and their admins
-create table if not exists public.leagues (
-  id uuid primary key default gen_random_uuid(),
-  name text not null check (length(btrim(name)) > 0),
-  slug text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-  timezone text check (timezone is null or public.is_valid_timezone(timezone)),
-  units text check (units is null or units in ('imperial', 'metric')),
-  palette text check (palette is null or palette in ('rwb','rosso','gulf','brg','papaya','mono')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create table if not exists public.league_admins (
-  league_id uuid not null references public.leagues (id) on delete cascade,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (league_id, user_id)
-);
-alter table public.leagues enable row level security;
-alter table public.league_admins enable row level security;
-
--- 1b. League columns first, so the functions below can refer to them
-alter table public.championships add column if not exists league_id uuid references public.leagues (id) on delete restrict;
-alter table public.drivers add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.categories add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.points_systems add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.spec_fields add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.results_audit add column if not exists league_id uuid;
-
--- 2. Helpers. Each follows the chain up to the league, with the rights of the function owner
---    so the policies do not recurse.
-create or replace function public.is_owner() returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.admins where user_id = auth.uid())
-$$;
-create or replace function public.can_admin_league(lid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.league_admins where league_id = lid and user_id = auth.uid())
-$$;
--- True for a site owner or an admin of any league (used to gate the admin screen and shared reference data).
-create or replace function public.is_admin() returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.admins where user_id = auth.uid())
-      or exists (select 1 from public.league_admins where user_id = auth.uid())
-$$;
-create or replace function public.league_is_public(lid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.championships where league_id = lid and status = 'published' and visibility = 'public')
-$$;
-
--- 3. The existing data becomes the first league (only when there is data to keep)
-insert into public.leagues (name, slug, timezone)
-select coalesce((select name from public.league limit 1), 'My league'),
-       coalesce(nullif(btrim(lower(regexp_replace(coalesce((select name from public.league limit 1), 'my league'), '[^A-Za-z0-9]+', '-', 'g')), '-'), ''), 'league'),
-       (select timezone from public.league limit 1)
-where not exists (select 1 from public.leagues)
-  and (exists (select 1 from public.championships) or exists (select 1 from public.drivers) or exists (select 1 from public.categories));
-insert into public.league_admins (league_id, user_id)
-select (select id from public.leagues order by created_at limit 1), a.user_id
-from public.admins a
-where exists (select 1 from public.leagues) and not exists (select 1 from public.league_admins)
-on conflict do nothing;
-
--- 4. League columns
-alter table public.championships add column if not exists league_id uuid references public.leagues (id) on delete restrict;
-update public.championships set league_id = (select id from public.leagues order by created_at limit 1) where league_id is null;
-alter table public.championships alter column league_id set not null;
-create index if not exists championships_league_idx on public.championships (league_id);
-
-alter table public.drivers add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-update public.drivers set league_id = (select id from public.leagues order by created_at limit 1) where league_id is null;
-alter table public.drivers alter column league_id set not null;
-
-alter table public.categories add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-update public.categories set league_id = (select id from public.leagues order by created_at limit 1) where league_id is null;
-alter table public.categories alter column league_id set not null;
-alter table public.categories drop constraint if exists categories_name_key;
-create unique index if not exists categories_league_name_uq on public.categories (league_id, name);
-
--- A league's own saved points systems: league_id set, championship_id null. The real-world library has neither.
-alter table public.points_systems add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.points_systems drop constraint if exists points_systems_one_owner;
-alter table public.points_systems add constraint points_systems_one_owner check (championship_id is null or league_id is null);
-
--- Built-in upgrade parts have no league; a part a league adds belongs to that league.
-alter table public.spec_fields add column if not exists league_id uuid references public.leagues (id) on delete cascade;
-alter table public.results_audit add column if not exists league_id uuid;
-update public.results_audit set league_id = (select id from public.leagues order by created_at limit 1) where league_id is null;
-alter table public.spec_fields drop constraint if exists spec_fields_group_name_name_key;
-create unique index if not exists spec_fields_builtin_uq on public.spec_fields (group_name, name) where league_id is null;
-create unique index if not exists spec_fields_league_uq on public.spec_fields (league_id, group_name, name) where league_id is not null;
-
--- 5. Scope helpers for everything below a championship
-create or replace function public.can_admin_champ(cid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.championships c
-                 join public.league_admins la on la.league_id = c.league_id and la.user_id = auth.uid()
-                 where c.id = cid)
-$$;
-create or replace function public.can_admin_season(sid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.seasons s where s.id = sid and public.can_admin_champ(s.championship_id))
-$$;
-create or replace function public.can_admin_event(eid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.events e where e.id = eid and public.can_admin_season(e.season_id))
-$$;
-create or replace function public.can_admin_race(rid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.races r where r.id = rid and public.can_admin_event(r.event_id))
-$$;
-create or replace function public.can_admin_class(clid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.classes c where c.id = clid and public.can_admin_champ(c.championship_id))
-$$;
-create or replace function public.can_admin_build_spec(bid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.build_specs b where b.id = bid and public.can_admin_champ(b.championship_id))
-$$;
-create or replace function public.can_admin_points_system(pid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.points_systems p where p.id = pid and (
-    (p.championship_id is not null and public.can_admin_champ(p.championship_id))
-    or (p.championship_id is null and p.league_id is not null and public.can_admin_league(p.league_id))
-    or (p.championship_id is null and p.league_id is null and public.is_owner())))
-$$;
-create or replace function public.can_read_points_system(pid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select public.can_admin_points_system(pid)
-      or exists (select 1 from public.points_systems p where p.id = pid and p.championship_id is null and p.league_id is null and public.is_admin())
-$$;
-
--- 6. Policies: replace "any admin can do everything" with "an admin of this league"
-drop policy if exists championships_admin_all on public.championships;
-create policy championships_admin_all on public.championships for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists seasons_admin_all on public.seasons;
-create policy seasons_admin_all on public.seasons for all to authenticated
-  using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
-drop policy if exists event_series_admin_all on public.event_series;
-create policy event_series_admin_all on public.event_series for all to authenticated
-  using (public.can_admin_season(season_id)) with check (public.can_admin_season(season_id));
-drop policy if exists events_admin_all on public.events;
-create policy events_admin_all on public.events for all to authenticated
-  using (public.can_admin_season(season_id)) with check (public.can_admin_season(season_id));
-drop policy if exists races_admin_all on public.races;
-create policy races_admin_all on public.races for all to authenticated
-  using (public.can_admin_event(event_id)) with check (public.can_admin_event(event_id));
-drop policy if exists race_templates_admin_all on public.race_templates;
-create policy race_templates_admin_all on public.race_templates for all to authenticated
-  using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
-drop policy if exists classes_admin_all on public.classes;
-create policy classes_admin_all on public.classes for all to authenticated
-  using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
-drop policy if exists class_rules_admin_all on public.class_rules;
-create policy class_rules_admin_all on public.class_rules for all to authenticated
-  using (public.can_admin_class(class_id)) with check (public.can_admin_class(class_id));
-drop policy if exists build_specs_admin_all on public.build_specs;
-create policy build_specs_admin_all on public.build_specs for all to authenticated
-  using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
-drop policy if exists build_spec_values_admin_all on public.build_spec_values;
-create policy build_spec_values_admin_all on public.build_spec_values for all to authenticated
-  using (public.can_admin_build_spec(build_spec_id)) with check (public.can_admin_build_spec(build_spec_id));
-drop policy if exists drivers_admin_all on public.drivers;
-create policy drivers_admin_all on public.drivers for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists results_admin_all on public.results;
-create policy results_admin_all on public.results for all to authenticated
-  using (public.can_admin_race(race_id)) with check (public.can_admin_race(race_id));
-drop policy if exists results_audit_admin_all on public.results_audit;
-drop policy if exists results_audit_admin_read on public.results_audit;
-create policy results_audit_admin_read on public.results_audit for select to authenticated
-  using (league_id is not null and public.can_admin_league(league_id));
-
-drop policy if exists points_systems_admin_all on public.points_systems;
-create policy points_systems_admin_all on public.points_systems for all to authenticated
-  using ((championship_id is not null and public.can_admin_champ(championship_id))
-         or (championship_id is null and league_id is not null and public.can_admin_league(league_id))
-         or (championship_id is null and league_id is null and public.is_owner()))
-  with check ((championship_id is not null and public.can_admin_champ(championship_id))
-         or (championship_id is null and league_id is not null and public.can_admin_league(league_id))
-         or (championship_id is null and league_id is null and public.is_owner()));
-drop policy if exists points_systems_library_read on public.points_systems;
-create policy points_systems_library_read on public.points_systems for select to authenticated
-  using (championship_id is null and league_id is null and public.is_admin());
-drop policy if exists points_table_entries_admin_all on public.points_table_entries;
-create policy points_table_entries_admin_all on public.points_table_entries for all to authenticated
-  using (public.can_admin_points_system(points_system_id)) with check (public.can_admin_points_system(points_system_id));
-drop policy if exists points_table_entries_library_read on public.points_table_entries;
-create policy points_table_entries_library_read on public.points_table_entries for select to authenticated
-  using (public.can_read_points_system(points_system_id));
-drop policy if exists points_status_rules_admin_all on public.points_status_rules;
-create policy points_status_rules_admin_all on public.points_status_rules for all to authenticated
-  using (public.can_admin_points_system(points_system_id)) with check (public.can_admin_points_system(points_system_id));
-drop policy if exists points_status_rules_library_read on public.points_status_rules;
-create policy points_status_rules_library_read on public.points_status_rules for select to authenticated
-  using (public.can_read_points_system(points_system_id));
-drop policy if exists points_bonuses_admin_all on public.points_bonuses;
-create policy points_bonuses_admin_all on public.points_bonuses for all to authenticated
-  using (public.can_admin_points_system(points_system_id)) with check (public.can_admin_points_system(points_system_id));
-drop policy if exists points_bonuses_library_read on public.points_bonuses;
-create policy points_bonuses_library_read on public.points_bonuses for select to authenticated
-  using (public.can_read_points_system(points_system_id));
-
--- Categories belong to a league; so do the parts a league adds. Built-in parts are shared and owner-managed.
-drop policy if exists categories_admin_all on public.categories;
-create policy categories_admin_all on public.categories for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists car_categories_admin_all on public.car_categories;
-create policy car_categories_admin_all on public.car_categories for all to authenticated
-  using (exists (select 1 from public.categories k where k.id = category_id and public.can_admin_league(k.league_id)))
-  with check (exists (select 1 from public.categories k where k.id = category_id and public.can_admin_league(k.league_id)));
-drop policy if exists spec_fields_admin_all on public.spec_fields;
-create policy spec_fields_admin_all on public.spec_fields for all to authenticated
-  using ((league_id is not null and public.can_admin_league(league_id)) or (league_id is null and public.is_owner()))
-  with check ((league_id is not null and public.can_admin_league(league_id)) or (league_id is null and public.is_owner()));
-drop policy if exists spec_fields_public_read on public.spec_fields;
-create policy spec_fields_public_read on public.spec_fields for select to anon, authenticated
-  using (league_id is null or public.league_is_public(league_id) or public.can_admin_league(league_id));
-
--- The car and track catalogues are shared reference data: any admin can read, only a site owner can change.
-drop policy if exists cars_admin_all on public.cars;
-drop policy if exists cars_admin_read on public.cars;
-create policy cars_admin_read on public.cars for select to authenticated using (public.is_admin());
-drop policy if exists cars_owner_write on public.cars;
-create policy cars_owner_write on public.cars for all to authenticated using (public.is_owner()) with check (public.is_owner());
-drop policy if exists track_venues_admin_all on public.track_venues;
-drop policy if exists track_venues_admin_read on public.track_venues;
-create policy track_venues_admin_read on public.track_venues for select to authenticated using (public.is_admin());
-drop policy if exists track_venues_owner_write on public.track_venues;
-create policy track_venues_owner_write on public.track_venues for all to authenticated using (public.is_owner()) with check (public.is_owner());
-drop policy if exists track_layouts_admin_all on public.track_layouts;
-drop policy if exists track_layouts_admin_read on public.track_layouts;
-create policy track_layouts_admin_read on public.track_layouts for select to authenticated using (public.is_admin());
-drop policy if exists track_layouts_owner_write on public.track_layouts;
-create policy track_layouts_owner_write on public.track_layouts for all to authenticated using (public.is_owner()) with check (public.is_owner());
-
--- Leagues: an admin sees and edits their own; visitors see a league that has a published public championship.
-drop policy if exists leagues_admin_read on public.leagues;
-create policy leagues_admin_read on public.leagues for select to authenticated using (public.can_admin_league(id));
-drop policy if exists leagues_admin_update on public.leagues;
-create policy leagues_admin_update on public.leagues for update to authenticated
-  using (public.can_admin_league(id)) with check (public.can_admin_league(id));
-drop policy if exists leagues_public_read on public.leagues;
-create policy leagues_public_read on public.leagues for select to anon, authenticated using (public.league_is_public(id));
-drop policy if exists league_admins_read on public.league_admins;
-create policy league_admins_read on public.league_admins for select to authenticated using (public.can_admin_league(league_id));
-drop trigger if exists leagues_set_updated_at on public.leagues;
-create trigger leagues_set_updated_at before update on public.leagues for each row execute function public.set_updated_at();
-
--- 7. Functions that must respect leagues
-create or replace function public.audit_results() returns trigger
-language plpgsql security definer set search_path = '' as $$
+-- Trigger functions
+
+CREATE OR REPLACE FUNCTION public.audit_results() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 declare lid uuid;
 begin
   select c.league_id into lid
@@ -1105,153 +56,51 @@ begin
   end if;
 end $$;
 
-create or replace function public.default_build_values() returns trigger
-language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.build_sheets_always_public() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
 begin
-  update public.build_specs set wheel_source = 'stock' where id = new.id and wheel_source is null;
-  insert into public.build_spec_values (build_spec_id, field_id, rule, tier)
-  select new.id, f.id, 'required', 'stock'
-  from public.spec_fields f
-  join public.championships c on c.id = new.championship_id
-  where f.league_id is null or f.league_id = c.league_id
-  on conflict do nothing;
+  new.status := 'completed';
+  new.published := true;
+  return new;
+end
+$$;
+
+CREATE OR REPLACE FUNCTION public.default_dnf_rule() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  insert into public.points_status_rules (points_system_id, status, points)
+  values (new.id, 'dnf', 0) on conflict do nothing;
   return new;
 end $$;
 
-create or replace function public.default_field_values() returns trigger
-language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.guard_build_league() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare bl uuid; lid uuid;
 begin
-  insert into public.build_spec_values (build_spec_id, field_id, rule, tier)
-  select b.id, new.id, 'required', 'stock'
-  from public.build_specs b
-  join public.championships c on c.id = b.championship_id
-  where new.league_id is null or new.league_id = c.league_id
-  on conflict do nothing;
+  if tg_table_name = 'championship_cars' then
+    if new.division_id is not null then
+      select league_id into bl from public.divisions where id = new.division_id;
+      select league_id into lid from public.championships where id = new.championship_id;
+      if bl is distinct from lid then raise exception 'That division belongs to another league'; end if;
+    end if;
+  end if;
+  if new.build_id is null then return new; end if;
+  select league_id into bl from public.build_sheets where id = new.build_id;
+  if tg_table_name = 'league_favourites' then lid := new.league_id;
+  else select league_id into lid from public.championships where id = new.championship_id; end if;
+  if bl is distinct from lid then raise exception 'That build belongs to another league'; end if;
   return new;
 end $$;
 
-create or replace function public.championship_missing_items(cid uuid) returns text[]
-language plpgsql stable security definer set search_path = '' as $$
-declare c public.championships;
-begin
-  if not public.can_admin_champ(cid) then
-    raise exception 'Not allowed' using errcode = '42501';
-  end if;
-  select * into c from public.championships where id = cid;
-  if not found then return array['championship not found']; end if;
-  return public.championship_missing(c.id, c.visibility, c.intended_timezone);
-end $$;
-
--- 8. League and admin management (functions, so the checks live in the database)
-drop function if exists public.list_admins();
-drop function if exists public.add_admin(text);
-drop function if exists public.remove_admin(uuid);
-
-create or replace function public.create_league(league_name text, league_slug text)
-returns uuid
-language plpgsql security definer set search_path = '' as $$
-declare lid uuid; s text;
-begin
-  if not public.is_owner() then raise exception 'Only a site owner can create a league'; end if;
-  if length(btrim(coalesce(league_name, ''))) = 0 then raise exception 'Give the league a name'; end if;
-  s := coalesce(nullif(btrim(lower(regexp_replace(coalesce(league_slug, league_name), '[^A-Za-z0-9]+', '-', 'g')), '-'), ''), 'league');
-  if exists (select 1 from public.leagues where slug = s) then raise exception 'The address "%" is already used by another league', s; end if;
-  insert into public.leagues (name, slug) values (btrim(league_name), s) returning id into lid;
-  insert into public.league_admins (league_id, user_id) values (lid, auth.uid());
-  return lid;
-end $$;
-
-create or replace function public.list_league_admins(lid uuid)
-returns table (user_id uuid, email text, created_at timestamptz)
-language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
-  return query select a.user_id, u.email::text, a.created_at
-    from public.league_admins a join auth.users u on u.id = a.user_id
-    where a.league_id = lid order by a.created_at;
-end $$;
-
-create or replace function public.add_league_admin(lid uuid, admin_email text)
-returns void
-language plpgsql security definer set search_path = '' as $$
-declare uid uuid;
-begin
-  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
-  select id into uid from auth.users where lower(email) = lower(btrim(admin_email));
-  if uid is null then
-    raise exception 'No login with that email. Create it in Supabase under Authentication > Users first, then add it here.';
-  end if;
-  insert into public.league_admins (league_id, user_id) values (lid, uid) on conflict do nothing;
-end $$;
-
-create or replace function public.remove_league_admin(lid uuid, uid uuid)
-returns void
-language plpgsql security definer set search_path = '' as $$
-begin
-  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
-  if uid = auth.uid() then raise exception 'You cannot remove yourself.'; end if;
-  delete from public.league_admins where league_id = lid and user_id = uid;
-end $$;
-
-revoke all on function public.create_league(text, text) from public, anon;
-revoke all on function public.list_league_admins(uuid) from public, anon;
-revoke all on function public.add_league_admin(uuid, text) from public, anon;
-revoke all on function public.remove_league_admin(uuid, uuid) from public, anon;
-grant execute on function public.create_league(text, text) to authenticated;
-grant execute on function public.list_league_admins(uuid) to authenticated;
-grant execute on function public.add_league_admin(uuid, text) to authenticated;
-grant execute on function public.remove_league_admin(uuid, uuid) to authenticated;
-
--- 9. Keep rows inside one league: a result can only point at its own league's driver, class and
---    build; a championship or race can only use the library, its league's or its own points system.
-create or replace function public.champ_league(cid uuid) returns uuid
-language sql stable security definer set search_path = '' as $$
-  select league_id from public.championships where id = cid
-$$;
-create or replace function public.race_league(rid uuid) returns uuid
-language sql stable security definer set search_path = '' as $$
-  select c.league_id from public.races r
-    join public.events e on e.id = r.event_id
-    join public.seasons s on s.id = e.season_id
-    join public.championships c on c.id = s.championship_id
-  where r.id = rid
-$$;
-create or replace function public.points_system_fits(pid uuid, lid uuid, cid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select pid is null or exists (
-    select 1 from public.points_systems p where p.id = pid and (
-      (p.championship_id is null and p.league_id is null)
-      or (p.championship_id is null and p.league_id = lid)
-      or (p.championship_id is not null and public.champ_league(p.championship_id) = lid)))
-$$;
-
-create or replace function public.guard_result_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare lid uuid;
-begin
-  lid := public.race_league(new.race_id);
-  if not exists (select 1 from public.drivers where id = new.driver_id and league_id = lid) then
-    raise exception 'That driver belongs to another league';
-  end if;
-  if new.class_id is not null and not exists (
-      select 1 from public.classes c where c.id = new.class_id and public.champ_league(c.championship_id) = lid) then
-    raise exception 'That class belongs to another league';
-  end if;
-  if new.build_spec_id is not null and not exists (
-      select 1 from public.build_specs b where b.id = new.build_spec_id and public.champ_league(b.championship_id) = lid) then
-    raise exception 'That build sheet belongs to another league';
-  end if;
-  if not public.points_system_fits(new.scored_with_system_id, lid, null) then
-    raise exception 'That points system belongs to another league';
-  end if;
-  return new;
-end $$;
-drop trigger if exists results_guard_league on public.results;
-create trigger results_guard_league before insert or update on public.results
-for each row execute function public.guard_result_league();
-
-create or replace function public.guard_points_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.guard_points_league() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 declare lid uuid;
 begin
   if tg_table_name = 'championships' then
@@ -1273,160 +122,210 @@ begin
   end if;
   return new;
 end $$;
-create or replace function public.event_league(eid uuid) returns uuid
-language sql stable security definer set search_path = '' as $$
+
+CREATE OR REPLACE FUNCTION public.guard_result_league() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare lid uuid;
+begin
+  lid := public.race_league(new.race_id);
+  if lid is null then
+    return new;
+  end if;
+  if not exists (select 1 from public.drivers where id = new.driver_id and league_id = lid) then
+    raise exception 'That driver belongs to another league';
+  end if;
+  if not public.points_system_fits(new.scored_with_system_id, lid, null) then
+    raise exception 'That points system belongs to another league';
+  end if;
+  return new;
+end $$;
+
+CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
+CREATE OR REPLACE FUNCTION public.touch_build_sheet() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin new.updated_at := now(); return new; end $$;
+
+CREATE OR REPLACE FUNCTION public.touch_division() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin new.updated_at := now(); return new; end $$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+-- Permission helpers (follow the chain up to the league)
+
+CREATE OR REPLACE FUNCTION public.can_admin_champ(cid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.championships c
+                 join public.league_admins la on la.league_id = c.league_id and la.user_id = auth.uid()
+                 where c.id = cid)
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_admin_event(eid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.events e where e.id = eid and public.can_admin_season(e.season_id))
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_admin_league(lid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.league_admins where league_id = lid and user_id = auth.uid())
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_admin_points_system(pid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.points_systems p where p.id = pid and (
+    (p.championship_id is not null and public.can_admin_champ(p.championship_id))
+    or (p.championship_id is null and p.league_id is not null and public.can_admin_league(p.league_id))
+    or (p.championship_id is null and p.league_id is null and public.is_owner())))
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_admin_race(rid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.races r where r.id = rid and public.can_admin_event(r.event_id))
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_admin_season(sid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.seasons s where s.id = sid and public.can_admin_champ(s.championship_id))
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_read_points_system(pid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select public.can_admin_points_system(pid)
+      or exists (select 1 from public.points_systems p where p.id = pid and p.championship_id is null and p.league_id is null and public.is_admin())
+$$;
+
+CREATE OR REPLACE FUNCTION public.champ_league(cid uuid) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select league_id from public.championships where id = cid
+$$;
+
+CREATE OR REPLACE FUNCTION public.event_league(eid uuid) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
   select c.league_id from public.events e
     join public.seasons s on s.id = e.season_id
     join public.championships c on c.id = s.championship_id
   where e.id = eid
 $$;
-drop trigger if exists championships_guard_points on public.championships;
-create trigger championships_guard_points before insert or update on public.championships
-for each row execute function public.guard_points_league();
-drop trigger if exists races_guard_points on public.races;
-create trigger races_guard_points before insert or update on public.races
-for each row execute function public.guard_points_league();
-drop trigger if exists race_templates_guard_points on public.race_templates;
-create trigger race_templates_guard_points before insert or update on public.race_templates
-for each row execute function public.guard_points_league();
 
--- Points copy time (same as migrations/009_points_copied_at.sql)
--- When a points system was last copied from its source (a league's saved system or the master list).
--- Lets a championship show "the league's version has changed since you copied it".
-alter table public.points_systems add column if not exists copied_at timestamptz;
-update public.points_systems set copied_at = created_at where copied_from is not null and copied_at is null;
+CREATE OR REPLACE FUNCTION public.is_admin() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.admins where user_id = auth.uid())
+      or exists (select 1 from public.league_admins where user_id = auth.uid())
+$$;
 
--- Results fields (same as migrations/010_results_fields.sql)
--- What the game's results screen shows, plus the DNF ranking switch and driver nicknames.
-alter table public.points_systems add column if not exists dnf_rank_by_best_lap boolean not null default false;
-alter table public.results add column if not exists best_lap_ms integer check (best_lap_ms is null or best_lap_ms > 0);
-alter table public.results add column if not exists race_time_ms bigint check (race_time_ms is null or race_time_ms >= 0);
-alter table public.results add column if not exists penalty_ms integer check (penalty_ms is null or penalty_ms >= 0);
-alter table public.results add column if not exists fastest_lap boolean not null default false;
-alter table public.drivers add column if not exists aliases text[] not null default '{}';
-create unique index if not exists drivers_league_name_uq on public.drivers (league_id, lower(display_name));
+CREATE OR REPLACE FUNCTION public.is_owner() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.admins where user_id = auth.uid())
+$$;
 
--- Reference lap for timed races (migration 011)
-alter table public.events add column if not exists reference_lap_ms integer check (reference_lap_ms is null or reference_lap_ms > 0);
+CREATE OR REPLACE FUNCTION public.is_valid_timezone(tz text) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog'
+    AS $$
+  select tz is not null and exists (select 1 from pg_timezone_names where name = tz)
+$$;
 
--- Championship rules (migration 013)
-alter table public.championships add column if not exists rules text;
--- Saved build sheets (a named build of a catalogue car, per league), shared favourites, and the car list of a championship.
--- Plain statements only (the Supabase SQL editor cannot run DO blocks).
+CREATE OR REPLACE FUNCTION public.points_system_fits(pid uuid, lid uuid, cid uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select pid is null or exists (
+    select 1 from public.points_systems p where p.id = pid and (
+      (p.championship_id is null and p.league_id is null)
+      or (p.championship_id is null and p.league_id = lid)
+      or (p.championship_id is not null and public.champ_league(p.championship_id) = lid)))
+$$;
 
-create table if not exists public.build_sheets (
-  id uuid primary key default gen_random_uuid(),
-  league_id uuid not null references public.leagues (id) on delete cascade,
-  car_id uuid references public.cars (id) on delete set null,
-  name text not null check (length(btrim(name)) > 0),
-  status text not null default 'draft' check (status in ('draft', 'completed')),
-  class_letter text check (class_letter is null or class_letter ~ '^[A-Z]$'),
-  pi integer check (pi is null or (pi >= 0 and pi <= 999)),
-  data jsonb not null default '{}'::jsonb,
-  created_by uuid default auth.uid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create unique index if not exists build_sheets_league_name_uq on public.build_sheets (league_id, lower(name));
-create index if not exists build_sheets_league_idx on public.build_sheets (league_id);
-create index if not exists build_sheets_car_idx on public.build_sheets (car_id);
+CREATE OR REPLACE FUNCTION public.race_league(rid uuid) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select c.league_id from public.races r
+    join public.events e on e.id = r.event_id
+    join public.seasons s on s.id = e.season_id
+    join public.championships c on c.id = s.championship_id
+  where r.id = rid
+$$;
 
--- Shared favourites: one star list per league. A row stars a catalogue car or a saved build.
-create table if not exists public.league_favourites (
-  id uuid primary key default gen_random_uuid(),
-  league_id uuid not null references public.leagues (id) on delete cascade,
-  car_id uuid references public.cars (id) on delete cascade,
-  build_id uuid references public.build_sheets (id) on delete cascade,
-  created_by uuid default auth.uid(),
-  created_at timestamptz not null default now(),
-  check ((car_id is not null) <> (build_id is not null))
-);
-create unique index if not exists league_favourites_car_uq on public.league_favourites (league_id, car_id) where car_id is not null;
-create unique index if not exists league_favourites_build_uq on public.league_favourites (league_id, build_id) where build_id is not null;
+-- Admin and owner tools
 
--- The cars a championship uses: a catalogue car is "stock unmodified", a saved build is "custom built".
-create table if not exists public.championship_cars (
-  id uuid primary key default gen_random_uuid(),
-  championship_id uuid not null references public.championships (id) on delete cascade,
-  car_id uuid references public.cars (id) on delete cascade,
-  build_id uuid references public.build_sheets (id) on delete cascade,
-  created_at timestamptz not null default now(),
-  check ((car_id is not null) <> (build_id is not null))
-);
-create unique index if not exists championship_cars_car_uq on public.championship_cars (championship_id, car_id) where car_id is not null;
-create unique index if not exists championship_cars_build_uq on public.championship_cars (championship_id, build_id) where build_id is not null;
-create index if not exists championship_cars_champ_idx on public.championship_cars (championship_id);
-
--- Keep builds inside their own league.
-create or replace function public.guard_build_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare bl uuid; lid uuid;
+CREATE OR REPLACE FUNCTION public.add_league_admin(lid uuid, admin_email text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare uid uuid;
 begin
-  if new.build_id is null then return new; end if;
-  select league_id into bl from public.build_sheets where id = new.build_id;
-  if tg_table_name = 'league_favourites' then lid := new.league_id;
-  else select league_id into lid from public.championships where id = new.championship_id; end if;
-  if bl is distinct from lid then raise exception 'That build belongs to another league'; end if;
-  return new;
+  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
+  select id into uid from auth.users where lower(email) = lower(btrim(admin_email));
+  if uid is null then
+    raise exception 'No login with that email. Create it in Supabase under Authentication > Users first, then add it here.';
+  end if;
+  insert into public.league_admins (league_id, user_id) values (lid, uid) on conflict do nothing;
 end $$;
-drop trigger if exists league_favourites_guard on public.league_favourites;
-create trigger league_favourites_guard before insert or update on public.league_favourites
-for each row execute function public.guard_build_league();
-drop trigger if exists championship_cars_guard on public.championship_cars;
-create trigger championship_cars_guard before insert or update on public.championship_cars
-for each row execute function public.guard_build_league();
 
-create or replace function public.touch_build_sheet() returns trigger
-language plpgsql set search_path = '' as $$
-begin new.updated_at := now(); return new; end $$;
-drop trigger if exists build_sheets_touch on public.build_sheets;
-create trigger build_sheets_touch before update on public.build_sheets
-for each row execute function public.touch_build_sheet();
+REVOKE ALL ON FUNCTION public.add_league_admin(lid uuid, admin_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.add_league_admin(lid uuid, admin_email text) TO authenticated;
 
-alter table public.build_sheets enable row level security;
-alter table public.league_favourites enable row level security;
-alter table public.championship_cars enable row level security;
+CREATE OR REPLACE FUNCTION public.create_league(league_name text, league_slug text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare lid uuid; s text;
+begin
+  if not public.is_owner() then raise exception 'Only a site owner can create a league'; end if;
+  if length(btrim(coalesce(league_name, ''))) = 0 then raise exception 'Give the league a name'; end if;
+  s := coalesce(nullif(btrim(lower(regexp_replace(coalesce(league_slug, league_name), '[^A-Za-z0-9]+', '-', 'g')), '-'), ''), 'league');
+  if exists (select 1 from public.leagues where slug = s) then raise exception 'The address "%" is already used by another league', s; end if;
+  insert into public.leagues (name, slug) values (btrim(league_name), s) returning id into lid;
+  insert into public.league_admins (league_id, user_id) values (lid, auth.uid());
+  return lid;
+end $$;
 
-drop policy if exists build_sheets_admin_all on public.build_sheets;
-create policy build_sheets_admin_all on public.build_sheets for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists league_favourites_admin_all on public.league_favourites;
-create policy league_favourites_admin_all on public.league_favourites for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists championship_cars_admin_all on public.championship_cars;
-create policy championship_cars_admin_all on public.championship_cars for all to authenticated
-  using (public.can_admin_champ(championship_id)) with check (public.can_admin_champ(championship_id));
+REVOKE ALL ON FUNCTION public.create_league(league_name text, league_slug text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_league(league_name text, league_slug text) TO authenticated;
 
-grant select, insert, update, delete on public.build_sheets, public.league_favourites, public.championship_cars to authenticated;
-
--- 015: the car the reference lap was driven in
-alter table public.events add column if not exists reference_car text;
-
--- 016: track reference information
-alter table public.track_venues add column if not exists kind text check (kind is null or kind in ('real', 'fictional'));
-alter table public.track_venues add column if not exists based_on text;
-alter table public.track_venues add column if not exists opened_year integer check (opened_year is null or (opened_year >= 1800 and opened_year <= 2100));
-alter table public.track_venues add column if not exists history text;
-alter table public.track_venues add column if not exists source_url text;
-
--- 018: track facts
-alter table public.track_venues add column if not exists direction text;
-alter table public.track_venues add column if not exists corners integer check (corners is null or corners > 0);
-alter table public.track_venues add column if not exists corners_layout text;
-alter table public.track_venues add column if not exists length_note text;
-alter table public.track_venues add column if not exists elevation_note text;
-alter table public.track_venues add column if not exists facts text[];
-
--- 019: surface and circuit type
-alter table public.track_venues add column if not exists surface text;
-alter table public.track_venues add column if not exists surface_note text;
-alter table public.track_venues add column if not exists circuit_type text check (circuit_type is null or circuit_type in ('purpose-built', 'public-road', 'airfield', 'oval'));
-alter table public.track_venues add column if not exists type_note text;
-
--- Owner creates a league for another login (migration 021)
-create or replace function public.create_league_for(league_name text, league_slug text, admin_email text)
-returns uuid
-language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.create_league_for(league_name text, league_slug text, admin_email text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 declare lid uuid; uid uuid; s text;
 begin
   if not public.is_owner() then raise exception 'Only a site owner can create a league'; end if;
@@ -1442,89 +341,143 @@ begin
   insert into public.league_admins (league_id, user_id) values (lid, auth.uid()) on conflict do nothing;
   return lid;
 end $$;
-revoke all on function public.create_league_for(text, text, text) from public, anon;
-grant execute on function public.create_league_for(text, text, text) to authenticated;
-notify pgrst, 'reload schema';
 
--- Publish a season calendar (migration 022)
--- Publishing a season's calendar makes just the calendar public: one function hands the public page
--- exactly the names, dates, tracks, race lengths and notes, and nothing else.
-alter table public.seasons add column if not exists calendar_published boolean not null default false;
+REVOKE ALL ON FUNCTION public.create_league_for(league_name text, league_slug text, admin_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_league_for(league_name text, league_slug text, admin_email text) TO authenticated;
 
-notify pgrst, 'reload schema';
-
--- Owner deletes a whole login (migration 024)
--- A site owner can delete a whole login (not just remove its admin rights). It cannot be used on yourself
--- or on another site owner. The login's admin rows go with it; leagues and their data stay.
-create or replace function public.delete_login(uid uuid)
-returns void
-language plpgsql security definer set search_path = '' as $$
-begin
-  if not public.is_owner() then raise exception 'Only a site owner can delete a login'; end if;
-  if uid = auth.uid() then raise exception 'You cannot delete your own login.'; end if;
-  if exists (select 1 from public.admins where user_id = uid) then raise exception 'That login is a site owner, so it cannot be deleted here.'; end if;
-  delete from auth.users where id = uid;
-end $$;
-revoke all on function public.delete_login(uuid) from public, anon;
-grant execute on function public.delete_login(uuid) to authenticated;
-notify pgrst, 'reload schema';
-
--- Owner deletes a league (migration 025)
--- A site owner can delete a whole league: its championships (with seasons, rounds, races and results),
--- drivers, points systems and builds. This cannot be undone. Championships go first because a league
--- will not delete while it still has them.
-create or replace function public.delete_league(lid uuid)
-returns void
-language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.delete_league(lid uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 begin
   if not public.is_owner() then raise exception 'Only a site owner can delete a league'; end if;
   if not exists (select 1 from public.leagues where id = lid) then raise exception 'That league does not exist'; end if;
   delete from public.championships where league_id = lid;
   delete from public.leagues where id = lid;
 end $$;
-revoke all on function public.delete_league(uuid) from public, anon;
-grant execute on function public.delete_league(uuid) to authenticated;
-notify pgrst, 'reload schema';
 
--- Publish a custom build (migration 026)
--- Publishing a custom build gives it a public read-only page. One function hands the page the build and
--- the league's name and palette, and only when the build has been published.
-alter table public.build_sheets add column if not exists published boolean not null default false;
+REVOKE ALL ON FUNCTION public.delete_league(lid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.delete_league(lid uuid) TO authenticated;
 
-notify pgrst, 'reload schema';
+CREATE OR REPLACE FUNCTION public.delete_login(uid uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.is_owner() then raise exception 'Only a site owner can delete a login'; end if;
+  if uid = auth.uid() then raise exception 'You cannot delete your own login.'; end if;
+  if exists (select 1 from public.admins where user_id = uid) then raise exception 'That login is a site owner, so it cannot be deleted here.'; end if;
+  delete from auth.users where id = uid;
+end $$;
 
--- Public championship and league pages (migration 027)
-alter table public.championships add column if not exists page_published boolean not null default false;
-alter table public.leagues add column if not exists page_published boolean not null default false;
+REVOKE ALL ON FUNCTION public.delete_login(uid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.delete_login(uid uuid) TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.list_league_admins(lid uuid) RETURNS TABLE(user_id uuid, email text, created_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
+  return query select a.user_id, u.email::text, a.created_at
+    from public.league_admins a join auth.users u on u.id = a.user_id
+    where a.league_id = lid order by a.created_at;
+end $$;
 
-notify pgrst, 'reload schema';
+REVOKE ALL ON FUNCTION public.list_league_admins(lid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.list_league_admins(lid uuid) TO authenticated;
 
--- League profile and a public league page that is on by default (migration 028)
-alter table public.leagues alter column page_published set default true;
-update public.leagues set page_published = true;
-alter table public.leagues add column if not exists tagline text;
-alter table public.leagues add column if not exists about text;
-alter table public.leagues add column if not exists join_text text;
-alter table public.leagues add column if not exists banner_url text;
-alter table public.leagues add column if not exists links jsonb not null default '{}'::jsonb;
+CREATE OR REPLACE FUNCTION public.owner_db_stats() RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.is_owner() then raise exception 'Owners only'; end if;
+  return jsonb_build_object(
+    'db_bytes', pg_database_size(current_database()),
+    'limit_bytes', 524288000,
+    'leagues', (select count(*) from public.leagues),
+    'championships', (select count(*) from public.championships),
+    'rounds', (select count(*) from public.events),
+    'drivers', (select count(*) from public.drivers),
+    'results', (select count(*) from public.results),
+    'cars', (select count(*) from public.cars));
+end $$;
 
-notify pgrst, 'reload schema';
+REVOKE ALL ON FUNCTION public.owner_db_stats() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.owner_db_stats() TO authenticated;
 
--- League snapshot: calendar and latest results on the public league page (migration 029)
-notify pgrst, 'reload schema';
+CREATE OR REPLACE FUNCTION public.owner_site_overview() RETURNS TABLE(league_id uuid, name text, admins bigint, championships bigint, drivers bigint, results bigint, last_activity timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.is_owner() then raise exception 'Owners only'; end if;
+  return query
+  select l.id, l.name,
+    (select count(*) from public.league_admins a where a.league_id = l.id),
+    (select count(*) from public.championships c where c.league_id = l.id),
+    (select count(*) from public.drivers d where d.league_id = l.id),
+    (select count(*) from public.results x
+       join public.races r on r.id = x.race_id
+       join public.events e on e.id = r.event_id
+       join public.seasons s on s.id = e.season_id
+       join public.championships c on c.id = s.championship_id
+      where c.league_id = l.id),
+    greatest(
+      (select max(c.updated_at) from public.championships c where c.league_id = l.id),
+      (select max(d.created_at) from public.drivers d where d.league_id = l.id),
+      (select max(x.updated_at) from public.results x
+         join public.races r on r.id = x.race_id
+         join public.events e on e.id = r.event_id
+         join public.seasons s on s.id = e.season_id
+         join public.championships c on c.id = s.championship_id
+        where c.league_id = l.id),
+      (select max(e.updated_at) from public.events e
+         join public.seasons s on s.id = e.season_id
+         join public.championships c on c.id = s.championship_id
+        where c.league_id = l.id),
+      l.created_at)
+  from public.leagues l
+  order by l.name;
+end $$;
 
--- Who can view: Public or Admin only (migration 030)
-alter table public.championships alter column page_published set default true;
-alter table public.seasons alter column calendar_published set default true;
-alter table public.build_sheets alter column published set default true;
-update public.championships set page_published = true;
-update public.seasons set calendar_published = true;
-update public.build_sheets set published = true;
+REVOKE ALL ON FUNCTION public.owner_site_overview() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.owner_site_overview() TO authenticated;
 
-create or replace function public.public_calendar(sid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.remove_league_admin(lid uuid, uid uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not public.can_admin_league(lid) then raise exception 'Admins only'; end if;
+  if uid = auth.uid() then raise exception 'You cannot remove yourself.'; end if;
+  delete from public.league_admins where league_id = lid and user_id = uid;
+end $$;
+
+REVOKE ALL ON FUNCTION public.remove_league_admin(lid uuid, uid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.remove_league_admin(lid uuid, uid uuid) TO authenticated;
+
+-- Public page functions (what anonymous visitors can read)
+
+CREATE OR REPLACE FUNCTION public.public_build(bid uuid) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select jsonb_build_object('league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', (b.published and b.status = 'completed'), 'name', b.name, 'league', l.name, 'palette', l.palette, 'data', b.data)
+  from public.build_sheets b
+  join public.leagues l on l.id = b.league_id
+  where b.id = bid and ((b.published and b.status = 'completed') or public.can_admin_league(b.league_id))
+$$;
+
+REVOKE ALL ON FUNCTION public.public_build(bid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.public_build(bid uuid) TO anon;
+GRANT ALL ON FUNCTION public.public_build(bid uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.public_calendar(sid uuid) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
   select jsonb_build_object(
     'season_id', s.id,
     'championship_id', c.id,
@@ -1561,645 +514,15 @@ language sql stable security definer set search_path = '' as $$
   join public.leagues l on l.id = c.league_id
   where s.id = sid and (s.calendar_published or public.can_admin_league(l.id))
 $$;
-revoke all on function public.public_calendar(uuid) from public;
-grant execute on function public.public_calendar(uuid) to anon, authenticated;
 
-create or replace function public.public_build(bid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object('league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', (b.published and b.status = 'completed'), 'name', b.name, 'league', l.name, 'palette', l.palette, 'data', b.data)
-  from public.build_sheets b
-  join public.leagues l on l.id = b.league_id
-  where b.id = bid and ((b.published and b.status = 'completed') or public.can_admin_league(b.league_id))
-$$;
-revoke all on function public.public_build(uuid) from public;
-grant execute on function public.public_build(uuid) to anon, authenticated;
+REVOKE ALL ON FUNCTION public.public_calendar(sid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.public_calendar(sid uuid) TO anon;
+GRANT ALL ON FUNCTION public.public_calendar(sid uuid) TO authenticated;
 
-create or replace function public.public_championship(cid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'championship_id', c.id,
-    'league_id', l.id,
-    'league_published', l.page_published,
-    'is_public', c.page_published,
-    'can_edit', public.can_admin_league(l.id),
-    'league', l.name,
-    'palette', l.palette,
-    'championship', c.name,
-    'description', c.description,
-    'rules', c.rules,
-    'builds', coalesce((
-      select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name, 'car',
-               case when k.id is null then null else k.year || ' ' || k.make || ' ' || k.model end,
-               'class', b.class_letter, 'pi', b.pi) order by b.name)
-      from public.build_sheets b
-      left join public.cars k on k.id = b.car_id
-      where b.published and b.status = 'completed' and b.league_id = l.id and (
-        exists (select 1 from public.championship_cars cc where cc.championship_id = c.id and cc.build_id = b.id)
-        or exists (select 1 from public.championship_cars cc where cc.championship_id = c.id and cc.car_id = b.car_id))
-    ), '[]'::jsonb),
-    'seasons', coalesce((
-      select jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name, 'starts_on', s.starts_on,
-        'rounds', coalesce((
-          select jsonb_agg(jsonb_build_object(
-            'id', e.id, 'round', e.round_number, 'name', e.name, 'status', e.status,
-            'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at, 'notes', e.notes,
-            'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
-            'races', coalesce((
-              select jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name, 'type', r.session_type, 'laps', r.laps,
-                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes,
-                       'results', coalesce((
-                         select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
-                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms)
-                                  order by x.position nulls last, d.display_name)
-                         from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb)
-                     ) order by r.sort_order)
-              from public.races r where r.event_id = e.id), '[]'::jsonb)
-          ) order by e.starts_at nulls last, e.round_number nulls last)
-          from public.events e
-          left join public.track_layouts t on t.id = e.track_layout_id
-          left join public.track_venues v on v.id = t.venue_id
-          where e.season_id = s.id), '[]'::jsonb)
-      ) order by s.starts_on nulls last, s.created_at)
-      from public.seasons s where s.championship_id = c.id), '[]'::jsonb))
-  from public.championships c
-  join public.leagues l on l.id = c.league_id
-  where c.id = cid and (c.page_published or public.can_admin_league(l.id))
-$$;
-revoke all on function public.public_championship(uuid) from public;
-grant execute on function public.public_championship(uuid) to anon, authenticated;
-
-create or replace function public.public_league(lid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', l.page_published, 'league', l.name, 'palette', l.palette,
-    'tagline', l.tagline, 'about', l.about, 'join_text', l.join_text, 'banner_url', l.banner_url, 'links', l.links,
-    'championships', coalesce((
-      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description) order by c.name)
-      from public.championships c where c.league_id = l.id and c.page_published), '[]'::jsonb),
-    'calendar', coalesce((
-      select jsonb_agg(q.j order by q.sa) from (
-        select e.starts_at as sa, jsonb_build_object(
-          'round', e.round_number, 'name', e.name, 'status', e.status, 'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at,
-          'championship', c.name, 'championship_id', c.id,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name, 'type', r.session_type, 'laps', r.laps,
-                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes) order by r.sort_order)
-                     from public.races r where r.event_id = e.id), '[]'::jsonb)) as j
-        from public.events e
-        join public.seasons s on s.id = e.season_id
-        join public.championships c on c.id = s.championship_id
-        left join public.track_layouts t on t.id = e.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-        order by e.starts_at limit 30) q), '[]'::jsonb),
-    'latest', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object(
-          'championship', c.name, 'championship_id', c.id, 'round', le.round_number, 'name', le.name, 'starts_at', le.starts_at,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name,
-                       'results', coalesce((select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
-                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms)
-                                  order by x.position nulls last, d.display_name)
-                                from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb))
-                     order by r.sort_order)
-                     from public.races r where r.event_id = le.id and exists (select 1 from public.results x where x.race_id = r.id)), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select e.* from public.events e join public.seasons s on s.id = e.season_id
-          where s.championship_id = c.id and exists (select 1 from public.races r join public.results x on x.race_id = r.id where r.event_id = e.id)
-          order by e.starts_at desc nulls last, e.round_number desc nulls last limit 1) le on true
-        left join public.track_layouts t on t.id = le.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'standings', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object('championship', c.name, 'championship_id', c.id, 'season', se.name,
-          'rows', coalesce((
-            select jsonb_agg(jsonb_build_object('driver', g.dn, 'points', g.pts, 'wins', g.w, 'podiums', g.p, 'fl', g.f)
-                             order by g.pts desc, g.w desc, g.p desc, g.dn)
-            from (select d.display_name as dn, coalesce(sum(x.points_awarded), 0) as pts,
-                         count(*) filter (where x.position = 1 and x.status in ('finished', 'dnf')) as w,
-                         count(*) filter (where x.position <= 3 and x.status in ('finished', 'dnf')) as p,
-                         count(*) filter (where x.fastest_lap) as f
-                  from public.events e join public.races r on r.event_id = e.id
-                  join public.results x on x.race_id = r.id join public.drivers d on d.id = x.driver_id
-                  where e.season_id = se.id group by d.id, d.display_name) g), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select s.* from public.seasons s
-          where s.championship_id = c.id and exists (select 1 from public.events e join public.races r on r.event_id = e.id
-                                                     join public.results x on x.race_id = r.id where e.season_id = s.id)
-          order by (select max(e.starts_at) from public.events e where e.season_id = s.id) desc nulls last, s.created_at desc limit 1) se on true
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'next', (
-      select jsonb_build_object('round', e.round_number, 'name', e.name, 'starts_at', e.starts_at,
-               'championship', c.name, 'championship_id', c.id,
-               'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end)
-      from public.events e
-      join public.seasons s on s.id = e.season_id
-      join public.championships c on c.id = s.championship_id
-      left join public.track_layouts t on t.id = e.track_layout_id
-      left join public.track_venues v on v.id = t.venue_id
-      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-      order by e.starts_at limit 1))
-  from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
-$$;
-revoke all on function public.public_league(uuid) from public;
-grant execute on function public.public_league(uuid) to anon, authenticated;
-notify pgrst, 'reload schema';
-
--- ===== 031: remove the old publish system and unused tables =====
--- Public pages now read through the public_* functions only, so the direct-read
--- policies, the public views, the publish guard and the old class / build-spec tables are dead.
-
--- Direct anonymous read policies (visitors use the public_* functions instead)
-drop policy if exists championships_public_read on public.championships;
-drop policy if exists seasons_public_read on public.seasons;
-drop policy if exists events_public_read on public.events;
-drop policy if exists points_systems_public_read on public.points_systems;
-drop policy if exists points_table_public_read on public.points_table_entries;
-drop policy if exists points_status_public_read on public.points_status_rules;
-drop policy if exists points_bonuses_public_read on public.points_bonuses;
-drop policy if exists classes_public_read on public.classes;
-drop policy if exists races_public_read on public.races;
-drop policy if exists spec_fields_public_read on public.spec_fields;
-drop policy if exists build_specs_public_read on public.build_specs;
-drop policy if exists build_spec_values_public_read on public.build_spec_values;
-drop policy if exists drivers_public_read on public.drivers;
-drop policy if exists results_public_read on public.results;
-drop policy if exists leagues_public_read on public.leagues;
-
--- Old public views and the publish guard
-drop view if exists public.public_class_cars;
-drop view if exists public.public_races;
-drop view if exists public.public_build_specs;
-drop trigger if exists championships_guard_publish on public.championships;
-drop function if exists public.guard_publish();
-drop function if exists public.championship_missing(uuid, text, text);
-drop function if exists public.championship_missing_items(uuid);
-
--- Old "is it published" helpers
-drop function if exists public.championship_is_public(uuid);
-drop function if exists public.season_is_public(uuid);
-drop function if exists public.event_is_public(uuid);
-drop function if exists public.race_is_public(uuid);
-drop function if exists public.points_system_is_public(uuid);
-drop function if exists public.build_spec_is_public(uuid);
-drop function if exists public.driver_is_public(uuid);
-drop function if exists public.league_is_public(uuid);
-drop function if exists public.class_is_public(uuid);
-
--- Unused tables (classes, categories and the old build spec tables) and their helpers
--- Results no longer point at classes or old build specs
-create or replace function public.guard_result_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare lid uuid;
-begin
-  lid := public.race_league(new.race_id);
-  if not exists (select 1 from public.drivers where id = new.driver_id and league_id = lid) then
-    raise exception 'That driver belongs to another league';
-  end if;
-  if not public.points_system_fits(new.scored_with_system_id, lid, null) then
-    raise exception 'That points system belongs to another league';
-  end if;
-  return new;
-end $$;
-alter table public.results drop column if exists class_id;
-alter table public.results drop column if exists build_spec_id;
-alter table public.races drop column if exists class_id;
-drop function if exists public.class_eligible_cars(uuid);
-drop function if exists public.default_build_values() cascade;
-drop function if exists public.default_field_values() cascade;
-drop table if exists public.build_spec_values;
-drop table if exists public.build_specs;
-drop table if exists public.spec_fields;
-drop table if exists public.class_rules;
-drop table if exists public.car_categories;
-drop table if exists public.categories;
-drop table if exists public.classes;
-drop function if exists public.can_admin_class(uuid);
-drop function if exists public.can_admin_build_spec(uuid);
-
--- Old site-owner helpers (the app uses the league admin functions)
-drop function if exists public.list_admins();
-drop function if exists public.add_admin(text);
-drop function if exists public.remove_admin(uuid);
-
--- The old status / visibility columns on championships
-alter table public.championships drop column if exists status;
-alter table public.championships drop column if exists visibility;
-
-notify pgrst, 'reload schema';
-
--- ===== 032: deleting a championship no longer trips the league check =====
-create or replace function public.guard_result_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare lid uuid;
-begin
-  lid := public.race_league(new.race_id);
-  if lid is null then
-    return new;
-  end if;
-  if not exists (select 1 from public.drivers where id = new.driver_id and league_id = lid) then
-    raise exception 'That driver belongs to another league';
-  end if;
-  if not public.points_system_fits(new.scored_with_system_id, lid, null) then
-    raise exception 'That points system belongs to another league';
-  end if;
-  return new;
-end $$;
-
-notify pgrst, 'reload schema';
--- The league page's standings rows now carry each driver's points per kind of race (a Sprint and a Main, say), so the league Standings tab can show them.
--- Plain statements only (the Supabase SQL editor cannot run DO blocks).
-
-create or replace function public.public_league(lid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', l.page_published, 'league', l.name, 'palette', l.palette,
-    'tagline', l.tagline, 'about', l.about, 'join_text', l.join_text, 'banner_url', l.banner_url, 'links', l.links,
-    'championships', coalesce((
-      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description) order by c.name)
-      from public.championships c where c.league_id = l.id and c.page_published), '[]'::jsonb),
-    'calendar', coalesce((
-      select jsonb_agg(q.j order by q.sa) from (
-        select e.starts_at as sa, jsonb_build_object(
-          'round', e.round_number, 'name', e.name, 'status', e.status, 'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at,
-          'championship', c.name, 'championship_id', c.id,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name, 'type', r.session_type, 'laps', r.laps,
-                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes) order by r.sort_order)
-                     from public.races r where r.event_id = e.id), '[]'::jsonb)) as j
-        from public.events e
-        join public.seasons s on s.id = e.season_id
-        join public.championships c on c.id = s.championship_id
-        left join public.track_layouts t on t.id = e.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-        order by e.starts_at limit 30) q), '[]'::jsonb),
-    'latest', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object(
-          'championship', c.name, 'championship_id', c.id, 'round', le.round_number, 'name', le.name, 'starts_at', le.starts_at,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name,
-                       'results', coalesce((select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
-                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms)
-                                  order by x.position nulls last, d.display_name)
-                                from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb))
-                     order by r.sort_order)
-                     from public.races r where r.event_id = le.id and exists (select 1 from public.results x where x.race_id = r.id)), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select e.* from public.events e join public.seasons s on s.id = e.season_id
-          where s.championship_id = c.id and exists (select 1 from public.races r join public.results x on x.race_id = r.id where r.event_id = e.id)
-          order by e.starts_at desc nulls last, e.round_number desc nulls last limit 1) le on true
-        left join public.track_layouts t on t.id = le.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'standings', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object('championship', c.name, 'championship_id', c.id, 'season', se.name,
-          'rows', coalesce((
-            select jsonb_agg(jsonb_build_object('driver', g.dn, 'points', g.pts, 'wins', g.w, 'podiums', g.p, 'fl', g.f, 'by_race', g.br)
-                             order by g.pts desc, g.w desc, g.p desc, g.dn)
-            from (select d.display_name as dn, coalesce(sum(x.points_awarded), 0) as pts,
-                         count(*) filter (where x.position = 1 and x.status in ('finished', 'dnf')) as w,
-                         count(*) filter (where x.position <= 3 and x.status in ('finished', 'dnf')) as p,
-                         count(*) filter (where x.fastest_lap) as f,
-                         (select jsonb_agg(jsonb_build_object('name', k.rn, 'points', k.p) order by k.so) from (
-                            select r2.name as rn, min(r2.sort_order) as so, sum(x2.points_awarded) as p
-                            from public.events e2 join public.races r2 on r2.event_id = e2.id join public.results x2 on x2.race_id = r2.id
-                            where e2.season_id = se.id and x2.driver_id = d.id group by r2.name) k) as br
-                  from public.events e join public.races r on r.event_id = e.id
-                  join public.results x on x.race_id = r.id join public.drivers d on d.id = x.driver_id
-                  where e.season_id = se.id group by d.id, d.display_name) g), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select s.* from public.seasons s
-          where s.championship_id = c.id and exists (select 1 from public.events e join public.races r on r.event_id = e.id
-                                                     join public.results x on x.race_id = r.id where e.season_id = s.id)
-          order by (select max(e.starts_at) from public.events e where e.season_id = s.id) desc nulls last, s.created_at desc limit 1) se on true
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'next', (
-      select jsonb_build_object('round', e.round_number, 'name', e.name, 'starts_at', e.starts_at,
-               'championship', c.name, 'championship_id', c.id,
-               'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end)
-      from public.events e
-      join public.seasons s on s.id = e.season_id
-      join public.championships c on c.id = s.championship_id
-      left join public.track_layouts t on t.id = e.track_layout_id
-      left join public.track_venues v on v.id = t.venue_id
-      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-      order by e.starts_at limit 1))
-  from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
-$$;
-revoke all on function public.public_league(uuid) from public;
-grant execute on function public.public_league(uuid) to anon, authenticated;
-notify pgrst, 'reload schema';
--- Divisions (migration 034)
--- A division is a group of cars with rules every car must follow: a PI limit, a minimum weight, other rules, and a level for each part
--- (Stock, Street, Sport or Race; a part left out is open). A championship can use a division like a car or a build.
--- Plain statements only (the Supabase SQL editor cannot run DO blocks).
-
-create table if not exists public.divisions (
-  id uuid primary key default gen_random_uuid(),
-  league_id uuid not null references public.leagues (id) on delete cascade,
-  name text not null check (length(btrim(name)) > 0),
-  pi_limit text check (pi_limit is null or length(btrim(pi_limit)) > 0),
-  min_weight_lb integer check (min_weight_lb is null or min_weight_lb > 0),
-  other_rules text,
-  parts jsonb not null default '{}'::jsonb,
-  created_by uuid default auth.uid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create unique index if not exists divisions_league_name_uq on public.divisions (league_id, lower(name));
-create index if not exists divisions_league_idx on public.divisions (league_id);
-
-create table if not exists public.division_cars (
-  division_id uuid not null references public.divisions (id) on delete cascade,
-  car_id uuid not null references public.cars (id) on delete cascade,
-  primary key (division_id, car_id)
-);
-create index if not exists division_cars_car_idx on public.division_cars (car_id);
-
-create or replace function public.touch_division() returns trigger
-language plpgsql set search_path = '' as $$
-begin new.updated_at := now(); return new; end $$;
-drop trigger if exists divisions_touch on public.divisions;
-create trigger divisions_touch before update on public.divisions
-for each row execute function public.touch_division();
-
-alter table public.divisions enable row level security;
-alter table public.division_cars enable row level security;
-drop policy if exists divisions_admin_all on public.divisions;
-create policy divisions_admin_all on public.divisions for all to authenticated
-  using (public.can_admin_league(league_id)) with check (public.can_admin_league(league_id));
-drop policy if exists division_cars_admin_all on public.division_cars;
-create policy division_cars_admin_all on public.division_cars for all to authenticated
-  using (exists (select 1 from public.divisions d where d.id = division_id and public.can_admin_league(d.league_id)))
-  with check (exists (select 1 from public.divisions d where d.id = division_id and public.can_admin_league(d.league_id)));
-grant select, insert, update, delete on public.divisions, public.division_cars to authenticated;
-
--- A championship's car list can now hold a division too: each row is a car, a build or a division.
-alter table public.championship_cars add column if not exists division_id uuid references public.divisions (id) on delete cascade;
-alter table public.championship_cars drop constraint if exists championship_cars_check;
-alter table public.championship_cars drop constraint if exists championship_cars_one_kind;
-alter table public.championship_cars add constraint championship_cars_one_kind
-  check ((car_id is not null)::int + (build_id is not null)::int + (division_id is not null)::int = 1);
-create unique index if not exists championship_cars_division_uq on public.championship_cars (championship_id, division_id) where division_id is not null;
-
--- Keep builds and divisions inside their own league.
-create or replace function public.guard_build_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare bl uuid; lid uuid;
-begin
-  if tg_table_name = 'championship_cars' then
-    if new.division_id is not null then
-      select league_id into bl from public.divisions where id = new.division_id;
-      select league_id into lid from public.championships where id = new.championship_id;
-      if bl is distinct from lid then raise exception 'That division belongs to another league'; end if;
-    end if;
-  end if;
-  if new.build_id is null then return new; end if;
-  select league_id into bl from public.build_sheets where id = new.build_id;
-  if tg_table_name = 'league_favourites' then lid := new.league_id;
-  else select league_id into lid from public.championships where id = new.championship_id; end if;
-  if bl is distinct from lid then raise exception 'That build belongs to another league'; end if;
-  return new;
-end $$;
-
--- The public championship page also carries each division it uses: its rules and its cars, by name.
-create or replace function public.public_championship(cid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'championship_id', c.id,
-    'league_id', l.id,
-    'league_published', l.page_published,
-    'is_public', c.page_published,
-    'can_edit', public.can_admin_league(l.id),
-    'league', l.name,
-    'palette', l.palette,
-    'championship', c.name,
-    'description', c.description,
-    'rules', c.rules,
-    'divisions', coalesce((
-      select jsonb_agg(jsonb_build_object('id', dv.id, 'name', dv.name, 'pi_limit', dv.pi_limit, 'min_weight_lb', dv.min_weight_lb,
-               'other_rules', dv.other_rules, 'parts', dv.parts,
-               'cars', coalesce((select jsonb_agg(k.year || ' ' || k.make || ' ' || k.model order by k.make, k.model, k.year)
-                                 from public.division_cars dc join public.cars k on k.id = dc.car_id where dc.division_id = dv.id), '[]'::jsonb))
-               order by dv.name)
-      from public.divisions dv
-      where dv.league_id = l.id
-        and exists (select 1 from public.championship_cars cc where cc.championship_id = c.id and cc.division_id = dv.id)
-    ), '[]'::jsonb),
-    'builds', coalesce((
-      select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name, 'car',
-               case when k.id is null then null else k.year || ' ' || k.make || ' ' || k.model end,
-               'class', b.class_letter, 'pi', b.pi) order by b.name)
-      from public.build_sheets b
-      left join public.cars k on k.id = b.car_id
-      where b.published and b.status = 'completed' and b.league_id = l.id and (
-        exists (select 1 from public.championship_cars cc where cc.championship_id = c.id and cc.build_id = b.id)
-        or exists (select 1 from public.championship_cars cc where cc.championship_id = c.id and cc.car_id = b.car_id))
-    ), '[]'::jsonb),
-    'seasons', coalesce((
-      select jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name, 'starts_on', s.starts_on,
-        'rounds', coalesce((
-          select jsonb_agg(jsonb_build_object(
-            'id', e.id, 'round', e.round_number, 'name', e.name, 'status', e.status,
-            'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at, 'notes', e.notes,
-            'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
-            'races', coalesce((
-              select jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name, 'type', r.session_type, 'laps', r.laps,
-                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes,
-                       'results', coalesce((
-                         select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
-                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms)
-                                  order by x.position nulls last, d.display_name)
-                         from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb)
-                     ) order by r.sort_order)
-              from public.races r where r.event_id = e.id), '[]'::jsonb)
-          ) order by e.starts_at nulls last, e.round_number nulls last)
-          from public.events e
-          left join public.track_layouts t on t.id = e.track_layout_id
-          left join public.track_venues v on v.id = t.venue_id
-          where e.season_id = s.id), '[]'::jsonb)
-      ) order by s.starts_on nulls last, s.created_at)
-      from public.seasons s where s.championship_id = c.id), '[]'::jsonb))
-  from public.championships c
-  join public.leagues l on l.id = c.league_id
-  where c.id = cid and (c.page_published or public.can_admin_league(l.id))
-$$;
-revoke all on function public.public_championship(uuid) from public;
-grant execute on function public.public_championship(uuid) to anon, authenticated;
-notify pgrst, 'reload schema';
--- Owner Admin page (migration 035)
--- Two read-only functions for the site owner: a table of counts per league, and database size and row counts.
--- Only counts are returned. No names, emails or sign-in details. Anyone who is not a site owner is refused.
--- Plain statements only (the Supabase SQL editor cannot run DO blocks).
-
-create or replace function public.owner_site_overview()
-returns table (league_id uuid, name text, admins bigint, championships bigint, drivers bigint, results bigint, last_activity timestamptz)
-language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not public.is_owner() then raise exception 'Owners only'; end if;
-  return query
-  select l.id, l.name,
-    (select count(*) from public.league_admins a where a.league_id = l.id),
-    (select count(*) from public.championships c where c.league_id = l.id),
-    (select count(*) from public.drivers d where d.league_id = l.id),
-    (select count(*) from public.results x
-       join public.races r on r.id = x.race_id
-       join public.events e on e.id = r.event_id
-       join public.seasons s on s.id = e.season_id
-       join public.championships c on c.id = s.championship_id
-      where c.league_id = l.id),
-    greatest(
-      (select max(c.updated_at) from public.championships c where c.league_id = l.id),
-      (select max(d.created_at) from public.drivers d where d.league_id = l.id),
-      (select max(x.updated_at) from public.results x
-         join public.races r on r.id = x.race_id
-         join public.events e on e.id = r.event_id
-         join public.seasons s on s.id = e.season_id
-         join public.championships c on c.id = s.championship_id
-        where c.league_id = l.id),
-      (select max(e.updated_at) from public.events e
-         join public.seasons s on s.id = e.season_id
-         join public.championships c on c.id = s.championship_id
-        where c.league_id = l.id),
-      l.created_at)
-  from public.leagues l
-  order by l.name;
-end $$;
-
-create or replace function public.owner_db_stats()
-returns jsonb
-language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not public.is_owner() then raise exception 'Owners only'; end if;
-  return jsonb_build_object(
-    'db_bytes', pg_database_size(current_database()),
-    'limit_bytes', 524288000,
-    'leagues', (select count(*) from public.leagues),
-    'championships', (select count(*) from public.championships),
-    'rounds', (select count(*) from public.events),
-    'drivers', (select count(*) from public.drivers),
-    'results', (select count(*) from public.results),
-    'cars', (select count(*) from public.cars));
-end $$;
-
-revoke all on function public.owner_site_overview() from public, anon;
-revoke all on function public.owner_db_stats() from public, anon;
-grant execute on function public.owner_site_overview() to authenticated;
-grant execute on function public.owner_db_stats() to authenticated;
-notify pgrst, 'reload schema';
-
--- Places gained and lost (migration 036)
--- Each result can carry the places gained (positive) or lost (negative) that the results screen shows next to the position.
--- Blank means not recorded. A championship can switch tracking off (a hidden field with no admin screen); it is on by default.
--- The public league and championship pages now include it with each result. Standings are not changed.
--- Plain statements only (the Supabase SQL editor cannot run DO blocks).
-
-alter table public.results add column if not exists places_gained integer;
-alter table public.championships add column if not exists track_places boolean not null default true;
-update public.championships set track_places = false where name = 'Friday GTX Stock Car Racing';
-
-create or replace function public.public_league(lid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', l.page_published, 'league', l.name, 'palette', l.palette,
-    'tagline', l.tagline, 'about', l.about, 'join_text', l.join_text, 'banner_url', l.banner_url, 'links', l.links,
-    'championships', coalesce((
-      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description) order by c.name)
-      from public.championships c where c.league_id = l.id and c.page_published), '[]'::jsonb),
-    'calendar', coalesce((
-      select jsonb_agg(q.j order by q.sa) from (
-        select e.starts_at as sa, jsonb_build_object(
-          'round', e.round_number, 'name', e.name, 'status', e.status, 'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at,
-          'championship', c.name, 'championship_id', c.id,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name, 'type', r.session_type, 'laps', r.laps,
-                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes) order by r.sort_order)
-                     from public.races r where r.event_id = e.id), '[]'::jsonb)) as j
-        from public.events e
-        join public.seasons s on s.id = e.season_id
-        join public.championships c on c.id = s.championship_id
-        left join public.track_layouts t on t.id = e.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-        order by e.starts_at limit 30) q), '[]'::jsonb),
-    'latest', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object(
-          'championship', c.name, 'championship_id', c.id, 'round', le.round_number, 'name', le.name, 'starts_at', le.starts_at,
-          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end,
-          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name,
-                       'results', coalesce((select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
-                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms, 'places_gained', x.places_gained)
-                                  order by x.position nulls last, d.display_name)
-                                from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb))
-                     order by r.sort_order)
-                     from public.races r where r.event_id = le.id and exists (select 1 from public.results x where x.race_id = r.id)), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select e.* from public.events e join public.seasons s on s.id = e.season_id
-          where s.championship_id = c.id and exists (select 1 from public.races r join public.results x on x.race_id = r.id where r.event_id = e.id)
-          order by e.starts_at desc nulls last, e.round_number desc nulls last limit 1) le on true
-        left join public.track_layouts t on t.id = le.track_layout_id
-        left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'standings', coalesce((
-      select jsonb_agg(q.j order by q.cn) from (
-        select c.name as cn, jsonb_build_object('championship', c.name, 'championship_id', c.id, 'season', se.name,
-          'rows', coalesce((
-            select jsonb_agg(jsonb_build_object('driver', g.dn, 'points', g.pts, 'wins', g.w, 'podiums', g.p, 'fl', g.f, 'by_race', g.br)
-                             order by g.pts desc, g.w desc, g.p desc, g.dn)
-            from (select d.display_name as dn, coalesce(sum(x.points_awarded), 0) as pts,
-                         count(*) filter (where x.position = 1 and x.status in ('finished', 'dnf')) as w,
-                         count(*) filter (where x.position <= 3 and x.status in ('finished', 'dnf')) as p,
-                         count(*) filter (where x.fastest_lap) as f,
-                         (select jsonb_agg(jsonb_build_object('name', k.rn, 'points', k.p) order by k.so) from (
-                            select r2.name as rn, min(r2.sort_order) as so, sum(x2.points_awarded) as p
-                            from public.events e2 join public.races r2 on r2.event_id = e2.id join public.results x2 on x2.race_id = r2.id
-                            where e2.season_id = se.id and x2.driver_id = d.id group by r2.name) k) as br
-                  from public.events e join public.races r on r.event_id = e.id
-                  join public.results x on x.race_id = r.id join public.drivers d on d.id = x.driver_id
-                  where e.season_id = se.id group by d.id, d.display_name) g), '[]'::jsonb)) as j
-        from public.championships c
-        join lateral (
-          select s.* from public.seasons s
-          where s.championship_id = c.id and exists (select 1 from public.events e join public.races r on r.event_id = e.id
-                                                     join public.results x on x.race_id = r.id where e.season_id = s.id)
-          order by (select max(e.starts_at) from public.events e where e.season_id = s.id) desc nulls last, s.created_at desc limit 1) se on true
-        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
-    'next', (
-      select jsonb_build_object('round', e.round_number, 'name', e.name, 'starts_at', e.starts_at,
-               'championship', c.name, 'championship_id', c.id,
-               'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end)
-      from public.events e
-      join public.seasons s on s.id = e.season_id
-      join public.championships c on c.id = s.championship_id
-      left join public.track_layouts t on t.id = e.track_layout_id
-      left join public.track_venues v on v.id = t.venue_id
-      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
-      order by e.starts_at limit 1))
-  from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
-$$;
-revoke all on function public.public_league(uuid) from public;
-grant execute on function public.public_league(uuid) to anon, authenticated;
-
-create or replace function public.public_championship(cid uuid)
-returns jsonb
-language sql stable security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.public_championship(cid uuid) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
   select jsonb_build_object(
     'championship_id', c.id,
     'league_id', l.id,
@@ -2260,27 +583,808 @@ language sql stable security definer set search_path = '' as $$
   join public.leagues l on l.id = c.league_id
   where c.id = cid and (c.page_published or public.can_admin_league(l.id))
 $$;
-revoke all on function public.public_championship(uuid) from public;
-grant execute on function public.public_championship(uuid) to anon, authenticated;
 
-notify pgrst, 'reload schema';
--- Every build sheet is public by link: no draft status and no "admin only" switch.
-update public.build_sheets set status = 'completed', published = true where status <> 'completed' or published is not true;
+REVOKE ALL ON FUNCTION public.public_championship(cid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.public_championship(cid uuid) TO anon;
+GRANT ALL ON FUNCTION public.public_championship(cid uuid) TO authenticated;
 
-create or replace function public.build_sheets_always_public()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  new.status := 'completed';
-  new.published := true;
-  return new;
-end
+CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select jsonb_build_object(
+    'league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', l.page_published, 'league', l.name, 'palette', l.palette,
+    'tagline', l.tagline, 'about', l.about, 'join_text', l.join_text, 'banner_url', l.banner_url, 'links', l.links,
+    'championships', coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description) order by c.name)
+      from public.championships c where c.league_id = l.id and c.page_published), '[]'::jsonb),
+    'calendar', coalesce((
+      select jsonb_agg(q.j order by q.sa) from (
+        select e.starts_at as sa, jsonb_build_object(
+          'round', e.round_number, 'name', e.name, 'status', e.status, 'starts_at', e.starts_at, 'lobby_opens_at', e.lobby_opens_at,
+          'championship', c.name, 'championship_id', c.id,
+          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name, 'length_km', t.length_km) end,
+          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name, 'type', r.session_type, 'laps', r.laps,
+                       'distance_km', r.target_distance_km, 'minutes', r.duration_minutes) order by r.sort_order)
+                     from public.races r where r.event_id = e.id), '[]'::jsonb)) as j
+        from public.events e
+        join public.seasons s on s.id = e.season_id
+        join public.championships c on c.id = s.championship_id
+        left join public.track_layouts t on t.id = e.track_layout_id
+        left join public.track_venues v on v.id = t.venue_id
+        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
+        order by e.starts_at limit 30) q), '[]'::jsonb),
+    'latest', coalesce((
+      select jsonb_agg(q.j order by q.cn) from (
+        select c.name as cn, jsonb_build_object(
+          'championship', c.name, 'championship_id', c.id, 'round', le.round_number, 'name', le.name, 'starts_at', le.starts_at,
+          'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end,
+          'races', coalesce((select jsonb_agg(jsonb_build_object('name', r.name,
+                       'results', coalesce((select jsonb_agg(jsonb_build_object('driver', d.display_name, 'position', x.position, 'status', x.status,
+                                  'points', x.points_awarded, 'fastest_lap', x.fastest_lap, 'best_lap_ms', x.best_lap_ms, 'places_gained', x.places_gained)
+                                  order by x.position nulls last, d.display_name)
+                                from public.results x join public.drivers d on d.id = x.driver_id where x.race_id = r.id), '[]'::jsonb))
+                     order by r.sort_order)
+                     from public.races r where r.event_id = le.id and exists (select 1 from public.results x where x.race_id = r.id)), '[]'::jsonb)) as j
+        from public.championships c
+        join lateral (
+          select e.* from public.events e join public.seasons s on s.id = e.season_id
+          where s.championship_id = c.id and exists (select 1 from public.races r join public.results x on x.race_id = r.id where r.event_id = e.id)
+          order by e.starts_at desc nulls last, e.round_number desc nulls last limit 1) le on true
+        left join public.track_layouts t on t.id = le.track_layout_id
+        left join public.track_venues v on v.id = t.venue_id
+        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
+    'standings', coalesce((
+      select jsonb_agg(q.j order by q.cn) from (
+        select c.name as cn, jsonb_build_object('championship', c.name, 'championship_id', c.id, 'season', se.name,
+          'rows', coalesce((
+            select jsonb_agg(jsonb_build_object('driver', g.dn, 'points', g.pts, 'wins', g.w, 'podiums', g.p, 'fl', g.f, 'by_race', g.br)
+                             order by g.pts desc, g.w desc, g.p desc, g.dn)
+            from (select d.display_name as dn, coalesce(sum(x.points_awarded), 0) as pts,
+                         count(*) filter (where x.position = 1 and x.status in ('finished', 'dnf')) as w,
+                         count(*) filter (where x.position <= 3 and x.status in ('finished', 'dnf')) as p,
+                         count(*) filter (where x.fastest_lap) as f,
+                         (select jsonb_agg(jsonb_build_object('name', k.rn, 'points', k.p) order by k.so) from (
+                            select r2.name as rn, min(r2.sort_order) as so, sum(x2.points_awarded) as p
+                            from public.events e2 join public.races r2 on r2.event_id = e2.id join public.results x2 on x2.race_id = r2.id
+                            where e2.season_id = se.id and x2.driver_id = d.id group by r2.name) k) as br
+                  from public.events e join public.races r on r.event_id = e.id
+                  join public.results x on x.race_id = r.id join public.drivers d on d.id = x.driver_id
+                  where e.season_id = se.id group by d.id, d.display_name) g), '[]'::jsonb)) as j
+        from public.championships c
+        join lateral (
+          select s.* from public.seasons s
+          where s.championship_id = c.id and exists (select 1 from public.events e join public.races r on r.event_id = e.id
+                                                     join public.results x on x.race_id = r.id where e.season_id = s.id)
+          order by (select max(e.starts_at) from public.events e where e.season_id = s.id) desc nulls last, s.created_at desc limit 1) se on true
+        where c.league_id = l.id and c.page_published) q), '[]'::jsonb),
+    'next', (
+      select jsonb_build_object('round', e.round_number, 'name', e.name, 'starts_at', e.starts_at,
+               'championship', c.name, 'championship_id', c.id,
+               'track', case when t.id is null then null else jsonb_build_object('venue', v.name, 'layout', t.name) end)
+      from public.events e
+      join public.seasons s on s.id = e.season_id
+      join public.championships c on c.id = s.championship_id
+      left join public.track_layouts t on t.id = e.track_layout_id
+      left join public.track_venues v on v.id = t.venue_id
+      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
+      order by e.starts_at limit 1))
+  from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
 $$;
 
-drop trigger if exists build_sheets_public on public.build_sheets;
-create trigger build_sheets_public before insert or update on public.build_sheets
-  for each row execute function public.build_sheets_always_public();
+REVOKE ALL ON FUNCTION public.public_league(lid uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.public_league(lid uuid) TO anon;
+GRANT ALL ON FUNCTION public.public_league(lid uuid) TO authenticated;
 
-notify pgrst, 'reload schema';
+
+-- ---------------------------------------------------------------------------
+-- TABLES
+-- ---------------------------------------------------------------------------
+
+
+-- ACCESS: leagues and who can manage them
+
+-- admins
+CREATE TABLE public.admins (
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+ALTER TABLE ONLY public.admins
+    ADD CONSTRAINT admins_pkey PRIMARY KEY (user_id);
+ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
+
+-- leagues
+CREATE TABLE public.leagues (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    slug text NOT NULL,
+    timezone text,
+    units text,
+    palette text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    page_published boolean DEFAULT true NOT NULL,
+    tagline text,
+    about text,
+    join_text text,
+    banner_url text,
+    links jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT leagues_name_check CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT leagues_palette_check CHECK (((palette IS NULL) OR (palette = ANY (ARRAY['rwb'::text, 'rosso'::text, 'gulf'::text, 'brg'::text, 'papaya'::text, 'mono'::text])))),
+    CONSTRAINT leagues_slug_check CHECK ((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text)),
+    CONSTRAINT leagues_timezone_check CHECK (((timezone IS NULL) OR public.is_valid_timezone(timezone))),
+    CONSTRAINT leagues_units_check CHECK (((units IS NULL) OR (units = ANY (ARRAY['imperial'::text, 'metric'::text]))))
+);
+ALTER TABLE ONLY public.leagues
+    ADD CONSTRAINT leagues_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.leagues
+    ADD CONSTRAINT leagues_slug_key UNIQUE (slug);
+CREATE TRIGGER leagues_set_updated_at BEFORE UPDATE ON public.leagues FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.leagues ENABLE ROW LEVEL SECURITY;
+CREATE POLICY leagues_admin_read ON public.leagues FOR SELECT TO authenticated USING (public.can_admin_league(id));
+CREATE POLICY leagues_admin_update ON public.leagues FOR UPDATE TO authenticated USING (public.can_admin_league(id)) WITH CHECK (public.can_admin_league(id));
+
+-- league_admins
+CREATE TABLE public.league_admins (
+    league_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+ALTER TABLE ONLY public.league_admins
+    ADD CONSTRAINT league_admins_pkey PRIMARY KEY (league_id, user_id);
+ALTER TABLE public.league_admins ENABLE ROW LEVEL SECURITY;
+CREATE POLICY league_admins_read ON public.league_admins FOR SELECT TO authenticated USING (public.can_admin_league(league_id));
+
+-- league
+CREATE TABLE public.league (
+    id boolean DEFAULT true NOT NULL,
+    name text,
+    timezone text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT league_id_check CHECK (id),
+    CONSTRAINT league_name_check CHECK (((name IS NULL) OR (length(btrim(name)) > 0))),
+    CONSTRAINT league_timezone_check CHECK (((timezone IS NULL) OR public.is_valid_timezone(timezone)))
+);
+ALTER TABLE ONLY public.league
+    ADD CONSTRAINT league_pkey PRIMARY KEY (id);
+ALTER TABLE public.league ENABLE ROW LEVEL SECURITY;
+CREATE POLICY league_admin_all ON public.league TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+
+-- DRIVERS
+
+-- drivers
+CREATE TABLE public.drivers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    display_name text NOT NULL,
+    gamertag text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    league_id uuid NOT NULL,
+    aliases text[] DEFAULT '{}'::text[] NOT NULL,
+    CONSTRAINT drivers_display_name_check CHECK ((length(btrim(display_name)) > 0))
+);
+ALTER TABLE ONLY public.drivers
+    ADD CONSTRAINT drivers_pkey PRIMARY KEY (id);
+CREATE UNIQUE INDEX drivers_league_name_uq ON public.drivers USING btree (league_id, lower(display_name));
+ALTER TABLE public.drivers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY drivers_admin_all ON public.drivers TO authenticated USING (public.can_admin_league(league_id)) WITH CHECK (public.can_admin_league(league_id));
+
+
+-- POINTS SYSTEMS
+
+-- points_systems
+CREATE TABLE public.points_systems (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    championship_id uuid,
+    name text NOT NULL,
+    source_series text,
+    source_version text,
+    source_url text,
+    copied_from uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    league_id uuid,
+    copied_at timestamp with time zone,
+    dnf_rank_by_best_lap boolean DEFAULT false NOT NULL,
+    CONSTRAINT points_systems_name_check CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT points_systems_one_owner CHECK (((championship_id IS NULL) OR (league_id IS NULL)))
+);
+ALTER TABLE ONLY public.points_systems
+    ADD CONSTRAINT points_systems_pkey PRIMARY KEY (id);
+CREATE TRIGGER points_systems_default_dnf AFTER INSERT ON public.points_systems FOR EACH ROW EXECUTE FUNCTION public.default_dnf_rule();
+CREATE TRIGGER points_systems_set_updated_at BEFORE UPDATE ON public.points_systems FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.points_systems ENABLE ROW LEVEL SECURITY;
+CREATE POLICY points_systems_admin_all ON public.points_systems TO authenticated USING ((((championship_id IS NOT NULL) AND public.can_admin_champ(championship_id)) OR ((championship_id IS NULL) AND (league_id IS NOT NULL) AND public.can_admin_league(league_id)) OR ((championship_id IS NULL) AND (league_id IS NULL) AND public.is_owner()))) WITH CHECK ((((championship_id IS NOT NULL) AND public.can_admin_champ(championship_id)) OR ((championship_id IS NULL) AND (league_id IS NOT NULL) AND public.can_admin_league(league_id)) OR ((championship_id IS NULL) AND (league_id IS NULL) AND public.is_owner())));
+CREATE POLICY points_systems_library_read ON public.points_systems FOR SELECT TO authenticated USING (((championship_id IS NULL) AND (league_id IS NULL) AND public.is_admin()));
+
+-- points_table_entries
+CREATE TABLE public.points_table_entries (
+    points_system_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    points numeric NOT NULL,
+    CONSTRAINT points_table_entries_position_check CHECK (("position" > 0))
+);
+ALTER TABLE ONLY public.points_table_entries
+    ADD CONSTRAINT points_table_entries_pkey PRIMARY KEY (points_system_id, "position");
+ALTER TABLE public.points_table_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY points_table_entries_admin_all ON public.points_table_entries TO authenticated USING (public.can_admin_points_system(points_system_id)) WITH CHECK (public.can_admin_points_system(points_system_id));
+CREATE POLICY points_table_entries_library_read ON public.points_table_entries FOR SELECT TO authenticated USING (public.can_read_points_system(points_system_id));
+
+-- points_status_rules
+CREATE TABLE public.points_status_rules (
+    points_system_id uuid NOT NULL,
+    status text NOT NULL,
+    points numeric NOT NULL,
+    CONSTRAINT points_status_rules_status_check CHECK ((status = ANY (ARRAY['dnf'::text, 'dns'::text, 'dsq'::text, 'other'::text])))
+);
+ALTER TABLE ONLY public.points_status_rules
+    ADD CONSTRAINT points_status_rules_pkey PRIMARY KEY (points_system_id, status);
+ALTER TABLE public.points_status_rules ENABLE ROW LEVEL SECURITY;
+CREATE POLICY points_status_rules_admin_all ON public.points_status_rules TO authenticated USING (public.can_admin_points_system(points_system_id)) WITH CHECK (public.can_admin_points_system(points_system_id));
+CREATE POLICY points_status_rules_library_read ON public.points_status_rules FOR SELECT TO authenticated USING (public.can_read_points_system(points_system_id));
+
+-- points_bonuses
+CREATE TABLE public.points_bonuses (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    points_system_id uuid NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    points numeric NOT NULL,
+    description text,
+    CONSTRAINT points_bonuses_kind_check CHECK ((kind = ANY (ARRAY['bonus'::text, 'penalty'::text])))
+);
+ALTER TABLE ONLY public.points_bonuses
+    ADD CONSTRAINT points_bonuses_pkey PRIMARY KEY (id);
+ALTER TABLE public.points_bonuses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY points_bonuses_admin_all ON public.points_bonuses TO authenticated USING (public.can_admin_points_system(points_system_id)) WITH CHECK (public.can_admin_points_system(points_system_id));
+CREATE POLICY points_bonuses_library_read ON public.points_bonuses FOR SELECT TO authenticated USING (public.can_read_points_system(points_system_id));
+
+
+-- CHAMPIONSHIPS, SEASONS, ROUNDS AND RACES
+
+-- championships
+CREATE TABLE public.championships (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    description text,
+    intended_timezone text,
+    schedule_every_weeks integer,
+    lobby_local_time time without time zone,
+    race_local_time time without time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    points_system_id uuid,
+    league_id uuid NOT NULL,
+    rules text,
+    page_published boolean DEFAULT true NOT NULL,
+    track_places boolean DEFAULT true NOT NULL,
+    CONSTRAINT championships_intended_timezone_check CHECK (((intended_timezone IS NULL) OR public.is_valid_timezone(intended_timezone))),
+    CONSTRAINT championships_name_check CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT championships_schedule_every_weeks_check CHECK (((schedule_every_weeks IS NULL) OR ((schedule_every_weeks >= 1) AND (schedule_every_weeks <= 4))))
+);
+ALTER TABLE ONLY public.championships
+    ADD CONSTRAINT championships_pkey PRIMARY KEY (id);
+CREATE INDEX championships_league_idx ON public.championships USING btree (league_id);
+CREATE TRIGGER championships_guard_points BEFORE INSERT OR UPDATE ON public.championships FOR EACH ROW EXECUTE FUNCTION public.guard_points_league();
+CREATE TRIGGER championships_set_updated_at BEFORE UPDATE ON public.championships FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.championships ENABLE ROW LEVEL SECURITY;
+CREATE POLICY championships_admin_all ON public.championships TO authenticated USING (public.can_admin_league(league_id)) WITH CHECK (public.can_admin_league(league_id));
+
+-- event_series
+CREATE TABLE public.event_series (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    season_id uuid NOT NULL,
+    name text,
+    pattern text,
+    interval_count integer,
+    interval_unit text,
+    monthly_mode text,
+    first_local_date date,
+    local_time time without time zone,
+    lobby_local_time time without time zone,
+    timezone text,
+    end_type text,
+    until_date date,
+    occurrence_count integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT event_series_check CHECK (((end_type IS DISTINCT FROM 'on_date'::text) OR (until_date IS NOT NULL))),
+    CONSTRAINT event_series_check1 CHECK (((end_type IS DISTINCT FROM 'after_count'::text) OR (occurrence_count IS NOT NULL))),
+    CONSTRAINT event_series_end_type_check CHECK ((end_type = ANY (ARRAY['on_date'::text, 'after_count'::text]))),
+    CONSTRAINT event_series_interval_count_check CHECK (((interval_count IS NULL) OR (interval_count > 0))),
+    CONSTRAINT event_series_interval_unit_check CHECK ((interval_unit = ANY (ARRAY['day'::text, 'week'::text, 'month'::text]))),
+    CONSTRAINT event_series_monthly_mode_check CHECK ((monthly_mode = ANY (ARRAY['day_of_month'::text, 'nth_weekday'::text]))),
+    CONSTRAINT event_series_occurrence_count_check CHECK (((occurrence_count IS NULL) OR (occurrence_count > 0))),
+    CONSTRAINT event_series_pattern_check CHECK ((pattern = ANY (ARRAY['weekly'::text, 'fortnightly'::text, 'monthly'::text, 'custom'::text]))),
+    CONSTRAINT event_series_timezone_check CHECK (((timezone IS NULL) OR public.is_valid_timezone(timezone)))
+);
+ALTER TABLE ONLY public.event_series
+    ADD CONSTRAINT event_series_pkey PRIMARY KEY (id);
+CREATE INDEX event_series_season_idx ON public.event_series USING btree (season_id);
+CREATE TRIGGER event_series_set_updated_at BEFORE UPDATE ON public.event_series FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.event_series ENABLE ROW LEVEL SECURITY;
+CREATE POLICY event_series_admin_all ON public.event_series TO authenticated USING (public.can_admin_season(season_id)) WITH CHECK (public.can_admin_season(season_id));
+
+-- race_templates
+CREATE TABLE public.race_templates (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    championship_id uuid NOT NULL,
+    sort_order integer NOT NULL,
+    name text NOT NULL,
+    laps integer,
+    points_system_id uuid,
+    CONSTRAINT race_templates_laps_check CHECK (((laps IS NULL) OR (laps > 0))),
+    CONSTRAINT race_templates_name_check CHECK ((length(btrim(name)) > 0))
+);
+ALTER TABLE ONLY public.race_templates
+    ADD CONSTRAINT race_templates_championship_id_sort_order_key UNIQUE (championship_id, sort_order);
+ALTER TABLE ONLY public.race_templates
+    ADD CONSTRAINT race_templates_pkey PRIMARY KEY (id);
+CREATE TRIGGER race_templates_guard_points BEFORE INSERT OR UPDATE ON public.race_templates FOR EACH ROW EXECUTE FUNCTION public.guard_points_league();
+ALTER TABLE public.race_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY race_templates_admin_all ON public.race_templates TO authenticated USING (public.can_admin_champ(championship_id)) WITH CHECK (public.can_admin_champ(championship_id));
+
+-- seasons
+CREATE TABLE public.seasons (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    championship_id uuid NOT NULL,
+    name text NOT NULL,
+    starts_on date,
+    ends_on date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    calendar_published boolean DEFAULT true NOT NULL,
+    CONSTRAINT seasons_check CHECK (((starts_on IS NULL) OR (ends_on IS NULL) OR (ends_on >= starts_on))),
+    CONSTRAINT seasons_name_check CHECK ((length(btrim(name)) > 0))
+);
+ALTER TABLE ONLY public.seasons
+    ADD CONSTRAINT seasons_pkey PRIMARY KEY (id);
+CREATE INDEX seasons_championship_idx ON public.seasons USING btree (championship_id);
+CREATE TRIGGER seasons_set_updated_at BEFORE UPDATE ON public.seasons FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.seasons ENABLE ROW LEVEL SECURITY;
+CREATE POLICY seasons_admin_all ON public.seasons TO authenticated USING (public.can_admin_champ(championship_id)) WITH CHECK (public.can_admin_champ(championship_id));
+
+-- events
+CREATE TABLE public.events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    season_id uuid NOT NULL,
+    series_id uuid,
+    occurrence_date date,
+    name text,
+    round_number integer,
+    starts_at timestamp with time zone,
+    lobby_opens_at timestamp with time zone,
+    timezone text,
+    original_starts_at timestamp with time zone,
+    is_override boolean DEFAULT false NOT NULL,
+    status text DEFAULT 'scheduled'::text NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    track_layout_id uuid,
+    is_bonus boolean DEFAULT false NOT NULL,
+    reference_lap_ms integer,
+    reference_car text,
+    CONSTRAINT events_check CHECK (((starts_at IS NULL) = (timezone IS NULL))),
+    CONSTRAINT events_lobby_before_start CHECK (((lobby_opens_at IS NULL) OR ((starts_at IS NOT NULL) AND (lobby_opens_at <= starts_at)))),
+    CONSTRAINT events_reference_lap_ms_check CHECK (((reference_lap_ms IS NULL) OR (reference_lap_ms > 0))),
+    CONSTRAINT events_round_number_check CHECK (((round_number IS NULL) OR (round_number > 0))),
+    CONSTRAINT events_status_check CHECK ((status = ANY (ARRAY['scheduled'::text, 'cancelled'::text, 'completed'::text]))),
+    CONSTRAINT events_timezone_check CHECK (((timezone IS NULL) OR public.is_valid_timezone(timezone)))
+);
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_pkey PRIMARY KEY (id);
+CREATE INDEX events_season_idx ON public.events USING btree (season_id);
+CREATE UNIQUE INDEX events_series_occurrence_uq ON public.events USING btree (series_id, occurrence_date) WHERE (series_id IS NOT NULL);
+CREATE TRIGGER events_set_updated_at BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY events_admin_all ON public.events TO authenticated USING (public.can_admin_season(season_id)) WITH CHECK (public.can_admin_season(season_id));
+
+-- races
+CREATE TABLE public.races (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    event_id uuid NOT NULL,
+    name text,
+    sort_order integer NOT NULL,
+    session_type text,
+    starts_at timestamp with time zone,
+    laps integer,
+    target_distance_km numeric,
+    duration_minutes integer,
+    points_system_id uuid,
+    double_points boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT races_duration_minutes_check CHECK (((duration_minutes IS NULL) OR (duration_minutes > 0))),
+    CONSTRAINT races_laps_check CHECK (((laps IS NULL) OR (laps > 0))),
+    CONSTRAINT races_target_distance_km_check CHECK (((target_distance_km IS NULL) OR (target_distance_km > (0)::numeric)))
+);
+ALTER TABLE ONLY public.races
+    ADD CONSTRAINT races_pkey PRIMARY KEY (id);
+CREATE INDEX races_event_idx ON public.races USING btree (event_id);
+CREATE TRIGGER races_guard_points BEFORE INSERT OR UPDATE ON public.races FOR EACH ROW EXECUTE FUNCTION public.guard_points_league();
+CREATE TRIGGER races_set_updated_at BEFORE UPDATE ON public.races FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.races ENABLE ROW LEVEL SECURITY;
+CREATE POLICY races_admin_all ON public.races TO authenticated USING (public.can_admin_event(event_id)) WITH CHECK (public.can_admin_event(event_id));
+
+
+-- RESULTS
+
+-- results
+CREATE TABLE public.results (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    race_id uuid NOT NULL,
+    driver_id uuid NOT NULL,
+    car_id uuid,
+    "position" integer,
+    status text NOT NULL,
+    laps_completed integer,
+    total_time_ms bigint,
+    adjustment_points numeric,
+    adjustment_reason text,
+    points_awarded numeric,
+    scored_with_system_id uuid,
+    scored_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    best_lap_ms integer,
+    race_time_ms bigint,
+    penalty_ms integer,
+    fastest_lap boolean DEFAULT false NOT NULL,
+    places_gained integer,
+    CONSTRAINT results_best_lap_ms_check CHECK (((best_lap_ms IS NULL) OR (best_lap_ms > 0))),
+    CONSTRAINT results_laps_completed_check CHECK (((laps_completed IS NULL) OR (laps_completed >= 0))),
+    CONSTRAINT results_penalty_ms_check CHECK (((penalty_ms IS NULL) OR (penalty_ms >= 0))),
+    CONSTRAINT results_position_check CHECK ((("position" IS NULL) OR ("position" > 0))),
+    CONSTRAINT results_race_time_ms_check CHECK (((race_time_ms IS NULL) OR (race_time_ms >= 0))),
+    CONSTRAINT results_status_check CHECK ((status = ANY (ARRAY['finished'::text, 'dnf'::text, 'dns'::text, 'dsq'::text, 'other'::text]))),
+    CONSTRAINT results_total_time_ms_check CHECK (((total_time_ms IS NULL) OR (total_time_ms >= 0)))
+);
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_race_id_driver_id_key UNIQUE (race_id, driver_id);
+CREATE INDEX results_race_idx ON public.results USING btree (race_id);
+CREATE TRIGGER results_audit_trg AFTER INSERT OR DELETE OR UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.audit_results();
+CREATE TRIGGER results_guard_league BEFORE INSERT OR UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.guard_result_league();
+CREATE TRIGGER results_set_updated_at BEFORE UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.results ENABLE ROW LEVEL SECURITY;
+CREATE POLICY results_admin_all ON public.results TO authenticated USING (public.can_admin_race(race_id)) WITH CHECK (public.can_admin_race(race_id));
+
+-- results_audit
+CREATE TABLE public.results_audit (
+    id bigint NOT NULL,
+    result_id uuid NOT NULL,
+    action text NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    changed_by uuid,
+    before_row jsonb,
+    after_row jsonb,
+    league_id uuid
+);
+ALTER TABLE public.results_audit ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.results_audit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+ALTER TABLE ONLY public.results_audit
+    ADD CONSTRAINT results_audit_pkey PRIMARY KEY (id);
+ALTER TABLE public.results_audit ENABLE ROW LEVEL SECURITY;
+CREATE POLICY results_audit_admin_read ON public.results_audit FOR SELECT TO authenticated USING (((league_id IS NOT NULL) AND public.can_admin_league(league_id)));
+
+
+-- CARS AND TRACKS (reference data, admin only)
+
+-- cars
+CREATE TABLE public.cars (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    ordinal integer NOT NULL,
+    make text NOT NULL,
+    model text NOT NULL,
+    year integer NOT NULL,
+    nickname text,
+    division text NOT NULL,
+    country text,
+    pi integer NOT NULL,
+    speed numeric,
+    braking numeric,
+    handling numeric,
+    acceleration numeric,
+    power_kw numeric,
+    power_ps numeric,
+    power_hp numeric,
+    mass_kg numeric,
+    mass_lb numeric,
+    torque_nm numeric,
+    torque_ftlb numeric,
+    drivetrain text,
+    engine_position text,
+    displacement_l numeric,
+    engine_layout text,
+    cylinders integer,
+    induction text,
+    model_type text,
+    steering_position text,
+    verified boolean DEFAULT false NOT NULL,
+    verified_at timestamp with time zone,
+    imported_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cars_drivetrain_check CHECK ((drivetrain = ANY (ARRAY['RWD'::text, 'AWD'::text, 'FWD'::text]))),
+    CONSTRAINT cars_pi_check CHECK ((pi > 0))
+);
+ALTER TABLE ONLY public.cars
+    ADD CONSTRAINT cars_ordinal_key UNIQUE (ordinal);
+ALTER TABLE ONLY public.cars
+    ADD CONSTRAINT cars_pkey PRIMARY KEY (id);
+CREATE INDEX cars_division_idx ON public.cars USING btree (division);
+CREATE INDEX cars_make_idx ON public.cars USING btree (make);
+CREATE TRIGGER cars_set_updated_at BEFORE UPDATE ON public.cars FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.cars ENABLE ROW LEVEL SECURITY;
+CREATE POLICY cars_admin_read ON public.cars FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY cars_owner_write ON public.cars TO authenticated USING (public.is_owner()) WITH CHECK (public.is_owner());
+
+-- track_venues
+CREATE TABLE public.track_venues (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    location text,
+    country text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    kind text,
+    based_on text,
+    opened_year integer,
+    history text,
+    source_url text,
+    direction text,
+    corners integer,
+    corners_layout text,
+    length_note text,
+    elevation_note text,
+    facts text[],
+    surface text,
+    surface_note text,
+    circuit_type text,
+    type_note text,
+    CONSTRAINT track_venues_circuit_type_check CHECK (((circuit_type IS NULL) OR (circuit_type = ANY (ARRAY['purpose-built'::text, 'public-road'::text, 'airfield'::text, 'oval'::text])))),
+    CONSTRAINT track_venues_corners_check CHECK (((corners IS NULL) OR (corners > 0))),
+    CONSTRAINT track_venues_kind_check CHECK (((kind IS NULL) OR (kind = ANY (ARRAY['real'::text, 'fictional'::text])))),
+    CONSTRAINT track_venues_opened_year_check CHECK (((opened_year IS NULL) OR ((opened_year >= 1800) AND (opened_year <= 2100))))
+);
+ALTER TABLE ONLY public.track_venues
+    ADD CONSTRAINT track_venues_name_key UNIQUE (name);
+ALTER TABLE ONLY public.track_venues
+    ADD CONSTRAINT track_venues_pkey PRIMARY KEY (id);
+ALTER TABLE public.track_venues ENABLE ROW LEVEL SECURITY;
+CREATE POLICY track_venues_admin_read ON public.track_venues FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY track_venues_owner_write ON public.track_venues TO authenticated USING (public.is_owner()) WITH CHECK (public.is_owner());
+
+-- track_layouts
+CREATE TABLE public.track_layouts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    venue_id uuid NOT NULL,
+    name text NOT NULL,
+    length_km numeric NOT NULL,
+    length_mi numeric GENERATED ALWAYS AS (round((length_km / 1.609344), 3)) STORED,
+    is_reverse boolean NOT NULL,
+    imported_ordinal integer,
+    verified boolean DEFAULT false NOT NULL,
+    verified_at timestamp with time zone,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT track_layouts_length_km_check CHECK ((length_km > (0)::numeric))
+);
+ALTER TABLE ONLY public.track_layouts
+    ADD CONSTRAINT track_layouts_imported_ordinal_key UNIQUE (imported_ordinal);
+ALTER TABLE ONLY public.track_layouts
+    ADD CONSTRAINT track_layouts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.track_layouts
+    ADD CONSTRAINT track_layouts_venue_id_name_key UNIQUE (venue_id, name);
+CREATE TRIGGER track_layouts_set_updated_at BEFORE UPDATE ON public.track_layouts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+ALTER TABLE public.track_layouts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY track_layouts_admin_read ON public.track_layouts FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY track_layouts_owner_write ON public.track_layouts TO authenticated USING (public.is_owner()) WITH CHECK (public.is_owner());
+
+
+-- BUILDS, FAVOURITES AND DIVISIONS
+
+-- build_sheets
+CREATE TABLE public.build_sheets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    league_id uuid NOT NULL,
+    car_id uuid,
+    name text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    class_letter text,
+    pi integer,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    published boolean DEFAULT true NOT NULL,
+    CONSTRAINT build_sheets_class_letter_check CHECK (((class_letter IS NULL) OR (class_letter ~ '^[A-Z]$'::text))),
+    CONSTRAINT build_sheets_name_check CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT build_sheets_pi_check CHECK (((pi IS NULL) OR ((pi >= 0) AND (pi <= 999)))),
+    CONSTRAINT build_sheets_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'completed'::text])))
+);
+ALTER TABLE ONLY public.build_sheets
+    ADD CONSTRAINT build_sheets_pkey PRIMARY KEY (id);
+CREATE INDEX build_sheets_car_idx ON public.build_sheets USING btree (car_id);
+CREATE INDEX build_sheets_league_idx ON public.build_sheets USING btree (league_id);
+CREATE UNIQUE INDEX build_sheets_league_name_uq ON public.build_sheets USING btree (league_id, lower(name));
+CREATE TRIGGER build_sheets_public BEFORE INSERT OR UPDATE ON public.build_sheets FOR EACH ROW EXECUTE FUNCTION public.build_sheets_always_public();
+CREATE TRIGGER build_sheets_touch BEFORE UPDATE ON public.build_sheets FOR EACH ROW EXECUTE FUNCTION public.touch_build_sheet();
+ALTER TABLE public.build_sheets ENABLE ROW LEVEL SECURITY;
+CREATE POLICY build_sheets_admin_all ON public.build_sheets TO authenticated USING (public.can_admin_league(league_id)) WITH CHECK (public.can_admin_league(league_id));
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.build_sheets TO authenticated;
+
+-- league_favourites
+CREATE TABLE public.league_favourites (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    league_id uuid NOT NULL,
+    car_id uuid,
+    build_id uuid,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT league_favourites_check CHECK (((car_id IS NOT NULL) <> (build_id IS NOT NULL)))
+);
+ALTER TABLE ONLY public.league_favourites
+    ADD CONSTRAINT league_favourites_pkey PRIMARY KEY (id);
+CREATE UNIQUE INDEX league_favourites_build_uq ON public.league_favourites USING btree (league_id, build_id) WHERE (build_id IS NOT NULL);
+CREATE UNIQUE INDEX league_favourites_car_uq ON public.league_favourites USING btree (league_id, car_id) WHERE (car_id IS NOT NULL);
+CREATE TRIGGER league_favourites_guard BEFORE INSERT OR UPDATE ON public.league_favourites FOR EACH ROW EXECUTE FUNCTION public.guard_build_league();
+ALTER TABLE public.league_favourites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY league_favourites_admin_all ON public.league_favourites TO authenticated USING (public.can_admin_league(league_id)) WITH CHECK (public.can_admin_league(league_id));
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.league_favourites TO authenticated;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+-- divisions
+CREATE TABLE public.divisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    league_id uuid NOT NULL,
+    name text NOT NULL,
+    pi_limit text,
+    min_weight_lb integer,
+    other_rules text,
+    parts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT divisions_min_weight_lb_check CHECK (((min_weight_lb IS NULL) OR (min_weight_lb > 0))),
+    CONSTRAINT divisions_name_check CHECK ((length(btrim(name)) > 0)),
+    CONSTRAINT divisions_pi_limit_check CHECK (((pi_limit IS NULL) OR (length(btrim(pi_limit)) > 0)))
+);
+ALTER TABLE ONLY public.divisions
+    ADD CONSTRAINT divisions_pkey PRIMARY KEY (id);
+CREATE INDEX divisions_league_idx ON public.divisions USING btree (league_id);
+CREATE UNIQUE INDEX divisions_league_name_uq ON public.divisions USING btree (league_id, lower(name));
+CREATE TRIGGER divisions_touch BEFORE UPDATE ON public.divisions FOR EACH ROW EXECUTE FUNCTION public.touch_division();
+ALTER TABLE public.divisions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY divisions_admin_all ON public.divisions TO authenticated USING (public.can_admin_league(league_id)) WITH CHECK (public.can_admin_league(league_id));
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.divisions TO authenticated;
+
+-- division_cars
+CREATE TABLE public.division_cars (
+    division_id uuid NOT NULL,
+    car_id uuid NOT NULL
+);
+ALTER TABLE ONLY public.division_cars
+    ADD CONSTRAINT division_cars_pkey PRIMARY KEY (division_id, car_id);
+CREATE INDEX division_cars_car_idx ON public.division_cars USING btree (car_id);
+ALTER TABLE public.division_cars ENABLE ROW LEVEL SECURITY;
+CREATE POLICY division_cars_admin_all ON public.division_cars TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.divisions d
+  WHERE ((d.id = division_cars.division_id) AND public.can_admin_league(d.league_id))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.divisions d
+  WHERE ((d.id = division_cars.division_id) AND public.can_admin_league(d.league_id)))));
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.division_cars TO authenticated;
+
+-- championship_cars
+CREATE TABLE public.championship_cars (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    championship_id uuid NOT NULL,
+    car_id uuid,
+    build_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    division_id uuid,
+    CONSTRAINT championship_cars_one_kind CHECK ((((((car_id IS NOT NULL))::integer + ((build_id IS NOT NULL))::integer) + ((division_id IS NOT NULL))::integer) = 1))
+);
+ALTER TABLE ONLY public.championship_cars
+    ADD CONSTRAINT championship_cars_pkey PRIMARY KEY (id);
+CREATE UNIQUE INDEX championship_cars_build_uq ON public.championship_cars USING btree (championship_id, build_id) WHERE (build_id IS NOT NULL);
+CREATE UNIQUE INDEX championship_cars_car_uq ON public.championship_cars USING btree (championship_id, car_id) WHERE (car_id IS NOT NULL);
+CREATE INDEX championship_cars_champ_idx ON public.championship_cars USING btree (championship_id);
+CREATE UNIQUE INDEX championship_cars_division_uq ON public.championship_cars USING btree (championship_id, division_id) WHERE (division_id IS NOT NULL);
+CREATE TRIGGER championship_cars_guard BEFORE INSERT OR UPDATE ON public.championship_cars FOR EACH ROW EXECUTE FUNCTION public.guard_build_league();
+ALTER TABLE public.championship_cars ENABLE ROW LEVEL SECURITY;
+CREATE POLICY championship_cars_admin_all ON public.championship_cars TO authenticated USING (public.can_admin_champ(championship_id)) WITH CHECK (public.can_admin_champ(championship_id));
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.championship_cars TO authenticated;
+
+
+-- ---------------------------------------------------------------------------
+-- RELATIONSHIPS (foreign keys)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE ONLY public.admins
+    ADD CONSTRAINT admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.build_sheets
+    ADD CONSTRAINT build_sheets_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.build_sheets
+    ADD CONSTRAINT build_sheets_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.championship_cars
+    ADD CONSTRAINT championship_cars_build_id_fkey FOREIGN KEY (build_id) REFERENCES public.build_sheets(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.championship_cars
+    ADD CONSTRAINT championship_cars_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.championship_cars
+    ADD CONSTRAINT championship_cars_championship_id_fkey FOREIGN KEY (championship_id) REFERENCES public.championships(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.championship_cars
+    ADD CONSTRAINT championship_cars_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.championships
+    ADD CONSTRAINT championships_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.championships
+    ADD CONSTRAINT championships_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.division_cars
+    ADD CONSTRAINT division_cars_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.division_cars
+    ADD CONSTRAINT division_cars_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.divisions
+    ADD CONSTRAINT divisions_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.drivers
+    ADD CONSTRAINT drivers_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.event_series
+    ADD CONSTRAINT event_series_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.seasons(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.seasons(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_series_id_fkey FOREIGN KEY (series_id) REFERENCES public.event_series(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_track_layout_id_fkey FOREIGN KEY (track_layout_id) REFERENCES public.track_layouts(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.league_admins
+    ADD CONSTRAINT league_admins_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.league_admins
+    ADD CONSTRAINT league_admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.league_favourites
+    ADD CONSTRAINT league_favourites_build_id_fkey FOREIGN KEY (build_id) REFERENCES public.build_sheets(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.league_favourites
+    ADD CONSTRAINT league_favourites_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.league_favourites
+    ADD CONSTRAINT league_favourites_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.points_bonuses
+    ADD CONSTRAINT points_bonuses_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.points_status_rules
+    ADD CONSTRAINT points_status_rules_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.points_systems
+    ADD CONSTRAINT points_systems_championship_id_fkey FOREIGN KEY (championship_id) REFERENCES public.championships(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.points_systems
+    ADD CONSTRAINT points_systems_copied_from_fkey FOREIGN KEY (copied_from) REFERENCES public.points_systems(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.points_systems
+    ADD CONSTRAINT points_systems_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.points_table_entries
+    ADD CONSTRAINT points_table_entries_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.race_templates
+    ADD CONSTRAINT race_templates_championship_id_fkey FOREIGN KEY (championship_id) REFERENCES public.championships(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.race_templates
+    ADD CONSTRAINT race_templates_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.races
+    ADD CONSTRAINT races_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.races
+    ADD CONSTRAINT races_points_system_id_fkey FOREIGN KEY (points_system_id) REFERENCES public.points_systems(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.drivers(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_race_id_fkey FOREIGN KEY (race_id) REFERENCES public.races(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.results
+    ADD CONSTRAINT results_scored_with_system_id_fkey FOREIGN KEY (scored_with_system_id) REFERENCES public.points_systems(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.seasons
+    ADD CONSTRAINT seasons_championship_id_fkey FOREIGN KEY (championship_id) REFERENCES public.championships(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.track_layouts
+    ADD CONSTRAINT track_layouts_venue_id_fkey FOREIGN KEY (venue_id) REFERENCES public.track_venues(id) ON DELETE CASCADE;
