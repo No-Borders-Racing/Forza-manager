@@ -317,8 +317,8 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   // Share: one button near the top. Phones and Windows get the system share sheet; otherwise a small menu of sites.
   function shareUrl() { return PUB ? location.href.split("#")[0] : pubState.url; }
   function shareTitle() { var h = document.querySelector(".head h2"); return (h ? h.textContent : "Forza build") + " | Forza build sheet"; }
-  function drawPub() {
-    document.querySelectorAll("[data-pubbox]").forEach(function (x) {
+  function drawPub(root) {
+    (root || document).querySelectorAll("[data-pubbox]").forEach(function (x) {
       var u = shareUrl();
       x.innerHTML = '<div class="row2" style="margin:8px 0 4px;align-items:center"><button class="btn primary" type="button" data-share' + (u ? "" : " disabled") + '>Share</button><span class="sub" data-sharemsg>' + (u ? "" : "Save the build to get its share link.") + '</span></div><div class="row2" data-sharemenu hidden style="gap:6px;flex-wrap:wrap"></div>';
     });
@@ -467,7 +467,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var k = c.querySelector("[data-cls]"); if (k) k.textContent = badge(b);
       var q = c.querySelector("[data-ratio]"); if (q) q.textContent = ratioTxt(b);
     }
-    function draw() { c.innerHTML = PUB && b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-delbar]").forEach(function (x) { x.remove(); }); var hd = c.querySelector(".head"); if (hd) { hd.insertAdjacentHTML("afterend", "<div data-pubbox></div>"); drawPub(); } }
+    function draw() { c.innerHTML = PUB && b.done ? viewHtml() : editHtml(); upd(); if (PUB) c.querySelectorAll("[data-reopen],[data-viewrow],[data-delbar]").forEach(function (x) { x.remove(); }); var hd = c.querySelector(".head"); if (hd) { hd.insertAdjacentHTML("afterend", "<div data-pubbox></div>"); drawPub(c); } }
     c.addEventListener("input", function (e) {
       var t = e.target;
       if (t.dataset.g) {
@@ -610,4 +610,4 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     }); });
   } else send({ fcm: "ready" });
 })();
-</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113h</div></body></html>
+</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261113i</div></body></html>
