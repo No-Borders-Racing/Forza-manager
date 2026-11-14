@@ -213,7 +213,8 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   var ORDER = ["Fuel and Air", "Engine", "Platform and Handling", "Tires", "Wheels", "Drivetrain", "Aero and Appearance", "Conversion"];
   var NO_ADD = ["Engine", "Platform and Handling", "Tires", "Drivetrain"]; // categories with no "Add part" box
   var ADD_HINT = { "Fuel and Air": "Eg Turbo", "Conversion": "Eg Bodykit" };
-  var ONLY_TIERS = { "Front Tire Width": ["Stock", "Upgraded"], "Rear Tire Width": ["Stock", "Upgraded"] };
+  // The restrictor plate is Restricted, Stock or Increased airflow (Stock by default); "Set all to" only touches it when the choice is Stock.
+  var ONLY_TIERS = { "Front Tire Width": ["Stock", "Upgraded"], "Rear Tire Width": ["Stock", "Upgraded"], "Restrictor Plate": ["Restricted", "Stock", "Increased"] };
   var WEIGHTS = ["Extra light", "Light", "Medium", "Heavy", "Extra heavy"];
   function isBallast(p) { return p.group === "Platform and Handling" && p.name === "Ballast"; }
   // Tiers each part can take: Ballast is Stock/Installed, tire widths and Conversion parts are Stock/Upgraded.
@@ -263,6 +264,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       var a = allowed(p);
       if (a.indexOf("") >= 0 || a.indexOf(p.tier) >= 0) return;
       if (isBallast(p)) { var hv = WEIGHTS.indexOf(p.detail) >= 0; p.tier = hv || (p.tier && p.tier !== "Stock") ? "Installed" : "Stock"; if (!hv) p.detail = ""; }
+      else if (p.name === "Restrictor Plate") p.tier = "Stock";
       else p.tier = (p.tier && p.tier !== "Stock") || (p.detail) ? "Upgraded" : "Stock";
     });
   }
@@ -607,4 +609,4 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     }); });
   } else send({ fcm: "ready" });
 })();
-</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261114c</div></body></html>
+</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261114d</div></body></html>
