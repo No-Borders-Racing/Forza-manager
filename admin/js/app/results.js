@@ -142,13 +142,31 @@ function refreshGrid() {
     tr.querySelector("[data-pts]").textContent = x.points == null ? "" : x.points + (x.res.fastestLap && state.rr.sys && state.rr.sys.fastestLap ? " (FL)" : "");
     var m = !r.driver.trim() ? "" : driverByName(r.driver) ? "" : "new driver";
     tr.querySelector("[data-new]").textContent = m;
+    sameBox(tr.querySelector("[data-same]"), m ? r.driver.trim() : "");
+  });
+}
+// On a "new driver" row: pick who they used to be. The existing driver is renamed to the new name (their old name is kept as another
+// name), so every earlier result stays with them and this row lands on the same person.
+function sameBox(box, name) {
+  if ((box.dataset.for || "") === name) return;
+  box.dataset.for = name;
+  if (!name) { box.innerHTML = ""; return; }
+  box.innerHTML = '<select aria-label="Same person as an existing driver" title="Changed their name? Pick their old name" style="max-width:100px;width:100px"><option value="">Renamed?</option>' + state.drivers.map(function (d) { return '<option value="' + esc(d.id) + '">was ' + esc(d.display_name) + "</option>"; }).join("") + "</select>";
+  box.firstChild.addEventListener("change", function () {
+    var id = this.value, d = state.drivers.filter(function (x) { return x.id === id; })[0], sel = this; if (!d) return;
+    if (!window.confirm('Rename "' + d.display_name + '" to "' + name + '"?\n\nAll of ' + d.display_name + '\'s past results stay with them, and "' + d.display_name + '" is kept as another name. This is saved straight away.')) { sel.value = ""; return; }
+    sel.disabled = true;
+    renameDriver(d, name).then(function (r) {
+      if (r.error) { sel.disabled = false; sel.value = ""; msg($("#rm"), dbError(r.error), "err"); return; }
+      syncRows(); drawRace(); msg($("#rm"), '"' + r.old + '" is now "' + name + '". Their old results are kept.', "ok");
+    });
   });
 }
 function drawRace() {
   var rr = state.rr, race = rr.race, ev = state.sel.events.filter(function (e) { return e.id === race.event_id; })[0];
   var rowsH = rr.rows.map(function (r, i) {
     return '<tr data-ri="' + i + '"><td data-pos style="text-align:center"></td>' +
-      '<td><div style="display:flex;align-items:center;gap:3px;flex-wrap:nowrap"><input data-f="driver" list="dl" value="' + esc(r.driver) + '" placeholder="Type or pick" autocomplete="off" style="min-width:150px;flex:1 1 auto"><select data-pick aria-label="Pick a driver" title="Pick a driver" style="width:34px;flex:0 0 34px"><option value="">▾</option>' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">' + esc(d.display_name) + "</option>"; }).join("") + '</select><span class="pill" data-new style="margin-left:4px"></span></div></td>' +
+      '<td><div style="display:flex;align-items:center;gap:3px;flex-wrap:nowrap"><input data-f="driver" list="dl" value="' + esc(r.driver) + '" placeholder="Type or pick" autocomplete="off" style="min-width:150px;flex:1 1 auto"><select data-pick aria-label="Pick a driver" title="Pick a driver" style="width:34px;flex:0 0 34px"><option value="">▾</option>' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">' + esc(d.display_name) + "</option>"; }).join("") + '</select><span class="pill" data-new style="margin-left:4px"></span><span data-same style="margin-left:4px"></span></div></td>' +
       '<td><select data-f="status">' + STATUSES.map(function (s) { return '<option value="' + s[0] + '"' + (r.status === s[0] ? " selected" : "") + ">" + s[1] + "</option>"; }).join("") + "</select>" + (r.ranked ? ' <span class="pill">ranked</span>' : "") + "</td>" +
       '<td><input data-f="best" value="' + esc(r.best) + '" placeholder="00:39.328" style="width:92px"></td>' +
       '<td><input data-f="raceT" value="' + esc(r.raceT) + '" placeholder="22:14.742" style="width:104px"></td>' +
@@ -166,9 +184,9 @@ function drawRace() {
     '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
     (rr.sys ? "" : '<div class="row" id="rpsys" style="margin:0 0 10px;align-items:flex-end"><div class="field grow"><label for="rpsel">Points system for this race only</label><select id="rpsel"><option value="">Loading…</option></select></div><button type="button" id="rpuse" disabled>Use for this race</button><span class="msg" id="rpm" role="status"></span></div>') +
     '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
-    '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. Nothing is saved until you press Save results.</span></div>' +
+    '<div class="row" style="margin:0 0 10px;align-items:center"><button type="button" id="rimg">Read from a screenshot or photo</button><input type="file" id="rimgf" accept="image/*" multiple hidden><span class="muted" id="rimgm" role="status">Fills the rows below from the game\'s results screen. If the grid needs two photos, choose both at once, top of the grid first. Nothing is saved until you press Save results.</span></div>' +
     '<div id="rprog" class="card" hidden style="margin:0 0 10px" role="status" aria-live="polite"></div>' +
-    (rr.shot ? '<details open style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">The image you read from</summary><img src="' + rr.shot + '" alt="Results screenshot" style="max-width:100%;max-height:340px;margin-top:6px;border:1px solid var(--line);border-radius:4px"></details>' : "") +
+    (rr.shot && rr.shot.length ? '<details open style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">The image' + (rr.shot.length > 1 ? "s" : "") + ' you read from</summary>' + rr.shot.map(function (u, i) { return '<img src="' + u + '" alt="Results screenshot ' + (i + 1) + '" style="max-width:100%;max-height:340px;margin-top:6px;margin-right:6px;border:1px solid var(--line);border-radius:4px">'; }).join("") + '</details>' : "") +
     '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr><th>Pos</th><th style="text-align:left">Driver</th><th>Status</th><th>Best lap</th><th>Race time</th><th>Pen. (s)</th><th>Total</th>' + (placesOn() ? '<th title="Places gained (+) or lost (-) as shown next to the position">Places +/−</th>' : "") + '<th>Points</th><th></th></tr></thead><tbody>' + rowsH + "</tbody></table></div>" +
     '<datalist id="dl">' + state.drivers.map(function (d) { return '<option value="' + esc(d.display_name) + '">'; }).join("") + "</datalist>" +
     '<div class="row" style="margin-top:8px"><button type="button" id="radd">Add a row</button><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rdbl"' + (rr.dbl ? " checked" : "") + '> Double points for this race</label></div>' +
@@ -196,7 +214,7 @@ function drawRace() {
   $("#rreset").addEventListener("click", function () {
     syncRows();
     var any = state.rr.rows.some(function (r) { return r.driver.trim() || r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || (r.places || "").trim() || r.status !== "finished"; });
-    if (!any && !rr.shot) { msg($("#rm"), "The form is already empty.", ""); return; }
+    if (!any && !(rr.shot && rr.shot.length)) { msg($("#rm"), "The form is already empty.", ""); return; }
     if (!window.confirm("Clear the whole form? Every driver, time and the image are removed. Saved results are only deleted when you then press Save results with the form empty.")) return;
     state.rr.rows = []; for (var i = 0; i < 6; i++) state.rr.rows.push(blankRow());
     state.rr.copied = 0; state.rr.shot = null; state.rr.dbl = !!race.double_points; state.rr.dirty = false;
@@ -204,7 +222,7 @@ function drawRace() {
   });
   if (!rr.sys) loadRacePoints();
   $("#rimg").addEventListener("click", function () { $("#rimgf").click(); });
-  $("#rimgf").addEventListener("change", function () { var f = this.files && this.files[0]; this.value = ""; if (f) readResultsImage(f); });
+  $("#rimgf").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files || [], 0, 4); this.value = ""; if (fs.length) readResultsImages(fs); });
   refreshGrid();
 }
 function arrangeGrid() {
@@ -360,45 +378,58 @@ function stopReading(job) {
   window.removeEventListener("beforeunload", beforeLeave); document.removeEventListener("click", readingGuard, true);
   var box = $("#rprog"); if (box) { box.hidden = true; box.innerHTML = ""; } var b = $("#rimg"); if (b) b.disabled = false;
 }
-function readResultsImage(file) {
-  var rr = state.rr, m = $("#rimgm"), btn = $("#rimg");
-  if (!/^image\//.test(file.type || "")) { msg(m, "Choose an image file.", "err"); return; }
+// Turns a failed read-results call into an Error with the server's own message.
+function readError(err) {
+  if (err.context && typeof err.context.text === "function") {
+    var st = err.context.status;
+    return err.context.text().then(function (t) {
+      var j = null; try { j = JSON.parse(t); } catch (e) {}
+      var m2 = j && (j.error || j.message) ? (j.error || j.message) : String(t || "").slice(0, 200);
+      throw new Error((m2 || err.message) + (st ? " (status " + st + ")" : ""));
+    }, function () { throw new Error(err.message + (st ? " (status " + st + ")" : "")); });
+  }
+  throw new Error(err.message);
+}
+// Reads one or more screenshots in the order given (a grid that does not fit on one screen is two photos: top first). A driver
+// seen in more than one photo is kept once, from the first photo that showed them.
+function readResultsImages(files) {
+  var rr = state.rr, m = $("#rimgm"), btn = $("#rimg"), n = files.length;
+  if (!n || files.some(function (f) { return !/^image\//.test(f.type || ""); })) { msg(m, "Choose image files.", "err"); return; }
   syncRows();
   // Names copied in from the previous race are only placeholders; ask only when real results (times, penalties or a status) have been typed.
   var filled = rr.rows.filter(function (r) { return r.driver.trim() && (r.best.trim() || r.raceT.trim() || r.total.trim() || r.pen.trim() || r.status !== "finished"); }).length;
   if (filled && !window.confirm("This replaces the " + filled + " row" + (filled === 1 ? "" : "s") + " already typed. Continue?")) return;
   btn.disabled = true; msg(m, "");
-  var job = startReading();
-  shrinkImage(file).then(function (img) {
-    if (reading !== job) throw new Error("cancelled");
-    job.setStep("Reading the results");
-    return sb.functions.invoke("read-results", { body: { league_id: state.league.id, image: img.data, mime: img.mime, drivers: state.drivers.map(function (d) { return d.display_name; }) } })
-      .then(function (r) { return { r: r, img: img }; });
-  }).then(function (x) {
-    if (reading !== job) throw new Error("cancelled");
-    job.setStep("Filling in the rows");
-    var r = x.r, err = r.error, data = r.data;
-    if (err) {
-      if (err.context && typeof err.context.text === "function") {
-        var st = err.context.status;
-        return err.context.text().then(function (t) {
-          var j = null; try { j = JSON.parse(t); } catch (e) {}
-          var m2 = j && (j.error || j.message) ? (j.error || j.message) : String(t || "").slice(0, 200);
-          throw new Error((m2 || err.message) + (st ? " (status " + st + ")" : ""));
-        }, function () { throw new Error(err.message + (st ? " (status " + st + ")" : "")); });
-      }
-      throw new Error(err.message);
-    }
-    if (!data || data.error) throw new Error(data && data.error ? data.error : "No answer came back.");
-    var rows = (data.rows || []).map(function (o) {
-      return { driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "", places: typeof o.places_gained === "number" && isFinite(o.places_gained) ? String(Math.round(o.places_gained)) : "" };
+  var job = startReading(), all = [], seen = {}, shots = [], dup = 0, ms = 0, flags = { provisional: false, unreadable: [], trail: [], model: "" };
+  function one(i) {
+    var tag = n > 1 ? " (image " + (i + 1) + " of " + n + ")" : "";
+    job.setStep("Preparing the image" + tag);
+    return shrinkImage(files[i]).then(function (img) {
+      if (reading !== job) throw new Error("cancelled");
+      job.setStep("Reading the results" + tag); shots.push(img.preview);
+      return sb.functions.invoke("read-results", { body: { league_id: state.league.id, image: img.data, mime: img.mime, drivers: state.drivers.map(function (d) { return d.display_name; }) } });
+    }).then(function (r) {
+      if (reading !== job) throw new Error("cancelled");
+      if (r.error) return readError(r.error);
+      var data = r.data; if (!data || data.error) throw new Error(data && data.error ? data.error : "No answer came back.");
+      var got = data.rows || [];
+      if (!got.length) throw new Error("No results were found in " + (n > 1 ? "image " + (i + 1) : "that image") + "." + (data.unreadable ? " " + data.unreadable : ""));
+      got.forEach(function (o) {
+        var k = normName(o.driver); if (k && seen[k]) { dup++; return; } if (k) seen[k] = 1;
+        all.push({ driver: matchDriverName(o.driver), status: o.status || "finished", ranked: false, best: o.best_lap || "", raceT: o.race_time || "", pen: o.penalty_seconds ? String(o.penalty_seconds) : "", total: o.total_time || "", places: typeof o.places_gained === "number" && isFinite(o.places_gained) ? String(Math.round(o.places_gained)) : "" });
+      });
+      ms += data.ms || 0; if (data.provisional) flags.provisional = true; if (data.unreadable) flags.unreadable.push(data.unreadable);
+      if (data.trail && data.trail.length) { flags.trail.push(data.trail.join(", ")); flags.model = data.model || flags.model; }
+      if (i + 1 < n) return one(i + 1);
     });
-    if (!rows.length) throw new Error("No results were found in that image." + (data.unreadable ? " " + data.unreadable : ""));
+  }
+  one(0).then(function () {
+    job.setStep("Filling in the rows");
     stopReading(job);
-    rr.rows = rows; rr.copied = 0; rr.dirty = true; rr.shot = x.img.preview;
-    var unknown = rows.filter(function (r) { return !driverByName(r.driver); }).length;
+    rr.rows = all; rr.copied = 0; rr.dirty = true; rr.shot = shots;
+    var unknown = all.filter(function (r) { return !driverByName(r.driver); }).length;
     drawRace();
-    msg($("#rimgm"), "Read " + rows.length + " row" + (rows.length === 1 ? "" : "s") + (data.ms ? " in " + Math.round(data.ms / 1000) + " s" : "") + ". Check every row against the image" + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (data.provisional ? " WARNING: this screen says the race is still in progress, so these may not be the final positions. Read it again once the race has ended." : "") + (data.unreadable ? " The reader said: " + data.unreadable : "") + (data.trail && data.trail.length ? " [" + (data.model || "") + ": " + data.trail.join(", ") + "]" : ""), data.provisional ? "err" : "ok");
+    msg($("#rimgm"), "Read " + all.length + " row" + (all.length === 1 ? "" : "s") + (n > 1 ? " from " + n + " images" + (dup ? " (" + dup + " repeated row" + (dup === 1 ? "" : "s") + " skipped)" : "") : "") + (ms ? " in " + Math.round(ms / 1000) + " s" : "") + ". Check every row against the image" + (n > 1 ? "s, and that they follow the order of the photos" : "") + (unknown ? " (" + unknown + " driver" + (unknown === 1 ? " is" : "s are") + " not in the league yet, marked new driver)" : "") + ", then press Arrange final grid and Save results." + (flags.provisional ? " WARNING: a screen says the race is still in progress, so these may not be the final positions. Read it again once the race has ended." : "") + (flags.unreadable.length ? " The reader said: " + flags.unreadable.join(" ") : "") + (flags.trail.length ? " [" + (flags.model || "") + ": " + flags.trail.join("; ") + "]" : ""), flags.provisional ? "err" : "ok");
   }).catch(function (e) {
     if (reading !== job && String(e && e.message) === "cancelled") return;
     stopReading(job);

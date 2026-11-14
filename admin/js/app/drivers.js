@@ -12,6 +12,14 @@ function driverByName(name) {
   var n = (name || "").trim().toLowerCase(); if (!n) return null;
   return state.drivers.filter(function (d) { return d.display_name.toLowerCase() === n || (d.aliases || []).some(function (a) { return a.toLowerCase() === n; }); })[0] || null;
 }
+// Renames a driver; the old name is kept as another name. Resolves { error } or { old }.
+function renameDriver(d, name) {
+  var old = d.display_name, al = (d.aliases || []).filter(function (a) { return a.toLowerCase() !== name.toLowerCase() && a.toLowerCase() !== old.toLowerCase(); }).concat([old]);
+  return sb.from("drivers").update({ display_name: name, aliases: al }).eq("id", d.id).then(function (r) {
+    if (r.error) return { error: r.error };
+    d.display_name = name; d.aliases = al; return { old: old };
+  });
+}
 function driverName(id) { var d = state.drivers.filter(function (x) { return x.id === id; })[0]; return d ? d.display_name : "?"; }
 function renderDrivers() { loadDrivers(renderDriversBody); }
 function renderDriversBody() {
@@ -27,7 +35,14 @@ function renderDriversBody() {
   app.querySelectorAll("[data-dsave]").forEach(function (b) { b.addEventListener("click", function () {
     var row = b.closest("[data-did]"), name = row.querySelector("[data-dn]").value.trim();
     if (!name) { msg($("#dm"), "A driver needs a name.", "err"); return; }
-    sb.from("drivers").update({ display_name: name, aliases: aliasList(row.querySelector("[data-da]").value) }).eq("id", row.dataset.did).then(function (r) { msg($("#dm"), r.error ? dbError(r.error) : "Saved.", r.error ? "err" : "ok"); });
+    var d = state.drivers.filter(function (x) { return x.id === row.dataset.did; })[0], al = aliasList(row.querySelector("[data-da]").value);
+    var renamed = d && d.display_name !== name;
+    if (renamed) { al = al.filter(function (a) { return a.toLowerCase() !== name.toLowerCase(); }); if (!al.some(function (a) { return a.toLowerCase() === d.display_name.toLowerCase(); })) al.push(d.display_name); }
+    sb.from("drivers").update({ display_name: name, aliases: al }).eq("id", row.dataset.did).then(function (r) {
+      if (r.error) { msg($("#dm"), dbError(r.error), "err"); return; }
+      if (d) { d.display_name = name; d.aliases = al; } row.querySelector("[data-da]").value = al.join(", ");
+      msg($("#dm"), renamed ? "Saved. The old name is kept as another name, so earlier results stay with them." : "Saved.", "ok");
+    });
   }); });
   app.querySelectorAll("[data-ddel]").forEach(function (b) { b.addEventListener("click", function () {
     var row = b.closest("[data-did]"), key = "dd" + row.dataset.did;
