@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261114g&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261115a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -106,6 +106,8 @@
     });
     return h || '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
+  // The championship rules the admin wrote (plain text, line breaks kept, web addresses become links).
+  function rulesHtml(c) { return '<div class="notes" style="white-space:pre-wrap">' + richText(String(c.rules)) + "</div>"; }
   var TABS = [["builds", "Car builds", buildsHtml], ["calendar", "Calendar", calendarHtml], ["results", "Results", resultsHtml], ["standings", "Standings", standingsHtml]];
 
   function showChampionship(c) {
@@ -115,11 +117,12 @@
     head([c.league, c.championship]);
     var sub = document.getElementById("sub");
     if (c.league_published) sub.innerHTML = '<a href="?l=' + encodeURIComponent(c.league_id) + '" style="color:var(--link)">← All ' + esc(c.league) + " championships</a>"; else sub.textContent = "";
-    var want = qs.get("t"), cur = TABS.some(function (t) { return t[0] === want; }) ? want : "calendar";
+    var tabs = (String(c.rules || "").trim() ? [["rules", "Rules", rulesHtml]] : []).concat(TABS);
+    var want = qs.get("t"), cur = tabs.some(function (t) { return t[0] === want; }) ? want : "calendar";
     function draw() {
       out.innerHTML = (c.completed ? '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.</div>' : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
-        '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
-        TABS.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
+        '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
+        tabs.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
         cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });
