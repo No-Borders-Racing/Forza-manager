@@ -75,6 +75,8 @@ function fillCounts() {
   });
 }
 var STATUSES = [["finished", "Finished"], ["dnf", "DNF"], ["dns", "DNS"], ["dsq", "DSQ"]];
+// A bonus round shows its results but gives no championship points.
+function isBonusRace(race) { var e = state.sel.events.filter(function (x) { return x.id === race.event_id; })[0]; return !!(e && e.is_bonus); }
 function renderRaceResults(rid) {
   var S = state.sel, race = S.races.filter(function (r) { return r.id === rid; })[0];
   if (!race) { state.nav = { view: "champ" }; renderCurrent(); return; }
@@ -139,7 +141,7 @@ function refreshGrid() {
   app.querySelectorAll("tr[data-ri]").forEach(function (tr) {
     var i = Number(tr.dataset.ri), x = g[i], r = state.rr.rows[i];
     tr.querySelector("[data-pos]").textContent = x.position != null ? x.position : "–";
-    tr.querySelector("[data-pts]").textContent = x.points == null ? "" : x.points + (x.res.fastestLap && state.rr.sys && state.rr.sys.fastestLap ? " (FL)" : "");
+    tr.querySelector("[data-pts]").textContent = x.points == null || isBonusRace(state.rr.race) ? "" : x.points + (x.res.fastestLap && state.rr.sys && state.rr.sys.fastestLap ? " (FL)" : "");
     var m = !r.driver.trim() ? "" : driverByName(r.driver) ? "" : "new driver";
     tr.querySelector("[data-new]").textContent = m;
     sameBox(tr.querySelector("[data-same]"), m ? r.driver.trim() : "");
@@ -180,7 +182,7 @@ function drawRace() {
   var sibs = state.sel.races.filter(function (r) { return r.event_id === race.event_id; }).sort(function (x, y) { return x.sort_order - y.sort_order; });
   var raceTabs = sibs.length > 1 ? '<div class="row" style="margin:0 0 12px">' + sibs.map(function (r) { return '<button type="button" data-rtab="' + esc(r.id) + '"' + (r.id === race.id ? ' class="primary"' : "") + ">" + esc(r.name || "Race") + "</button>"; }).join("") + "</div>" : "";
   app.innerHTML = champHeadHtml(state.sel.champ, "results") +
-    '<div class="card">' + raceTabs + '<h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' +
+    '<div class="card">' + raceTabs + '<h2>' + esc((ev ? roundLabel(ev) + " · " : "") + (race.name || "Race")) + ' results</h2>' + (ev && ev.is_bonus ? '<p class="muted" style="margin:0 0 8px"><span class="pill">Bonus round</span> Results are kept, but this round gives no championship points.</p>' : "") +
     '<p class="muted" style="margin:0 0 8px">' + (rr.sys ? "Points system: <b>" + esc(rr.sys.name) + "</b>" + (rr.sys.dnfRank ? ". DNFs are ranked after the finishers by best lap." : ". DNFs score by the system\'s DNF rule.") : '<span class="err">No points system is set for this race or the championship, so points are not calculated.</span>') + "</p>" +
     (rr.sys ? "" : '<div class="row" id="rpsys" style="margin:0 0 10px;align-items:flex-end"><div class="field grow"><label for="rpsel">Points system for this race only</label><select id="rpsel"><option value="">Loading…</option></select></div><button type="button" id="rpuse" disabled>Use for this race</button><span class="msg" id="rpm" role="status"></span></div>') +
     '<p class="muted" style="margin:0 0 8px">' + (rr.copied ? rr.copied + " driver" + (rr.copied === 1 ? " is" : "s are") + " filled in from the previous race. Remove anyone who is not racing. " : "") + 'Type the rows as the game shows them, in order. Times look like 22:14.742. Penalties are seconds. Position follows the order of the rows; use the arrows to adjust the final grid.</p>' +
@@ -271,7 +273,7 @@ function saveRace() {
     var out = rows.map(function (r, i) {
       var d = driverByName(r.driver), g = grid[i], p = parsed[i];
       return { race_id: rr.race.id, driver_id: d.id, position: g.position, status: r.status, best_lap_ms: p.best, race_time_ms: p.rt, penalty_ms: p.pen == null ? null : Math.round(p.pen * 1000),
-        total_time_ms: p.tot, fastest_lap: !!g.res.fastestLap, points_awarded: g.points, scored_with_system_id: rr.sys ? rr.sys.id : null, scored_at: rr.sys ? now : null };
+        total_time_ms: p.tot, fastest_lap: !!g.res.fastestLap, points_awarded: isBonusRace(rr.race) ? null : g.points, scored_with_system_id: rr.sys ? rr.sys.id : null, scored_at: rr.sys ? now : null };
     });
     if (placesOn()) out.forEach(function (o, i) { o.places_gained = parsed[i].pl; });
     sb.from("results").delete().eq("race_id", rr.race.id).then(function (x) {

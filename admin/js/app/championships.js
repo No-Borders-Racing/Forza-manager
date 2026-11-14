@@ -4,7 +4,9 @@
 
 /* ---------- championships ---------- */
 function loadChamps() {
-  sb.from("championships").select("id,name").eq("league_id", state.league.id).order("created_at", { ascending: false }).then(function (r) {
+  var q = function (cols) { return sb.from("championships").select(cols).eq("league_id", state.league.id).order("created_at", { ascending: false }); };
+  // completed_at arrives with migration 040; until it has been run, list without it.
+  q("id,name,completed_at").then(function (r) { return r.error && /completed_at/.test(r.error.message || "") ? q("id,name") : r; }).then(function (r) {
     if (r.error) { app.innerHTML = '<div class="card err">' + esc(dbError(r.error)) + "</div>"; return; }
     state.champs = r.data; state.sel = null;
     renderChampList();
@@ -15,7 +17,7 @@ function renderChampList() {
   app.innerHTML = navHtml("c") + '<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">' + esc(lg && lg.name ? lg.name : "League not named yet") + '</h2><span class="muted">League time zone: ' + esc(lg && lg.timezone ? lg.timezone : "not set") + '</span></div><div class="row">' + ((state.leagues || []).length > 1 || state.owner ? '<button type="button" id="switchbtn">Switch league</button>' : "") + '</div></div></div>' +
     '<div class="card"><h2>Championships</h2><div class="list">' +
     (state.champs.length ? state.champs.map(function (c) {
-      return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
+      return '<div style="display:flex;gap:6px;align-items:center"><button type="button" class="item" data-id="' + esc(c.id) + '"><span>' + esc(c.name) + (c.completed_at ? ' <span class="pill">Completed</span>' : "") + '</span></button><button type="button" class="danger" data-ldel="' + esc(c.id) + '">Delete</button></div>';
     }).join("") : '<p class="muted">None yet.</p>') + '</div><div id="ldelbox"></div></div>' +
     '<div class="card"><h3 style="margin-top:0">New championship</h3><div class="row"><div class="field grow"><label for="nn">Name</label><input id="nn" type="text"></div><button class="primary" id="nadd" type="button">Create</button></div><div class="msg" id="nm"></div>' +
     '<p class="muted">It starts as a draft. The time zone is filled in from the league settings, or from this browser if the league has none (you can change it on the championship page); every other setting is blank.</p></div>';
@@ -119,7 +121,7 @@ function champHeadHtml(c, tab) {
   var inSet = tab === "settings";
   var tabs = [["cars", "Cars"], ["points", "Points"], ["seasons", "Calendar"], ["results", "Results"], ["standings", "Standings"]];
   return navHtml("c") +
-    '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + '</h2></div>' +
+    '<div class="card" style="padding-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">' + esc(c.name) + (c.completed_at ? ' <span class="pill">Completed</span>' : "") + '</h2></div>' +
     '<div class="row scrollrow" style="margin-top:10px">' + tabs.map(function (t) { return '<button type="button" data-tab="' + t[0] + '"' + (t[0] === tab ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") +
     '<button type="button" data-tab="settings" style="margin-left:auto"' + (inSet ? ' class="primary"' : "") + ">Championship settings</button></div>" +
     "</div>";
@@ -143,6 +145,10 @@ function renderChamp() {
       '<div class="field" style="margin-top:8px"><label for="cr">Rules</label><textarea id="cr" rows="6" placeholder="Anything racers must follow: penalties, tuning limits, protests, conduct">' + esc(c.rules || "") + "</textarea></div>" +
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
       '<div id="renamebox"></div></div>';
+    h += '<div class="card"><h3 style="margin-top:0">Championship status</h3>' + (c.completed_at
+      ? '<p class="muted" style="margin:0 0 8px">Completed on ' + esc(new Date(c.completed_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })) + '. The public pages show it as completed, list it after the running championships and no longer show its rounds as upcoming. Results and standings stay as they are.</p><button type="button" id="creopen">Reopen championship</button>'
+      : '<p class="muted" style="margin:0 0 8px">Running. When the last round is done, mark it complete: the public pages show it as completed with its final standings. You can reopen it at any time.</p><button type="button" id="ccomplete">Mark championship complete</button>') +
+      '<div class="msg" id="cstm"></div></div>';
     h += pagePublishHtml("c", c);
     h += '<div class="card"><h3 style="margin-top:0">Delete this championship</h3><p class="muted" style="margin:0 0 8px">This permanently deletes the championship with all of its seasons, rounds, races, points systems, classes and race format. It cannot be undone. To confirm, type its name: <b>' + esc(c.name) + '</b></p>' +
       '<div class="row"><div class="field grow"><label for="cdn">Championship name</label><input id="cdn" autocomplete="off"></div><button class="danger" id="cdel" type="button" disabled>Delete championship</button></div><div class="msg" id="cdm"></div></div>';
@@ -187,6 +193,17 @@ function bindAll() {
   on("#newseason", function () { state.nav = { view: "newseason" }; renderCurrent(); });
   on("[data-tab]", function (b) { state.tab = b.dataset.tab; renderChamp(); });
   on("#csave", saveChamp);
+  function setComplete(done) {
+    var c = state.sel.champ;
+    if (done && !window.confirm('Mark "' + c.name + '" complete?\n\nThe public pages will show it as completed. You can reopen it at any time.')) return;
+    sb.from("championships").update({ completed_at: done ? new Date().toISOString() : null }).eq("id", c.id).select("*").single().then(function (r) {
+      if (r.error) { msg($("#cstm"), dbError(r.error) + (/completed_at|schema cache/i.test(r.error.message || "") ? " Has migration 040 been run?" : ""), "err"); return; }
+      state.sel.champ = r.data; state.champs.forEach(function (x) { if (x.id === c.id) x.completed_at = r.data.completed_at; }); renderChamp();
+      msg($("#cstm"), done ? "Marked complete." : "Reopened.", "ok");
+    });
+  }
+  on("#ccomplete", function () { setComplete(true); });
+  on("#creopen", function () { setComplete(false); });
   on("#schsave", saveSchedule);
   on("#newseasonbtn", function () { state.nav = { view: "newseason" }; renderCurrent(); });
   var cs = $("#curseason"); if (cs) cs.addEventListener("change", function () { state.curSeason = cs.value; renderChamp(); });

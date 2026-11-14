@@ -167,6 +167,27 @@ SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
+CREATE OR REPLACE FUNCTION public.event_bonus_clears_points() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin
+  update public.results set points_awarded = null
+   where race_id in (select r.id from public.races r where r.event_id = new.id);
+  return new;
+end $$;
+
+CREATE OR REPLACE FUNCTION public.results_no_bonus_points() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+begin
+  if exists (select 1 from public.races r join public.events e on e.id = r.event_id where r.id = new.race_id and e.is_bonus) then
+    new.points_awarded := null;
+  end if;
+  return new;
+end $$;
+
 -- Permission helpers (follow the chain up to the league)
 
 CREATE OR REPLACE FUNCTION public.can_admin_champ(cid uuid) RETURNS boolean
@@ -576,6 +597,8 @@ CREATE OR REPLACE FUNCTION public.public_championship(cid uuid) RETURNS jsonb
     'palette', l.palette,
     'championship', c.name,
     'track_places', c.track_places,
+    'completed', c.completed_at is not null,
+    'completed_at', c.completed_at,
     'description', c.description,
     'rules', c.rules,
     'divisions', coalesce((
@@ -639,7 +662,7 @@ CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
     'league_id', l.id, 'can_edit', public.can_admin_league(l.id), 'is_public', l.page_published, 'league', l.name, 'palette', l.palette,
     'tagline', l.tagline, 'about', l.about, 'join_text', l.join_text, 'banner_url', l.banner_url, 'links', l.links,
     'championships', coalesce((
-      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description) order by c.name)
+      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'description', c.description, 'completed', c.completed_at is not null) order by (c.completed_at is not null), c.name)
       from public.championships c where c.league_id = l.id and c.page_published), '[]'::jsonb),
     'calendar', coalesce((
       select jsonb_agg(q.j order by q.sa) from (
@@ -655,7 +678,7 @@ CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
         join public.championships c on c.id = s.championship_id
         left join public.track_layouts t on t.id = e.track_layout_id
         left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
+        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() and c.completed_at is null
         order by e.starts_at limit 30) q), '[]'::jsonb),
     'latest', coalesce((
       select jsonb_agg(q.j order by q.cn) from (
@@ -710,7 +733,7 @@ CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
       join public.championships c on c.id = s.championship_id
       left join public.track_layouts t on t.id = e.track_layout_id
       left join public.track_venues v on v.id = t.venue_id
-      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now()
+      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() and c.completed_at is null
       order by e.starts_at limit 1))
   from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
 $$;
@@ -901,6 +924,7 @@ CREATE TABLE public.championships (
     rules text,
     page_published boolean DEFAULT true NOT NULL,
     track_places boolean DEFAULT true NOT NULL,
+    completed_at timestamp with time zone,
     CONSTRAINT championships_intended_timezone_check CHECK (((intended_timezone IS NULL) OR public.is_valid_timezone(intended_timezone))),
     CONSTRAINT championships_name_check CHECK ((length(btrim(name)) > 0)),
     CONSTRAINT championships_schedule_every_weeks_check CHECK (((schedule_every_weeks IS NULL) OR ((schedule_every_weeks >= 1) AND (schedule_every_weeks <= 4))))
@@ -1019,6 +1043,7 @@ ALTER TABLE ONLY public.events
     ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 CREATE INDEX events_season_idx ON public.events USING btree (season_id);
 CREATE UNIQUE INDEX events_series_occurrence_uq ON public.events USING btree (series_id, occurrence_date) WHERE (series_id IS NOT NULL);
+CREATE TRIGGER events_bonus_clears_points AFTER UPDATE OF is_bonus ON public.events FOR EACH ROW WHEN ((new.is_bonus AND NOT old.is_bonus)) EXECUTE FUNCTION public.event_bonus_clears_points();
 CREATE TRIGGER events_set_updated_at BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY events_admin_all ON public.events TO authenticated USING (public.can_admin_season(season_id)) WITH CHECK (public.can_admin_season(season_id));
@@ -1090,6 +1115,7 @@ ALTER TABLE ONLY public.results
 CREATE INDEX results_race_idx ON public.results USING btree (race_id);
 CREATE TRIGGER results_audit_trg AFTER INSERT OR DELETE OR UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.audit_results();
 CREATE TRIGGER results_guard_league BEFORE INSERT OR UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.guard_result_league();
+CREATE TRIGGER results_no_bonus_points BEFORE INSERT OR UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.results_no_bonus_points();
 CREATE TRIGGER results_set_updated_at BEFORE UPDATE ON public.results FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 ALTER TABLE public.results ENABLE ROW LEVEL SECURITY;
 CREATE POLICY results_admin_all ON public.results TO authenticated USING (public.can_admin_race(race_id)) WITH CHECK (public.can_admin_race(race_id));
