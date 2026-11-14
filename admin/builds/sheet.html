@@ -88,6 +88,9 @@ svg text { fill: var(--muted); font: 600 11px var(--display); }
 .part .n { font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .ic, .part .n .ic, .lbl .ic { width: 22px; height: 22px; max-width: none; margin: 0; flex: none; color: var(--muted); }
 .part .n { justify-content: flex-start; text-align: left; }
+.part.na { opacity: .55; }
+.nacb { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.part .nacb input { width: auto; margin: 0; }
 .lbl .ic { display: inline-block; vertical-align: -6px; margin-right: 6px; }
 button.x { font: 600 15px var(--body); background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); cursor: pointer; height: 30px; }
 .calc { font-variant-numeric: tabular-nums; font-weight: 600; padding: 5px 0; }
@@ -218,7 +221,10 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
   var WEIGHTS = ["Extra light", "Light", "Medium", "Heavy", "Extra heavy"];
   function isBallast(p) { return p.group === "Platform and Handling" && p.name === "Ballast"; }
   // Tiers each part can take: Ballast is Stock/Installed, tire widths and Conversion parts are Stock/Upgraded.
-  function allowed(p) {
+  // Every part can also be "Not applicable" (the car has no such part): it is left out of the public build, and "Set all to" never touches it.
+  var NA = "N/A";
+  function allowed(p) { return baseAllowed(p).concat([NA]); }
+  function baseAllowed(p) {
     if (isBallast(p)) return ["Stock", "Installed"];
     if (ONLY_TIERS[p.name]) return ONLY_TIERS[p.name];
     if (p.group === "Conversion") return ["Stock", "Upgraded"];
@@ -239,7 +245,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     return "<span></span>";
   }
   // Quick build / "Set all to" use the normal tiers; a width only follows when the choice is Stock.
-  function applyTier(p, v) { if (allowed(p).indexOf(v) < 0) return; p.tier = v; p.detail = ""; }
+  function applyTier(p, v) { if (p.tier === NA || allowed(p).indexOf(v) < 0) return; p.tier = v; p.detail = ""; }
   // Older sheets (and the samples) may hold a width with no tier: Upgraded when a size was typed, otherwise Stock.
   // Wheels are Stock or Upgraded. Older sheets become Upgraded when a group, style or note was filled in.
   function fixWheels(b) {
@@ -342,7 +348,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     var groups = ORDER;
     var open = {};
     function tierOpts(cur, blank, list) { return (blank ? '<option value="">' + blank + "</option>" : "") + (list || TIERS).filter(Boolean).map(function (t) { return '<option value="' + t + '"' + (t === cur ? " selected" : "") + ">" + t + "</option>"; }).join(""); }
-    function builtPart(p) { return (p.tier && p.tier !== "Stock") || !!detailOf(p); }
+    function builtPart(p) { return p.tier !== NA && ((p.tier && p.tier !== "Stock") || !!detailOf(p)); }
     function convFitted() { return b.parts.some(function (p) { return p.group === "Conversion" && builtPart(p); }); }
     // Plain text of the built parts only (Stock parts are left out), Conversion first when fitted.
     function exportText() {
@@ -368,8 +374,8 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
       return L.join("\n").replace(/\n+$/, "");
     }
     function groupState(g) {
-      var ps = b.parts.filter(function (p) { return p.group === g; }), t = ps[0] && ps[0].tier;
-      var uniform = ps.every(function (p) { return p.tier === t && !detailOf(p); });
+      var ps = b.parts.filter(function (p) { return p.group === g; }), live = ps.filter(function (p) { return p.tier !== NA; }), t = live[0] && live[0].tier;
+      var uniform = live.every(function (p) { return p.tier === t && !detailOf(p); });
       return { ps: ps, uniform: uniform, tier: uniform ? t : "" };
     }
     function partsHtml() {
@@ -386,7 +392,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
           '<select aria-label="Set every ' + esc(g) + ' part" data-gset="' + esc(g) + '"><option value="">Set all to…</option>' + tierOpts("", "", g === "Conversion" ? ["Stock", "Upgraded"] : null) + "</select></summary>" +
           st.ps.map(function (p) {
             var i = b.parts.indexOf(p);
-            return '<div class="part' + (p.custom ? " c" : "") + '"><span class="n">' + icon(p.custom ? "_custom" : p.name) + "<span>" + esc(p.name) + "</span>" + (p.custom ? ' <span class="sub">added</span>' : "") + '</span><select aria-label="' + esc(p.name) + ' tier" data-i="' + i + '" data-k="tier">' + allowed(p).map(function (t) { return '<option value="' + t + '"' + (t === p.tier ? " selected" : "") + ">" + (t || "—") + "</option>"; }).join("") + '</select>' +
+            return '<div class="part' + (p.custom ? " c" : "") + (p.tier === NA ? " na" : "") + '"><span class="n">' + icon(p.custom ? "_custom" : p.name) + "<span>" + esc(p.name) + "</span>" + (p.custom ? ' <span class="sub">added</span>' : "") + '<label class="nacb" title="This car has no such part: leave it out of the build"><input type="checkbox" data-na="' + i + '" aria-label="' + esc(p.name) + ' not applicable"' + (p.tier === NA ? " checked" : "") + '>N/A</label></span><select aria-label="' + esc(p.name) + ' tier" data-i="' + i + '" data-k="tier"' + (p.tier === NA ? " disabled" : "") + ">" + (p.tier === NA ? '<option value="N/A" selected>N/A</option>' : baseAllowed(p).map(function (t) { return '<option value="' + t + '"' + (t === p.tier ? " selected" : "") + ">" + (t || "—") + "</option>"; }).join("")) + '</select>' +
               detailCell(p, i) + (p.custom ? '<button class="x" type="button" data-rm="' + i + '" aria-label="Remove ' + esc(p.name) + '">×</button>' : "") + "</div>";
           }).join("") +
           (NO_ADD.indexOf(g) >= 0 ? "" : '<div class="addpart"><input type="text" aria-label="Add a part to ' + esc(g) + '" data-addname="' + esc(g) + '" placeholder="' + esc(ADD_HINT[g] || "Add a part") + '" maxlength="60"><button class="btn" type="button" data-addpart="' + esc(g) + '">Add part</button></div>') + "</details>";
@@ -421,12 +427,13 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
           tiles.sort(function (a, z) { return (z.up ? 1 : 0) - (a.up ? 1 : 0); });
           if (wu && !up) { tiles.unshift({ n: "Wheels", v: "Upgraded", up: true }); up = 1; total = tiles.length; }
         } else {
-          var ps = b.parts.filter(function (p) { return p.group === g; });
+          var ps = b.parts.filter(function (p) { return p.group === g && p.tier !== NA; });
           total = ps.length;
           ps.forEach(function (p) { var u = builtPart(p); if (u) up++; tiles.push({ n: p.name, v: partVal(p), up: u, icon: icon(p.custom ? "_custom" : p.name) }); });
           up = tiles.filter(function (t) { return t.up; }).length;
           tiles.sort(function (a, z) { return (z.up ? 1 : 0) - (a.up ? 1 : 0); });
         }
+        if (g !== "Wheels" && !total) return "";
         var conv = g === "Conversion" && convFirst;
         var segs = ""; for (var n = 0; n < total; n++) segs += '<i' + (n < up ? ' class="on"' : "") + "></i>";
         var head = '<div class="cathead"><h3>' + esc(g) + "</h3>" + (conv ? '<span class="tag done">Do this first</span>' : "") + '<span class="catn">' + (up ? up + " of " + total + " upgraded" : "All stock") + "</span></div>" +
@@ -497,6 +504,7 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
         if (t.value === "Upgraded") ["wheelStyle", "rimF", "rimR"].forEach(function (k) { if (String(b[k] || "").trim().toLowerCase() === "stock") b[k] = ""; });
         c.querySelector("[data-parts]").innerHTML = partsHtml(); return;
       }
+      if (t.dataset.na) { var np2 = b.parts[t.dataset.na]; np2.tier = t.checked ? NA : "Stock"; np2.detail = ""; saveOpen(); c.querySelector("[data-parts]").innerHTML = partsHtml(); return; }
       if (t.dataset.i) { var pp = b.parts[t.dataset.i]; pp[t.dataset.k] = t.value; if (t.dataset.k === "tier") { if (!detailKind(pp)) pp.detail = ""; saveOpen(); c.querySelector("[data-parts]").innerHTML = partsHtml(); } }
       if (t.dataset.gset && t.value) { saveOpen(); b.parts.forEach(function (p) { if (p.group === t.dataset.gset) applyTier(p, t.value); }); open[t.dataset.gset] = true; c.querySelector("[data-parts]").innerHTML = partsHtml(); }
       if (t.hasAttribute("data-qb") && t.value) { saveOpen(); b.parts.forEach(function (p) { applyTier(p, t.value); }); c.querySelector("[data-parts]").innerHTML = partsHtml(); t.value = ""; }
@@ -609,4 +617,4 @@ function icon(name){return '<svg class="ic" viewBox="0 0 24 24" width="22" heigh
     }); });
   } else send({ fcm: "ready" });
 })();
-</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261114d</div></body></html>
+</script><div style="text-align:center;font-size:11px;opacity:.45;padding:6px 0 10px">Build sheet version 20261114e</div></body></html>
