@@ -42,6 +42,9 @@
     document.getElementById("sub").textContent = "All times are shown in your local time" + (z ? " (" + z.replace(/_/g, " ") + ")" : "") + ".";
     var rs = c.rounds || [];
     var ov = c.description ? '<div class="notes" style="margin:0 0 14px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "";
-    out.innerHTML = ov + (rs.length ? rs.map(roundHtml).join("") : '<p class="msg">No rounds have been scheduled yet.</p>');
+    // The championship's rules, open by default, same text as the championship page's Rules tab.
+    var ru = String(c.rules || "").trim() ? '<details class="notes" open style="margin:0 0 14px"><summary><b>Championship rules</b></summary><div style="white-space:pre-wrap;margin-top:6px">' +
+      esc(c.rules).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }) + "</div></details>" : "";
+    out.innerHTML = ov + ru + (rs.length ? rs.map(roundHtml).join("") : '<p class="msg">No rounds have been scheduled yet.</p>');
   });
 })();
