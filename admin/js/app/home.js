@@ -54,7 +54,7 @@ function drawHome(d) {
   function label(e) { var s = d.seasonOf[e.season_id], c = s && d.champOf[s.championship_id]; return [e.round_number ? "Round " + e.round_number : (e.name || "Round"), d.tn[e.track_layout_id]].filter(Boolean).join(" · ") + (c ? " — " + c.name + (s ? " · " + s.name : "") : ""); }
   var h = '<div class="row" style="margin:0 0 4px;align-items:stretch">';
   h += d.todo && d.champs.length === 1 ? '<button class="primary" type="button" id="hres">Enter results: ' + esc(label(d.todo.ev).split(" — ")[0]) + "</button>" : '<button class="primary" type="button" id="hres">Enter results</button>';
-  h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
+  h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hcal"' + (d.champs.length ? "" : " disabled") + '>Calendar and rounds</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
   h += '<div class="card" id="hpick" hidden style="margin:10px 0 0"></div>';
   if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
   var main = '<h3 class="sec">Next race</h3>';
@@ -86,11 +86,11 @@ function drawHome(d) {
     var pk = $("#hpick"); if (!pk) return;
     if (pk.dataset.kind === kind && !pk.hidden) { pk.hidden = true; pk.dataset.kind = ""; return; }
     pk.dataset.kind = kind; pk.hidden = false;
-    pk.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center"><b>' + (kind === "results" ? "Enter results for which championship?" : "Add a round to which championship?") + '</b><button type="button" id="hpickx">Close</button></div>' +
+    pk.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center"><b>' + (kind === "results" ? "Enter results for which championship?" : kind === "cal" ? "Open the calendar for which championship?" : "Add a round to which championship?") + '</b><button type="button" id="hpickx">Close</button></div>' +
       d.champs.map(function (c) {
         var t = d.todoBy[c.id];
         var sub = kind === "results" ? (t ? label(t.ev).split(" — ")[0] + " needs results" : "All recent rounds have results") : (c.status ? c.status : "");
-        return '<div class="row" style="align-items:center;margin:6px 0;gap:8px"><div class="grow" style="min-width:200px"><b>' + esc(c.name) + "</b>" + (sub ? '<div class="muted">' + esc(sub) + "</div>" : "") + '</div><button type="button"' + (kind === "results" && t ? ' class="primary"' : "") + ' data-pickc="' + esc(c.id) + '">' + (kind === "results" ? (t ? "Enter results" : "Open results") : "Add a round") + "</button></div>";
+        return '<div class="row" style="align-items:center;margin:6px 0;gap:8px"><div class="grow" style="min-width:200px"><b>' + esc(c.name) + "</b>" + (sub ? '<div class="muted">' + esc(sub) + "</div>" : "") + '</div><button type="button"' + (kind === "results" && t ? ' class="primary"' : "") + ' data-pickc="' + esc(c.id) + '">' + (kind === "results" ? (t ? "Enter results" : "Open results") : kind === "cal" ? "Open calendar" : "Add a round") + "</button></div>";
       }).join("");
     $("#hpickx").addEventListener("click", function () { pk.hidden = true; pk.dataset.kind = ""; });
     pk.querySelectorAll("[data-pickc]").forEach(function (b) { b.addEventListener("click", function () {
@@ -108,6 +108,10 @@ function drawHome(d) {
   });
   $("#hround").addEventListener("click", function () {
     if (d.champs.length > 1) { choose("round"); return; }
+    if (d.champs[0]) { state.wantTab = "seasons"; openChamp(d.champs[0].id); }
+  });
+  $("#hcal").addEventListener("click", function () {
+    if (d.champs.length > 1) { choose("cal"); return; }
     if (d.champs[0]) { state.wantTab = "seasons"; openChamp(d.champs[0].id); }
   });
   $("#hchamp").addEventListener("click", function () { state.focusNew = true; loadChamps(); });
