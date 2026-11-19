@@ -86,13 +86,12 @@ function drawHome(d) {
     var pk = $("#hpick"); if (!pk) return;
     if (pk.dataset.kind === kind && !pk.hidden) { pk.hidden = true; pk.dataset.kind = ""; return; }
     pk.dataset.kind = kind; pk.hidden = false;
-    pk.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center"><b>' + (kind === "results" ? "Enter results for which championship?" : kind === "cal" ? "Open the calendar for which championship?" : "Add a round to which championship?") + '</b><button type="button" id="hpickx">Close</button></div>' +
+    pk.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center"><b>' + (kind === "results" ? "Enter results for which championship?" : kind === "cal" ? "Open the calendar for which championship?" : "Add a round to which championship?") + '</b></div>' +
       d.champs.map(function (c) {
         var t = d.todoBy[c.id];
         var sub = kind === "results" ? (t ? label(t.ev).split(" — ")[0] + " needs results" : "All recent rounds have results") : (c.status ? c.status : "");
         return '<div class="row" style="align-items:center;margin:6px 0;gap:8px"><div class="grow" style="min-width:200px"><b>' + esc(c.name) + "</b>" + (sub ? '<div class="muted">' + esc(sub) + "</div>" : "") + '</div><button type="button"' + (kind === "results" && t ? ' class="primary"' : "") + ' data-pickc="' + esc(c.id) + '">' + (kind === "results" ? (t ? "Enter results" : "Open results") : kind === "cal" ? "Open calendar" : "Add a round") + "</button></div>";
       }).join("");
-    $("#hpickx").addEventListener("click", function () { pk.hidden = true; pk.dataset.kind = ""; });
     pk.querySelectorAll("[data-pickc]").forEach(function (b) { b.addEventListener("click", function () {
       var id = b.dataset.pickc;
       if (kind === "results") { var t = d.todoBy[id]; if (t) { openChamp(id, { view: "race", rid: t.race.id }); return; } state.wantTab = "results"; openChamp(id); }
