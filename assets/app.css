@@ -53,6 +53,11 @@ button:disabled { opacity:.5; cursor:default; }
 .muted { color:var(--muted); } .err { color:var(--err); } .ok { color:var(--ok); }
 .pill { display:inline-block; border:1px solid var(--line); border-radius:99px; padding:1px 9px; font-size:12px; font-family:var(--display); letter-spacing:.06em; text-transform:uppercase; }
 .list button.item { display:flex; width:100%; justify-content:space-between; text-align:left; margin:4px 0; }
+.list button.pick { align-items:center; gap:12px; padding:12px 14px; border-color:var(--accent); }
+.list button.pick.todo { background:var(--accent); color:var(--accent-ink); }
+.list button.pick .sub { display:block; font-weight:400; font-size:13px; opacity:.75; margin-top:2px; }
+.list button.pick .go { font-size:26px; line-height:1; color:var(--accent); }
+.list button.pick.todo .go { color:inherit; }
 .msg { min-height:20px; margin:6px 0; }
 details.ev { border:1px solid var(--line); border-radius:6px; margin:8px 0; padding:8px 10px; }
 details.ev > summary { cursor:pointer; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
