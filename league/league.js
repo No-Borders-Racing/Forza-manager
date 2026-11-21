@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261121a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261121b&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -179,9 +179,11 @@
     if (l.join_text) h += '<div class="notes" style="margin:0 0 12px"><b>How to join</b><br>' + richText(l.join_text) + "</div>";
     // Two columns that start on the same line: the next race and the championships, then a sidebar with the latest results and the standings.
     var n = l.next, main = "", side = "";
-    if (n && n.starts_at) {
+    // A round that started earlier today is still shown, as today's race.
+    var isToday = n && n.starts_at && new Date(n.starts_at).toDateString() === new Date().toDateString();
+    if (n && n.starts_at && (isToday || new Date(n.starts_at).getTime() >= Date.now())) {
       var d = new Date(n.starts_at);
-      main += '<h2 class="sn">Next race</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
+      main += '<h2 class="sn">' + (isToday ? "Today's race" : "Next race") + '</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
         (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") + "</div>";
     }
     main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);

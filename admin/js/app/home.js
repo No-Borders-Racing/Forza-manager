@@ -21,7 +21,9 @@ function renderHome() {
         var evs = (er.data || []).filter(function (e) { return e.status !== "cancelled" && e.starts_at; });
         var seasonOf = {}; seasons.forEach(function (x) { seasonOf[x.id] = x; });
         var champOf = {}; champs.forEach(function (c) { champOf[c.id] = c; });
-        var up = evs.filter(function (e) { return new Date(e.starts_at).getTime() >= now; }).sort(function (a, b) { return a.starts_at < b.starts_at ? -1 : 1; });
+        // A round that started earlier today still counts as the next one, until the day is over.
+        var dayStart = new Date(now).setHours(0, 0, 0, 0);
+        var up = evs.filter(function (e) { return new Date(e.starts_at).getTime() >= dayStart; }).sort(function (a, b) { return a.starts_at < b.starts_at ? -1 : 1; });
         var past = evs.filter(function (e) { return new Date(e.starts_at).getTime() < now; }).sort(function (a, b) { return a.starts_at < b.starts_at ? 1 : -1; }).slice(0, 12);
         var next = up[0] || null;
         var rP = past.length ? sb.from("races").select("id,event_id,name,sort_order").in("event_id", past.map(function (e) { return e.id; })) : Promise.resolve({ data: [] });
@@ -57,7 +59,8 @@ function drawHome(d) {
   h += '<button type="button" id="hround"' + (d.champs.length ? "" : " disabled") + '>Add a round</button><button type="button" id="hcal"' + (d.champs.length ? "" : " disabled") + '>Calendar and rounds</button><button type="button" id="hchamp">New championship</button><a href="' + esc(pageLink("l", lg.id)) + '" target="_blank" rel="noopener"><button type="button">View league page</button></a></div>';
   h += '<div class="card" id="hpick" hidden style="margin:10px 0 0"></div>';
   if (!d.todo && d.champs.length) h += '<p class="muted" style="margin:6px 0 0">Every recent round has its results.</p>';
-  var main = '<h3 class="sec">Next race</h3>';
+  var todayRace = d.next && new Date(d.next.starts_at).toDateString() === new Date().toDateString();
+  var main = '<h3 class="sec">' + (todayRace ? "Today's race" : "Next race") + "</h3>";
   if (d.next) {
     main += '<div class="card" style="margin:0"><div class="rnd">' + esc(nextHead(d.next)) + '</div><div style="font-size:18px;font-weight:700">' + esc(whenText(d.next.starts_at)) + '</div><div>' + esc(d.tn[d.next.track_layout_id] || "") + "</div>" +
       (d.next.lobby_opens_at ? '<div class="muted">Lobby opens ' + esc(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(d.next.lobby_opens_at))) + "</div>" : "") +

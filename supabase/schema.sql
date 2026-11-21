@@ -679,7 +679,7 @@ CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
         join public.championships c on c.id = s.championship_id
         left join public.track_layouts t on t.id = e.track_layout_id
         left join public.track_venues v on v.id = t.venue_id
-        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() and c.completed_at is null
+        where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() - interval '12 hours' and c.completed_at is null
         order by e.starts_at limit 30) q), '[]'::jsonb),
     'latest', coalesce((
       select jsonb_agg(q.j order by q.cn) from (
@@ -734,7 +734,7 @@ CREATE OR REPLACE FUNCTION public.public_league(lid uuid) RETURNS jsonb
       join public.championships c on c.id = s.championship_id
       left join public.track_layouts t on t.id = e.track_layout_id
       left join public.track_venues v on v.id = t.venue_id
-      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() and c.completed_at is null
+      where c.league_id = l.id and c.page_published and e.status <> 'cancelled' and e.starts_at >= now() - interval '12 hours' and c.completed_at is null
       order by e.starts_at limit 1))
   from public.leagues l where l.id = lid and (l.page_published or public.can_admin_league(l.id))
 $$;
