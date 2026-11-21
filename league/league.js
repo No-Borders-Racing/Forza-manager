@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261119c&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261121a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -186,13 +186,13 @@
     }
     main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
     var ls = l.latest || [];
-    if (ls.length) side += '<h2 class="sn">Latest results</h2>' + ls.map(function (r) {
+    if (ls.length) side += '<h2 class="sn">Latest results <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=results">All results →</a></h2>' + ls.map(function (r) {
       var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
-      return '<div class="round"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<ol class="rk">' + top.map(function (y) { return "<li><span><b>" + y.position + "</b>" + esc(y.driver) + "</span></li>"; }).join("") + "</ol>" : "") + "</div>";
+      return '<a class="round go" href="?c=' + encodeURIComponent(r.championship_id) + '&t=results"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<ol class="rk">' + top.map(function (y) { return "<li><span><b>" + y.position + "</b>" + esc(y.driver) + "</span></li>"; }).join("") + "</ol>" : "") + '<span class="goto">Full results →</span></a>';
     }).join("");
     var sd = (l.standings || []).filter(function (x) { return x.rows && x.rows.length; });
-    if (sd.length) side += '<h2 class="sn">Standings</h2>' + sd.map(function (x) {
-      return '<div class="round"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><ol class="rk">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + esc(+Number(r.points).toFixed(2)) + "</em></li>"; }).join("") + "</ol></div>";
+    if (sd.length) side += '<h2 class="sn">Standings <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=standings">All standings →</a></h2>' + sd.map(function (x) {
+      return '<a class="round go" href="?c=' + encodeURIComponent(x.championship_id) + '&t=standings"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><ol class="rk">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + esc(+Number(r.points).toFixed(2)) + "</em></li>"; }).join("") + '</ol><span class="goto">Full standings →</span></a>';
     }).join("");
     h += '<div class="cols"><div class="col">' + main + "</div>" + (side ? '<aside class="col">' + side + "</aside>" : "") + "</div>";
     return h;

@@ -63,3 +63,11 @@ html.wait body { opacity:0; }
 .dv ul.dvc li:nth-child(even) { background:rgba(128,128,128,.12); }
 
 table.t .pgu { color:var(--ok); font-weight:600; white-space:nowrap; } table.t .pgd { color:var(--err); font-weight:600; white-space:nowrap; } table.t .pg0 { color:var(--muted); }
+
+/* Overview cards that link to the full page: whole card is the link. */
+a.round.go { display:block; color:inherit; text-decoration:none; }
+a.round.go:hover, a.round.go:focus-visible { border-color:var(--accent); outline:none; }
+a.round.go .goto { display:block; margin-top:8px; color:var(--link); font-weight:600; }
+h2.sn:has(.more) { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+h2.sn .more { font:600 13px/1.6 Inter, system-ui, sans-serif; letter-spacing:0; text-transform:none; color:var(--link); text-decoration:none; }
+h2.sn .more:hover { text-decoration:underline; }
