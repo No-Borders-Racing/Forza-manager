@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261121b&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261122a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -86,6 +86,21 @@
     });
     return h || '<p class="msg">No results yet.</p>';
   }
+  // The champion(s) of a championship page: first place in the latest season that has results.
+  function championsOf(c) {
+    var ss = (c.seasons || []).slice().reverse();
+    for (var i = 0; i < ss.length; i++) {
+      var by = {}, any = false;
+      (ss[i].rounds || []).forEach(function (r) { (r.races || []).forEach(function (x) { (x.results || []).forEach(function (y) {
+        any = true; var d = by[y.driver] || (by[y.driver] = { driver: y.driver, pts: 0, wins: 0, pod: 0 });
+        d.pts += Number(y.points) || 0; if (isFin(y) && y.position === 1) d.wins++; if (isFin(y) && y.position != null && y.position <= 3) d.pod++;
+      }); }); });
+      if (!any) continue;
+      var rows = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.pts - a.pts || b.wins - a.wins || b.pod - a.pod; });
+      var top = rows[0]; return rows.filter(function (r) { return r.pts === top.pts && r.wins === top.wins && r.pod === top.pod; }).map(function (r) { return r.driver; });
+    }
+    return [];
+  }
   function standingsHtml(c) {
     var h = seasonsWrap(c, function (s) {
       var by = {}, any = false, kinds = [];
@@ -102,7 +117,7 @@
       // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
       var split = kinds.length > 1 ? kinds : [];
       return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Total</th>' + split.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + '<th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
-        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+r.pts.toFixed(2)) + "</b></td>" + split.map(function (k) { return "<td>" + (r.kind[k] == null ? "–" : esc(+r.kind[k].toFixed(2))) + "</td>"; }).join("") + "<td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + (c.completed && r.rank === 1 ? ' <span class="pill">Champion</span>' : "") + "</td><td><b>" + esc(+r.pts.toFixed(2)) + "</b></td>" + split.map(function (k) { return "<td>" + (r.kind[k] == null ? "–" : esc(+r.kind[k].toFixed(2))) + "</td>"; }).join("") + "<td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
     });
     return h || '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
@@ -119,8 +134,9 @@
     if (c.league_published) sub.innerHTML = '<a href="?l=' + encodeURIComponent(c.league_id) + '" style="color:var(--link)">← All ' + esc(c.league) + " championships</a>"; else sub.textContent = "";
     var tabs = (String(c.rules || "").trim() ? [["rules", "Rules", rulesHtml]] : []).concat(TABS);
     var want = qs.get("t"), cur = tabs.some(function (t) { return t[0] === want; }) ? want : "calendar";
+    var champs = c.completed ? championsOf(c) : [];
     function draw() {
-      out.innerHTML = (c.completed ? '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.</div>' : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
+      out.innerHTML = (c.completed ? '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.' + (champs.length ? '<br><b>Champion' + (champs.length > 1 ? "s" : "") + ":</b> " + champs.map(esc).join(", ") : "") + "</div>" : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
         '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         tabs.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
@@ -154,9 +170,16 @@
         '<div class="sub" style="margin-top:8px"><a href="?c=' + encodeURIComponent(x.championship_id) + '&t=standings" style="color:var(--link)">Full championship page →</a></div>';
     }).join("") : '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
-  function champCardsHtml(cs, full) {
+  // "Champion: name" for a completed championship, from the first row of its standings on the league page.
+  function championLine(id, ss) {
+    var x = (ss || []).filter(function (y) { return y.championship_id === id; })[0], r = x && x.rows;
+    if (!r || !r.length) return "";
+    var top = r[0], names = r.filter(function (y) { return y.points === top.points && y.wins === top.wins && y.podiums === top.podiums; }).map(function (y) { return y.driver; });
+    return "<span><b>Champion" + (names.length > 1 ? "s" : "") + ":</b> " + names.map(esc).join(", ") + "</span>";
+  }
+  function champCardsHtml(cs, full, ss) {
     return cs.length ? '<div class="cards">' + cs.map(function (c) {
-      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + (c.completed ? ' <span class="pill">Completed</span>' : "") + "</b>" + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
+      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + (c.completed ? ' <span class="pill">Completed</span>' : "") + "</b>" + (c.completed ? championLine(c.id, ss) : "") + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
     }).join("") + "</div>" : '<p class="msg">No championships to show yet.</p>';
   }
   function leagueCalendarHtml(l) {
@@ -186,7 +209,7 @@
       main += '<h2 class="sn">' + (isToday ? "Today's race" : "Next race") + '</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
         (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") + "</div>";
     }
-    main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false);
+    main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false, l.standings);
     var ls = l.latest || [];
     if (ls.length) side += '<h2 class="sn">Latest results <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=results">All results →</a></h2>' + ls.map(function (r) {
       var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
@@ -206,7 +229,7 @@
     head([l.league]);
     document.getElementById("sub").textContent = l.tagline || "";
     var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
-    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml, stats: function () { return '<div id="statsbox"><p class="msg">Loading stats…</p></div>'; } };
+    var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true, x.standings); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml, stats: function () { return '<div id="statsbox"><p class="msg">Loading stats…</p></div>'; } };
     function draw() {
       out.innerHTML = '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
