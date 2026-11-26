@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261122a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261126a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -175,7 +175,7 @@
     var x = (ss || []).filter(function (y) { return y.championship_id === id; })[0], r = x && x.rows;
     if (!r || !r.length) return "";
     var top = r[0], names = r.filter(function (y) { return y.points === top.points && y.wins === top.wins && y.podiums === top.podiums; }).map(function (y) { return y.driver; });
-    return "<span><b>Champion" + (names.length > 1 ? "s" : "") + ":</b> " + names.map(esc).join(", ") + "</span>";
+    return "<span><strong>Champion" + (names.length > 1 ? "s" : "") + ":</strong> " + names.map(esc).join(", ") + "</span>";
   }
   function champCardsHtml(cs, full, ss) {
     return cs.length ? '<div class="cards">' + cs.map(function (c) {
