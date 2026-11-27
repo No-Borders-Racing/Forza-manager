@@ -14,7 +14,8 @@
   }
   function roundHtml(r) {
     var d = r.starts_at ? new Date(r.starts_at) : null, off = r.status === "cancelled", races = r.races || [];
-    var head = '<div class="rnd">' + (r.championship ? esc(r.championship) + " · " : "") + (r.round ? "Round " + esc(r.round) : esc(r.name || "Round")) +
+    var ci = 0, cs = String(r.championship_id || r.championship || ""); for (var q = 0; q < cs.length; q++) ci = (ci * 31 + cs.charCodeAt(q)) % 5;
+    var head = (r.championship ? '<div class="ctag">' + esc(r.championship) + "</div>" : "") + '<div class="rnd">' + (r.round ? "Round " + esc(r.round) : esc(r.name || "Round")) +
       (r.bonus ? ' <span class="pill">Bonus</span>' : "") + (off ? ' <span class="pill bad">Cancelled</span>' : (r.status === "completed" || races.some(function (k) { return (k.results || []).length; })) ? ' <span class="pill">Completed</span>' : "") + "</div>";
     head += d ? '<div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" : '<div class="big tbc">Date and time to be confirmed</div>';
     if (r.track) head += '<div class="big">' + esc(r.track.venue) + " · " + esc(r.track.layout) + "</div>";
@@ -28,8 +29,8 @@
       return "<li><span>" + esc(x.name || "Race " + (i + 1)) + (x.type ? ' <span class="pill">' + esc(x.type) + "</span>" : "") + '</span><span class="l">' + esc(raceLen(x)) + "</span></li>";
     }).join("") + "</ul>";
     if (r.notes && String(r.notes).trim()) body += '<div class="notes">' + esc(r.notes) + "</div>";
-    if (!body) return '<div class="round' + (off ? " off" : "") + '"><div class="sum">' + head + "</div></div>";
-    return '<details class="round' + (off ? " off" : "") + '"><summary class="sum">' + head + '<span class="chev" aria-hidden="true"></span></summary><div class="more">' + body + "</div></details>";
+    if (!body) return '<div class="round' + (off ? " off" : "") + (r.championship ? " cc cc" + ci : "") + '"><div class="sum">' + head + "</div></div>";
+    return '<details class="round' + (off ? " off" : "") + (r.championship ? " cc cc" + ci : "") + '"><summary class="sum">' + head + '<span class="chev" aria-hidden="true"></span></summary><div class="more">' + body + "</div></details>";
   }
   window.FCMPublic = { esc: esc, dateText: dateText, timeText: timeText, raceLen: raceLen, roundHtml: roundHtml };
 })();
