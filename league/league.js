@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261126a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261127a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -117,7 +117,7 @@
       // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
       var split = kinds.length > 1 ? kinds : [];
       return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Total</th>' + split.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + '<th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
-        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + (c.completed && r.rank === 1 ? ' <span class="pill">Champion</span>' : "") + "</td><td><b>" + esc(+r.pts.toFixed(2)) + "</b></td>" + split.map(function (k) { return "<td>" + (r.kind[k] == null ? "–" : esc(+r.kind[k].toFixed(2))) + "</td>"; }).join("") + "<td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+        rows.map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + (r.rank <= 3 ? " r" + r.rank : "") + '"><td><span class="chip">' + r.rank + "</span></td><td>" + FCMFlair.av(r.driver) + '<span class="dn">' + esc(r.driver) + "</span>" + (c.completed && r.rank === 1 ? ' <span class="pill">Champion</span>' : "") + '<span class="bar"><i style="width:' + Math.max(2, Math.round(100 * (r.pts || 0) / (rows[0].pts || 1))) + '%"></i></span></td><td><b>' + esc(+r.pts.toFixed(2)) + "</b></td>" + split.map(function (k) { return "<td>" + (r.kind[k] == null ? "–" : esc(+r.kind[k].toFixed(2))) + "</td>"; }).join("") + "<td>" + r.wins + "</td><td>" + r.pod + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
     });
     return h || '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
@@ -137,19 +137,28 @@
     var champs = c.completed ? championsOf(c) : [];
     function draw() {
       out.innerHTML = (c.completed ? '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.' + (champs.length ? '<br><b>Champion' + (champs.length > 1 ? "s" : "") + ":</b> " + champs.map(esc).join(", ") : "") + "</div>" : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
-        '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
+        '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + FCMFlair.ico(t[0]) + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         tabs.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
         cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });
     }
     draw();
+    FCMFlair.tick();
   }
   function safeUrl(u) { u = String(u || "").trim(); return /^https?:\/\/\S+$/i.test(u) ? u : ""; }
   // Plain text with line breaks; web addresses become links.
   function richText(t) { return esc(t).replace(/(https?:\/\/[^\s<]+)/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener noreferrer" style="color:var(--link)">' + u + "</a>"; }); }
   var SOC = [["website", "Website"], ["discord", "Discord"], ["youtube", "YouTube"], ["twitch", "Twitch"], ["x", "X"], ["instagram", "Instagram"]];
   var LTABS = [["overview", "Overview"], ["championships", "Championships"], ["calendar", "Calendar"], ["results", "Results"], ["standings", "Standings"], ["stats", "Stats"]];
+  // Top three as a podium: second, first, third, with the tallest block in the middle.
+  function podium(rows) {
+    if (rows.length < 3) return '<ol class="rk">' + rows.map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + esc(+Number(r.points).toFixed(2)) + "</em></li>"; }).join("") + "</ol>";
+    return '<div class="podium">' + [1, 0, 2].map(function (i) {
+      var r = rows[i];
+      return '<div class="pcol p' + (i + 1) + '">' + FCMFlair.av(r.driver) + '<div class="pn">' + esc(r.driver) + '</div><div class="pp">' + esc(+Number(r.points).toFixed(2)) + '</div><div class="blk"><b>' + r.rank + "</b></div></div>";
+    }).join("") + "</div>";
+  }
   // Ranks come from the database order (points, wins, podiums); equal rows share a rank.
   function rankRows(rows) {
     var rank = 0, prev = null;
@@ -159,9 +168,10 @@
     // With more than one kind of race (a Sprint and a Main, say) each kind gets its own points column after the total.
     var kinds = []; rows.forEach(function (r) { (r.by_race || []).forEach(function (k) { if (kinds.indexOf(k.name) < 0) kinds.push(k.name); }); });
     if (kinds.length < 2) kinds = [];
+    var top = rows.reduce(function (m, r) { return Math.max(m, Number(r.points) || 0); }, 0) || 1;
     function kp(r, k) { var m = (r.by_race || []).filter(function (x) { return x.name === k; })[0]; return m ? "<td>" + esc(+Number(m.points).toFixed(2)) + "</td>" : "<td>–</td>"; }
     return '<div class="wrapx"><table class="t"><thead><tr><th>#</th><th>Driver</th><th>Total</th>' + kinds.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + '<th>Wins</th><th>Podiums</th><th>FL</th></tr></thead><tbody>' +
-      rankRows(rows).map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + '"><td>' + r.rank + "</td><td>" + esc(r.driver) + "</td><td><b>" + esc(+Number(r.points).toFixed(2)) + "</b></td>" + kinds.map(function (k) { return kp(r, k); }).join("") + "<td>" + r.wins + "</td><td>" + r.podiums + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
+      rankRows(rows).map(function (r) { return '<tr class="' + (r.rank === 1 ? "top1" : "") + (r.rank <= 3 ? " r" + r.rank : "") + '"><td><span class="chip">' + r.rank + "</span></td><td>" + FCMFlair.av(r.driver) + '<span class="dn">' + esc(r.driver) + '</span><span class="bar"><i style="width:' + Math.max(2, Math.round(100 * (Number(r.points) || 0) / top)) + '%"></i></span></td><td><b>' + esc(+Number(r.points).toFixed(2)) + "</b></td>" + kinds.map(function (k) { return kp(r, k); }).join("") + "<td>" + r.wins + "</td><td>" + r.podiums + "</td><td>" + r.fl + "</td></tr>"; }).join("") + "</tbody></table></div>";
   }
   function leagueStandingsHtml(l) {
     var ss = l.standings || [];
@@ -171,6 +181,8 @@
     }).join("") : '<p class="msg">No standings yet. They appear once results are entered.</p>';
   }
   // "Champion: name" for a completed championship, from the first row of its standings on the league page.
+  var TROPHY = '<svg class="ico" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7 3h10v3h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 13H8a4 4 0 0 1-4-4V6h3V3Zm-1 5v1a2 2 0 0 0 1 1.7V8H6Zm12 0h-1v2.7A2 2 0 0 0 18 9V8Z"/></svg>';
+  var FLAG = '<svg class="ico" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M5 3h2v18H5V3Zm3 1h11l-2 4 2 4H8V4Z"/></svg>';
   function championLine(id, ss) {
     var x = (ss || []).filter(function (y) { return y.championship_id === id; })[0], r = x && x.rows;
     if (!r || !r.length) return "";
@@ -179,7 +191,7 @@
   }
   function champCardsHtml(cs, full, ss) {
     return cs.length ? '<div class="cards">' + cs.map(function (c) {
-      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + esc(c.name) + (c.completed ? ' <span class="pill">Completed</span>' : "") + "</b>" + (c.completed ? championLine(c.id, ss) : "") + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
+      return '<a class="card" href="?c=' + encodeURIComponent(c.id) + '"><b>' + (c.completed ? TROPHY : FLAG) + esc(c.name) + (c.completed ? ' <span class="pill">Completed</span>' : "") + "</b>" + (c.completed ? championLine(c.id, ss) : "") + (c.description ? "<span>" + esc(full ? c.description : String(c.description).slice(0, 140)) + "</span>" : "") + '<span class="go">Builds, calendar, results and standings →</span></a>';
     }).join("") + "</div>" : '<p class="msg">No championships to show yet.</p>';
   }
   function leagueCalendarHtml(l) {
@@ -206,18 +218,18 @@
     var isToday = n && n.starts_at && new Date(n.starts_at).toDateString() === new Date().toDateString();
     if (n && n.starts_at && (isToday || new Date(n.starts_at).getTime() >= Date.now())) {
       var d = new Date(n.starts_at);
-      main += '<h2 class="sn">' + (isToday ? "Today's race" : "Next race") + '</h2><div class="round"><div class="rnd">' + esc(n.championship) + (n.round ? " · Round " + esc(n.round) : "") + '</div><div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" +
-        (n.track ? '<div class="big">' + esc(n.track.venue + (n.track.layout ? " · " + n.track.layout : "")) + "</div>" : "") + "</div>";
+      main += '<h2 class="sn">' + FCMFlair.ico(isToday ? "clock" : "calendar", 18) + (isToday ? "Today's race" : "Next race") + "</h2>" + FCMFlair.nextTile({ iso: n.starts_at, kicker: n.championship + (n.round ? " · Round " + n.round : ""),
+        title: n.track ? n.track.venue + (n.track.layout ? " · " + n.track.layout : "") : dateText(d), sub: dateText(d) + " · " + timeText(d, true) });
     }
-    main += '<h2 class="sn">Championships</h2>' + champCardsHtml(l.championships || [], false, l.standings);
+    main += '<h2 class="sn">' + FCMFlair.ico("championships", 18) + 'Championships</h2>' + champCardsHtml(l.championships || [], false, l.standings);
     var ls = l.latest || [];
-    if (ls.length) side += '<h2 class="sn">Latest results <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=results">All results →</a></h2>' + ls.map(function (r) {
+    if (ls.length) side += '<h2 class="sn">' + FCMFlair.ico("results", 18) + 'Latest results <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=results">All results →</a></h2>' + ls.map(function (r) {
       var top = ((r.races || [])[0] || { results: [] }).results.filter(function (y) { return y.position != null && y.position <= 3; });
       return '<a class="round go" href="?c=' + encodeURIComponent(r.championship_id) + '&t=results"><div class="rnd">' + esc(r.championship) + (r.round ? " · Round " + esc(r.round) : "") + "</div>" + (top.length ? '<ol class="rk">' + top.map(function (y) { return "<li><span><b>" + y.position + "</b>" + esc(y.driver) + "</span></li>"; }).join("") + "</ol>" : "") + '<span class="goto">Full results →</span></a>';
     }).join("");
     var sd = (l.standings || []).filter(function (x) { return x.rows && x.rows.length; });
-    if (sd.length) side += '<h2 class="sn">Standings <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=standings">All standings →</a></h2>' + sd.map(function (x) {
-      return '<a class="round go" href="?c=' + encodeURIComponent(x.championship_id) + '&t=standings"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div><ol class="rk">' + rankRows(x.rows).slice(0, 3).map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + esc(+Number(r.points).toFixed(2)) + "</em></li>"; }).join("") + '</ol><span class="goto">Full standings →</span></a>';
+    if (sd.length) side += '<h2 class="sn">' + FCMFlair.ico("standings", 18) + 'Standings <a class="more" href="?l=' + encodeURIComponent(lid) + '&t=standings">All standings →</a></h2>' + sd.map(function (x) {
+      return '<a class="round go" href="?c=' + encodeURIComponent(x.championship_id) + '&t=standings"><div class="rnd">' + esc(x.championship) + (x.season ? " · " + esc(x.season) : "") + '</div>' + podium(rankRows(x.rows).slice(0, 3)) + '<span class="goto">Full standings →</span></a>';
     }).join("");
     h += '<div class="cols"><div class="col">' + main + "</div>" + (side ? '<aside class="col">' + side + "</aside>" : "") + "</div>";
     return h;
@@ -231,7 +243,7 @@
     var want = qs.get("t"), cur = LTABS.some(function (t) { return t[0] === want; }) ? want : "overview";
     var body = { overview: overviewHtml, championships: function (x) { return champCardsHtml(x.championships || [], true, x.standings); }, calendar: leagueCalendarHtml, results: leagueResultsHtml, standings: leagueStandingsHtml, stats: function () { return '<div id="statsbox"><p class="msg">Loading stats…</p></div>'; } };
     function draw() {
-      out.innerHTML = '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
+      out.innerHTML = '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + LTABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + FCMFlair.ico(t[0]) + t[1] + "</button>"; }).join("") + '</div><div id="pane">' + body[cur](l) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {
         cur = b.dataset.tab; try { var u = new URL(location.href); u.searchParams.set("t", cur); ["d", "a", "b", "sc"].forEach(function (k) { u.searchParams.delete(k); }); history.replaceState(null, "", u); } catch (e) {} draw();
       }); });
