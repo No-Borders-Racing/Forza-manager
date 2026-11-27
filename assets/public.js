@@ -15,7 +15,7 @@
   function roundHtml(r) {
     var d = r.starts_at ? new Date(r.starts_at) : null, off = r.status === "cancelled", races = r.races || [];
     var head = '<div class="rnd">' + (r.championship ? esc(r.championship) + " · " : "") + (r.round ? "Round " + esc(r.round) : esc(r.name || "Round")) +
-      (r.bonus ? ' <span class="pill">Bonus</span>' : "") + (off ? ' <span class="pill bad">Cancelled</span>' : r.status === "completed" ? ' <span class="pill">Completed</span>' : "") + "</div>";
+      (r.bonus ? ' <span class="pill">Bonus</span>' : "") + (off ? ' <span class="pill bad">Cancelled</span>' : (r.status === "completed" || races.some(function (k) { return (k.results || []).length; })) ? ' <span class="pill">Completed</span>' : "") + "</div>";
     head += d ? '<div class="big">' + esc(dateText(d)) + " · " + esc(timeText(d, true)) + "</div>" : '<div class="big tbc">Date and time to be confirmed</div>';
     if (r.track) head += '<div class="big">' + esc(r.track.venue) + " · " + esc(r.track.layout) + "</div>";
     var body = "";
