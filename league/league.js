@@ -46,7 +46,7 @@
     var bs = c.builds || []; if (!bs.length) return ds || '<p class="msg">No car builds to show for this championship yet.</p>';
     return ds + '<div class="cards">' + bs.map(function (b) {
       var sub = [b.car, [b.class, b.pi].filter(function (x) { return x != null && x !== ""; }).join(" ")].filter(Boolean).join(" · ");
-      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261127h&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
+      return '<a class="card" href="' + esc("../admin/builds/sheet.html?v=20261128a&pub=" + encodeURIComponent(b.id)) + '"><b>' + esc(b.name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "") + '<span class="go">View build sheet →</span></a>';
     }).join("") + "</div>";
   }
   function seasonsWrap(c, f) {
@@ -133,10 +133,10 @@
     var sub = document.getElementById("sub");
     if (c.league_published) sub.innerHTML = '<a href="?l=' + encodeURIComponent(c.league_id) + '" style="color:var(--link)">← All ' + esc(c.league) + " championships</a>"; else sub.textContent = "";
     var tabs = (String(c.rules || "").trim() ? [["rules", "Rules", rulesHtml]] : []).concat(TABS);
-    var want = qs.get("t"), cur = tabs.some(function (t) { return t[0] === want; }) ? want : "calendar";
+    var want = qs.get("t"), cur = tabs.some(function (t) { return t[0] === want; }) ? want : (c.completed ? "standings" : "calendar");
     var champs = c.completed ? championsOf(c) : [];
     function draw() {
-      out.innerHTML = (c.completed ? '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.' + (champs.length ? '<br><b>Champion' + (champs.length > 1 ? "s" : "") + ":</b> " + champs.map(esc).join(", ") : "") + "</div>" : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
+      out.innerHTML = (c.completed ? (champs.length ? '<div class="champion"><span class="trophy">' + TROPHY.replace(/width="\d+"/, 'width="34"').replace(/height="\d+"/, 'height="34"') + '</span><div><div class="kick">Champion' + (champs.length > 1 ? "s" : "") + '</div><div class="cname">' + champs.map(esc).join(" · ") + '</div><div class="muted">This championship has finished. The standings are final.</div></div></div>' : '<div class="notes" style="margin:0 0 12px"><span class="pill">Completed</span> This championship has finished. The standings are final.</div>') : "") + (c.description ? '<div class="notes" style="margin:0 0 12px"><b>Championship overview</b><br>' + esc(c.description) + "</div>" : "") +
         '<div class="row scrollrow" style="margin:0 0 12px" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === cur) + '"' + (t[0] === cur ? ' class="primary"' : "") + ">" + FCMFlair.ico(t[0]) + t[1] + "</button>"; }).join("") + '</div><div id="pane">' +
         tabs.filter(function (t) { return t[0] === cur; })[0][2](c) + "</div>";
       out.querySelectorAll("[data-tab]").forEach(function (b) { b.addEventListener("click", function () {

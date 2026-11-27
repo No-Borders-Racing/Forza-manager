@@ -146,7 +146,7 @@ function renderChamp() {
       '<div class="row" style="margin-top:8px"><button class="primary" id="csave" type="button">Save</button><button type="button" data-cancel="reset">Cancel</button><button id="crename" type="button">Rename</button></div><div class="msg" id="cm"></div>' +
       '<div id="renamebox"></div></div>';
     h += '<div class="card"><h3 style="margin-top:0">Championship status</h3>' + (c.completed_at
-      ? '<p class="muted" style="margin:0 0 8px">Completed on ' + esc(new Date(c.completed_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })) + '. The public pages show it as completed, list it after the running championships and no longer show its rounds as upcoming. Results and standings stay as they are.</p><button type="button" id="creopen">Reopen championship</button>'
+      ? '<p class="muted" style="margin:0 0 8px">Completed on ' + esc(new Date(c.completed_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })) + '. The public pages show it as completed, list it after the running championships and name the winner as champion. Results and standings stay as they are.</p><button type="button" id="creopen">Reopen championship</button>'
       : '<p class="muted" style="margin:0 0 8px">Running. When the last round is done, mark it complete: the public pages show it as completed with its final standings. You can reopen it at any time.</p><button type="button" id="ccomplete">Mark championship complete</button>') +
       '<div class="msg" id="cstm"></div></div>';
     h += pagePublishHtml("c", c);
@@ -198,8 +198,10 @@ function bindAll() {
     if (done && !window.confirm('Mark "' + c.name + '" complete?\n\nThe public pages will show it as completed. You can reopen it at any time.')) return;
     sb.from("championships").update({ completed_at: done ? new Date().toISOString() : null }).eq("id", c.id).select("*").single().then(function (r) {
       if (r.error) { msg($("#cstm"), dbError(r.error) + (/completed_at|schema cache/i.test(r.error.message || "") ? " Has migration 040 been run?" : ""), "err"); return; }
-      state.sel.champ = r.data; state.champs.forEach(function (x) { if (x.id === c.id) x.completed_at = r.data.completed_at; }); renderChamp();
-      msg($("#cstm"), done ? "Marked complete." : "Reopened.", "ok");
+      state.sel.champ = r.data; state.champs.forEach(function (x) { if (x.id === c.id) x.completed_at = r.data.completed_at; });
+      if (done) state.tab = "standings";
+      renderChamp();
+      if (!done) msg($("#cstm"), "Reopened.", "ok");
     });
   }
   on("#ccomplete", function () { setComplete(true); });

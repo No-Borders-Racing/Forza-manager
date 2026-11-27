@@ -89,3 +89,11 @@ h2.sn .ico, h3.sec .ico { margin-right:9px; vertical-align:-3px; color:var(--acc
 .card.hero .row { padding-right:110px; }
 @media (max-width:600px) { .card.hero .row { padding-right:60px; } }
 .card.hero > .muted, .card.hero #hm > p { padding-right:110px; } @media (max-width:600px) { .card.hero > .muted, .card.hero #hm > p { padding-right:60px; } }
+
+/* Champion banner: gold trophy plate shown once a championship is marked complete */
+.champion { display:flex; align-items:center; gap:16px; margin:0 0 14px; padding:16px 18px; border-radius:12px; border:1px solid var(--gold,#e6b422);
+  background:linear-gradient(100deg,color-mix(in srgb,var(--gold,#e6b422) 28%,transparent),transparent 70%),var(--card); }
+.champion .trophy { flex:none; display:grid; place-items:center; width:58px; height:58px; border-radius:50%; background:var(--gold,#e6b422); color:#1a1405; }
+.champion .kick { font:700 12px/1 var(--display); letter-spacing:.18em; text-transform:uppercase; color:var(--gold,#e6b422); }
+.champion .cname { font:700 28px/1.15 var(--display); text-transform:uppercase; margin:4px 0; }
+.pill.champ { background:var(--gold,#e6b422); color:#1a1405; }
