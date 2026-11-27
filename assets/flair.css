@@ -84,3 +84,8 @@ p.msg:not(:empty)::before { content:""; display:block; width:38px; height:38px; 
 h2.sn:has(.more) { justify-content:flex-start; }
 h2.sn:has(.more) .more { margin-left:auto; }
 h2.sn:has(.more) { gap:0; }
+h2.sn .ico, h3.sec .ico { margin-right:9px; vertical-align:-3px; color:var(--accent); }
+.row button .ico { margin-right:7px; vertical-align:-3px; }
+.card.hero .row { padding-right:110px; }
+@media (max-width:600px) { .card.hero .row { padding-right:60px; } }
+.card.hero > .muted, .card.hero #hm > p { padding-right:110px; } @media (max-width:600px) { .card.hero > .muted, .card.hero #hm > p { padding-right:60px; } }

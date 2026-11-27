@@ -25,9 +25,23 @@ var FCMFlair = (function () {
     rules: "M5 3h12a2 2 0 0 1 2 2v16H7a2 2 0 0 1-2-2V3Zm3 4v2h8V7H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z",
     flag: "M5 3h2v18H5V3Zm3 1h11l-2 4 2 4H8V4Z",
     clock: "M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm-1 5v6l5 3 1-1.7-4-2.3V7h-2Z",
+    car: "M5 11l1.6-4.2A2 2 0 0 1 8.5 5.5h7a2 2 0 0 1 1.9 1.3L19 11h1a1 1 0 0 1 1 1v5h-2.2a2.3 2.3 0 0 1-4.6 0H9a2.3 2.3 0 0 1-4.6 0H3v-5a1 1 0 0 1 1-1h1Zm2.5 0h9L15.3 7.5H8.7L7.5 11Z",
+    cog: "M10.5 2h3l.5 2.6 1.8.8 2.2-1.5 2.1 2.1-1.5 2.2.8 1.8 2.6.5v3l-2.6.5-.8 1.8 1.5 2.2-2.1 2.1-2.2-1.5-1.8.8-.5 2.6h-3l-.5-2.6-1.8-.8-2.2 1.5-2.1-2.1 1.5-2.2-.8-1.8L2 13.5v-3l2.6-.5.8-1.8-1.5-2.2 2.1-2.1 2.2 1.5 1.8-.8L10.5 2ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+    shield: "M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5l8-3Z",
+    plus: "M10.5 4h3v6.5H20v3h-6.5V20h-3v-6.5H4v-3h6.5V4Z",
+    eye: "M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7Zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z",
     pin: "M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7Zm0 4.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"
   };
   function ico(n, sz) { return P[n] ? '<svg class="ico" viewBox="0 0 24 24" width="' + (sz || 16) + '" height="' + (sz || 16) + '" aria-hidden="true"><path fill="currentColor" d="' + P[n] + '"/></svg>' : ""; }
+  // rows: [{rank, driver, points}] best first. Three or more become a podium (second, first, third).
+  function podium(rows) {
+    function pt(r) { return esc(+Number(r.points).toFixed(2)); }
+    if (rows.length < 3) return '<ol class="rk">' + rows.map(function (r) { return "<li><span><b>" + r.rank + "</b>" + esc(r.driver) + "</span><em>" + pt(r) + "</em></li>"; }).join("") + "</ol>";
+    return '<div class="podium">' + [1, 0, 2].map(function (i) {
+      var r = rows[i];
+      return '<div class="pcol p' + (i + 1) + '">' + av(r.driver) + '<div class="pn">' + esc(r.driver) + '</div><div class="pp">' + pt(r) + '</div><div class="blk"><b>' + r.rank + "</b></div></div>";
+    }).join("") + "</div>";
+  }
   // o: { iso, kicker, title, sub, today }
   function nextTile(o) {
     var d = new Date(o.iso), day = "", mon = "";
@@ -46,5 +60,5 @@ var FCMFlair = (function () {
     });
   }
   setInterval(tick, 20000);
-  return { ico: ico, esc: esc, initials: initials, av: av, nextTile: nextTile, tick: tick };
+  return { podium: podium, ico: ico, esc: esc, initials: initials, av: av, nextTile: nextTile, tick: tick };
 })();
