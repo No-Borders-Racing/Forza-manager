@@ -29,7 +29,9 @@
             });
           });
         });
-        var done = rounds.length && rounds.every(function (r) { return r.status === "completed" || r.status === "cancelled"; }) && rounds.some(function (r) { return r.status === "completed"; });
+        // A title is awarded when the championship is marked complete, to the winner of its latest season with results.
+        var withRes = (c.seasons || []).filter(function (z) { return (z.rounds || []).some(function (r) { return (r.races || []).some(function (k) { return (k.results || []).length; }); }); });
+        var done = !!c.completed && withRes.length && withRes[withRes.length - 1] === s;
         var names = Object.keys(totals).sort(function (a, b) { return totals[b] - totals[a]; });
         if (done && names.length) {
           var top = totals[names[0]], second = names.filter(function (n) { return totals[n] < top; })[0];
